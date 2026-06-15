@@ -10,6 +10,13 @@ import {
   resolveSymbol,
   searchDatafeed,
 } from "./lib/datafeed.mjs";
+import {
+  tradingViewDatafeedConfig,
+  tradingViewHistory,
+  tradingViewResolve,
+  tradingViewSearch,
+} from "./lib/tradingview/datafeed.mjs";
+import { subscribeTradingViewBars } from "./lib/tradingview/client.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -55,7 +62,85 @@ function parseUrl(req) {
   return { pathname: u.pathname.replace(/\/+$/, "") || "/", searchParams: u.searchParams };
 }
 
+async function handleTradingViewDatafeed(pathname, sp, res) {
+  if (pathname === "/datafeed/tv/config") {
+    json(res, 200, tradingViewDatafeedConfig());
+    return true;
+  }
+
+  if (pathname === "/datafeed/tv/search") {
+    try {
+      const query = sp.get("query") || sp.get("text") || "";
+      const limit = sp.get("limit");
+      const rows = await tradingViewSearch(query, limit != null ? Number(limit) : 50);
+      json(res, 200, rows);
+    } catch (err) {
+      json(res, 502, { s: "error", errmsg: err.message || "Search failed" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/tv/symbols") {
+    try {
+      const symbol = sp.get("symbol") || "";
+      const info = await tradingViewResolve(symbol);
+      json(res, 200, info);
+    } catch (err) {
+      json(res, 200, { s: "error", errmsg: err.message || "Unknown symbol" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/tv/history") {
+    try {
+      const payload = await tradingViewHistory({
+        symbol: sp.get("symbol") || "CME_MINI:NQ1!",
+        resolution: sp.get("resolution") || "5",
+        from: sp.get("from") != null ? Number(sp.get("from")) : undefined,
+        to: sp.get("to") != null ? Number(sp.get("to")) : undefined,
+        countback: sp.get("countback") != null ? Number(sp.get("countback")) : undefined,
+      });
+      json(res, 200, payload);
+    } catch (err) {
+      json(res, 200, { s: "error", errmsg: err.message || "History failed" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/tv/stream") {
+    const symbol = sp.get("symbol") || "";
+    const resolution = sp.get("resolution") || "5";
+    if (!symbol) {
+      json(res, 400, { error: "symbol required" });
+      return true;
+    }
+
+    res.writeHead(200, {
+      ...HDR,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    res.write(": connected\n\n");
+
+    const unsub = subscribeTradingViewBars(symbol, resolution, (bar) => {
+      res.write(`data: ${JSON.stringify(bar)}\n\n`);
+    });
+
+    const ping = setInterval(() => res.write(": ping\n\n"), 15000);
+    res.on("close", () => {
+      clearInterval(ping);
+      unsub();
+    });
+    return true;
+  }
+
+  return false;
+}
+
 async function handleDatafeed(pathname, sp, res) {
+  if (await handleTradingViewDatafeed(pathname, sp, res)) return true;
+
   if (pathname === "/datafeed/config") {
     json(res, 200, datafeedConfig());
     return true;

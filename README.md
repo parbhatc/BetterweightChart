@@ -40,7 +40,9 @@ public/
 │   │   ├── paneData.js
 │   │   └── settingsApplier.js
 │   ├── datafeed/
-│   │   └── client.js   # UDF-style browser client
+│   │   ├── client.js   # HTTP UDF datafeed (default)
+│   │   ├── custom.js   # createCustomDatafeed, createStaticDatafeed
+│   │   └── index.js    # resolveDatafeed()
 │   ├── drawings/       # Drawing tools module
 │   │   ├── index.js    # mountDrawings() — main API
 │   │   ├── controller/
@@ -75,7 +77,7 @@ Host this repo (or deploy to your server), then import ES modules from stable pa
 
 | Import path | Exports |
 |-------------|---------|
-| `/chart/sdk.js` | `bootChart`, `ChartApi`, `mountDrawings`, `createMultiPaneDrawingHub`, `createDatafeed` |
+| `/chart/sdk.js` | `bootChart`, `ChartApi`, `mountDrawings`, `createDatafeed`, `createCustomDatafeed`, `createStaticDatafeed` |
 | `/chart/app.js` | `bootChart`, `readPageOptions` |
 | `/chart/api.js` | `ChartApi`, `createDatafeed` |
 
@@ -118,8 +120,85 @@ const widget = await bootChart({
   countBack: 500,
 });
 
-// widget.chart, widget.series, widget.settings, widget.reload(), widget.setTheme()
+// widget.chart, widget.series, widget.settings, widget.reload(), widget.setBars(), widget.setTheme()
 ```
+
+### Custom datafeed (your own candles)
+
+Three ways to supply data — no fake server required for options 1–2.
+
+**1. Pass bars directly** (simplest):
+
+```javascript
+import { bootChart } from "https://YOUR_HOST/chart/sdk.js";
+
+const myBars = [
+  { time: 1710000000, open: 100, high: 101, low: 99.5, close: 100.5, volume: 1200 },
+  // time = Unix seconds (ms also accepted)
+];
+
+await bootChart({
+  mount: document.getElementById("chart"),
+  symbol: "MY",
+  bars: myBars,
+  tick: 0.01,
+  chrome: false,
+});
+```
+
+**2. Static in-memory feed** (multiple symbols, live updates):
+
+```javascript
+import { bootChart, createStaticDatafeed } from "https://YOUR_HOST/chart/sdk.js";
+
+const datafeed = createStaticDatafeed({
+  symbol: "BTC",
+  name: "Bitcoin",
+  tick: 1,
+  bars: myBtcBars,
+});
+
+const widget = await bootChart({ mount: el, datafeed, symbol: "BTC" });
+
+// Push new candles later
+datafeed.setBars("BTC", [...datafeed.getBarsFor("BTC"), newBar]);
+await widget.setBars(datafeed.getBarsFor("BTC"));
+```
+
+**3. Full custom feed** (fetch from your API):
+
+```javascript
+import { bootChart, createCustomDatafeed } from "https://YOUR_HOST/chart/sdk.js";
+
+const datafeed = createCustomDatafeed({
+  onReady: () => ({
+    resolutions: [{ id: "1", label: "1m", sec: 60 }],
+    default_resolution: "1",
+  }),
+  resolveSymbol: (name) => ({
+    name,
+    ticker: name,
+    pricescale: 100,
+    minmov: 1,
+  }),
+  getBars: async (symbolInfo, resolution, { countBack }) => {
+    const res = await fetch(`/api/candles?symbol=${symbolInfo.ticker}&limit=${countBack}`);
+    const bars = await res.json();
+    return { bars }; // { time, open, high, low, close, volume? }
+  },
+  searchSymbols: async (q) => [{ symbol: "AAPL", name: "Apple", exchange: "NASDAQ", ticker: "AAPL" }],
+});
+
+await bootChart({ mount: el, datafeed, symbol: "AAPL" });
+```
+
+**4. HTTP UDF backend** (default — uses bundled fake feed):
+
+```javascript
+await bootChart({ datafeedUrl: "https://YOUR_HOST/datafeed" });
+```
+
+Live example: `/examples/custom-bars.html`
 
 ### Drawings only
 
@@ -173,3 +252,30 @@ controller.on("change", () => console.log(controller.getDrawings()));
 npm run dev          # nodemon server
 npm run sync-vendor  # copy lightweight-charts to public/vendor/
 ```
+
+### Debug console (lag / perf)
+
+Add `?debug=1` to the URL, or in the browser console:
+
+```javascript
+window.__BWC_DEBUG__.enable();   // persists in localStorage
+location.reload();
+```
+
+While enabled you get:
+
+- **Pan FPS** — `[BWC:pan] fps …` while dragging the chart
+- **Slow ops** — warnings when handlers take >8ms (`visibleRangeHandler`, `setData`, etc.)
+- **Counters** — crosshair skips during pan, session cache hits/misses, whitespace growth
+
+Useful commands:
+
+```javascript
+window.__BWC_DEBUG__.stats()      // counters + slow op log
+window.__BWC_DEBUG__.clear()      // reset stats
+window.__BWC_DEBUG__.setVerbose(true)
+window.__BWC_DEBUG__.setSlowMs(4) // lower threshold
+window.__BWC_DEBUG__.disable()
+```
+
+Filter tags: `?debug=perf,pan,data` (categories: `boot`, `pan`, `perf`, `data`, `crosshair`, `session`, `whitespace`).

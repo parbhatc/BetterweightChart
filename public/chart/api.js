@@ -1,1 +1,1 @@
-export { ChartApi, bootChart, createDatafeed, readPageOptions } from "../js/api/chartApi.js";
+export { ChartApi, bootChart, createDatafeed, readPageOptions } from "../js/api/chart/index.js";

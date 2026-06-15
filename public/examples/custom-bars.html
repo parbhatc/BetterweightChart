@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Custom datafeed example</title>
+    <link rel="stylesheet" href="/css/app.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "lightweight-charts": "/vendor/lightweight-charts.mjs"
+        }
+      }
+    </script>
+    <style>
+      body { margin: 0; }
+      .demo-bar {
+        display: flex;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--tv-color-pane-background, #131722);
+        border-bottom: 1px solid #2a2e39;
+      }
+      .demo-bar button {
+        padding: 6px 12px;
+        cursor: pointer;
+        background: #2962ff;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        font-size: 13px;
+      }
+      .tv-workspace { height: calc(100vh - 42px); }
+    </style>
+  </head>
+  <body class="tv-app--embed">
+    <div class="demo-bar">
+      <button type="button" id="btn-append">Append random bar</button>
+      <button type="button" id="btn-reload">Reload from feed</button>
+    </div>
+    <div class="tv-app">
+      <div class="tv-workspace tv-workspace--embed">
+        <main class="tv-stage">
+          <div class="tv-chart-wrap">
+            <div class="tv-chart-wrap__stage">
+              <div id="chart"></div>
+              <div class="status-line tv-ohlc" id="ohlc" aria-live="polite"></div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script type="module">
+      import { bootChart, createStaticDatafeed } from "/chart/sdk.js";
+
+      /** Build 200 fake 1m candles (Unix seconds). */
+      function makeSampleBars(count = 200, startPrice = 100) {
+        const barSec = 60;
+        const now = Math.floor(Date.now() / 1000 / barSec) * barSec;
+        const bars = [];
+        let price = startPrice;
+        for (let i = count - 1; i >= 0; i -= 1) {
+          const time = now - i * barSec;
+          const open = price;
+          const change = (Math.random() - 0.48) * 0.6;
+          const close = Math.max(1, open + change);
+          const high = Math.max(open, close) + Math.random() * 0.3;
+          const low = Math.min(open, close) - Math.random() * 0.3;
+          bars.push({ time, open, high, low, close, volume: 1000 + Math.floor(Math.random() * 5000) });
+          price = close;
+        }
+        return bars;
+      }
+
+      const bars = makeSampleBars();
+      const datafeed = createStaticDatafeed({
+        symbol: "DEMO",
+        name: "My custom symbol",
+        tick: 0.01,
+        bars,
+      });
+
+      const widget = await bootChart({
+        mount: document.getElementById("chart"),
+        datafeed,
+        symbol: "DEMO",
+        theme: "dark",
+        chrome: false,
+        drawings: false,
+        countBack: 200,
+      });
+
+      document.getElementById("btn-append").addEventListener("click", async () => {
+        const last = datafeed.getBarsFor("DEMO").at(-1);
+        const barSec = 60;
+        const time = (last?.time ?? 0) + barSec;
+        const open = last?.close ?? 100;
+        const close = open + (Math.random() - 0.5) * 0.8;
+        const next = [
+          ...datafeed.getBarsFor("DEMO"),
+          {
+            time,
+            open,
+            high: Math.max(open, close) + 0.2,
+            low: Math.min(open, close) - 0.2,
+            close,
+            volume: 2000,
+          },
+        ];
+        await widget.setBars(next);
+      });
+
+      document.getElementById("btn-reload").addEventListener("click", () => widget.reload());
+    </script>
+  </body>
+</html>

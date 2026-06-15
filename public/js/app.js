@@ -1,1 +1,1 @@
-export { bootChart, readPageOptions } from "./app/bootChart.js";
+export { bootChart, readPageOptions } from "./app/boot/chart.js";

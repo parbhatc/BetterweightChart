@@ -1,16 +1,16 @@
-import { createDrawingController } from "./controller/drawingController.js";
-import { mountMainToolbar } from "./toolbars/mainToolbar.js";
-import { mountEditToolbar } from "./toolbars/editToolbar.js";
-import { createMultiPaneDrawingHub } from "./multiPaneHub.js";
+import { createDrawingController } from "./controller/index.js";
+import { mountMainToolbar } from "./toolbars/main/index.js";
+import { mountEditToolbar } from "./toolbars/edit/index.js";
+import { createMultiPaneDrawingHub } from "./multi/paneHub.js";
 
-export { createDrawingController } from "./controller/drawingController.js";
-export { createMultiPaneDrawingHub } from "./multiPaneHub.js";
-export { mountMainToolbar, mountDrawingToolbar } from "./toolbars/mainToolbar.js";
-export { mountEditToolbar } from "./toolbars/editToolbar.js";
-export { createFavoriteToolbar } from "./toolbars/favoriteToolbar.js";
-export * from "./catalog/toolCatalog.js";
-export * from "./catalog/toolIcons.js";
-export * from "./registry/toolRegistry.js";
+export { createDrawingController } from "./controller/index.js";
+export { createMultiPaneDrawingHub } from "./multi/paneHub.js";
+export { mountMainToolbar, mountDrawingToolbar } from "./toolbars/main/index.js";
+export { mountEditToolbar } from "./toolbars/edit/index.js";
+export { createFavoriteToolbar } from "./toolbars/favorite/index.js";
+export * from "./catalog/tools.js";
+export * from "./catalog/icons.js";
+export * from "./registry/tools.js";
 export * from "./constants.js";
 
 /**

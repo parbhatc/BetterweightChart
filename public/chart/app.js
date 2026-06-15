@@ -1,1 +1,1 @@
-export { bootChart, readPageOptions } from "../js/api/chartApi.js";
+export { bootChart, readPageOptions } from "../js/api/chart/index.js";

@@ -3,6 +3,9 @@
  * Mirrors the Advanced Chart datafeed API surface (onReady, resolveSymbol, getBars, searchSymbols).
  */
 
+import { loadLastResolution } from "../ui/timeframe/favorites.js";
+import { loadLastSymbol } from "../ui/chart/symbol/store.js";
+
 /** @typedef {{ time: number, open: number, high: number, low: number, close: number, volume?: number }} Bar */
 
 /**
@@ -100,12 +103,19 @@ export function createDatafeed(baseUrl = "/datafeed") {
 /** @param {string} [search] */
 export function readPageOptions(search = window.location.search) {
   const sp = new URLSearchParams(search);
+  const datafeed = sp.get("datafeed");
+  const defaultSymbol = datafeed === "tradingview" ? "CME_MINI:NQ1!" : "NQ";
+  const rawSymbol = sp.get("symbol") || loadLastSymbol(defaultSymbol);
+  const defaultResolution = datafeed === "tradingview" ? "5" : "1";
+  const resolution = sp.get("resolution") || loadLastResolution(defaultResolution);
   return {
-    symbol: (sp.get("symbol") || "NQ").toUpperCase(),
+    symbol: datafeed === "tradingview" ? rawSymbol : rawSymbol.toUpperCase(),
     theme: sp.get("theme") === "light" ? "light" : "dark",
-    resolution: sp.get("resolution") || "1",
+    resolution,
     drawings: sp.get("drawings") !== "0",
     chrome: sp.get("chrome") !== "0",
     countBack: sp.get("countback") != null ? Number(sp.get("countback")) : 500,
+    datafeedType: datafeed ?? undefined,
+    tradingview: datafeed === "tradingview",
   };
 }
