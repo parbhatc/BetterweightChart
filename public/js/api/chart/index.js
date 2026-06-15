@@ -46,8 +46,10 @@ export { createDatafeed, readPageOptions } from "../../datafeed/client.js";
 export {
   createCustomDatafeed,
   createStaticDatafeed,
+  createSimpleDatafeed,
   normalizeBar,
   normalizeBars,
   resolveDatafeed,
 } from "../../datafeed/index.js";
+export { createChartWidgetApi } from "../../app/boot/widgetApi.js";
 export { bootChart } from "../../app/boot/chart.js";

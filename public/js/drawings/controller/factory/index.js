@@ -143,6 +143,34 @@ export function newDrawing(type, points) {
   return drawing;
 }
 
+const CLIPBOARD_PREFIX = "bwc-drawing:";
+
+/**
+ * Clone a drawing with a new id and optional time/price offset.
+ * @param {import("../types.js").UserDrawing} drawing
+ * @param {{ timeDelta?: number, priceDelta?: number }} [offsets]
+ */
+export function cloneDrawing(drawing, offsets = {}) {
+  const timeDelta = offsets.timeDelta ?? 0;
+  const priceDelta = offsets.priceDelta ?? 0;
+  const points = drawing.points.map((p) => ({
+    ...p,
+    time: p.time + timeDelta,
+    price: p.price + priceDelta,
+  }));
+  const dup = newDrawing(drawing.type, points);
+  const styleKeys = Object.keys(drawing).filter(
+    (k) => !["id", "type", "points", "locked"].includes(k),
+  );
+  for (const k of styleKeys) {
+    if (drawing[k] !== undefined) dup[k] = drawing[k];
+  }
+  dup.locked = false;
+  return dup;
+}
+
+export { CLIPBOARD_PREFIX };
+
 /**
  * @param {"long-position" | "short-position"} type
  * @param {{ time: number, price: number }} entry

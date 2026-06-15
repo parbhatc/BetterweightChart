@@ -1,5 +1,5 @@
 import { VALUES_TOOLTIP_LONG_PRESS_MS, VALUES_TOOLTIP_MOVE_THRESHOLD } from "../../constants.js";
-import { barPriceClass, candleValueColor, isBarUp } from "../../../chart/bar/style.js";
+import { barPriceClass, candleValueColor, isBarUp, barChangeFromPrevClose } from "../../../chart/bar/style.js";
 
 /**
  * @param {object} deps
@@ -72,8 +72,7 @@ export function createTooltipOverlay(deps) {
       row("Close", fmt(bar.close), true),
     ];
 
-    const chg = bar.close - bar.open;
-    const chgPct = bar.open ? (chg / bar.open) * 100 : 0;
+    const { change: chg, pct: chgPct } = barChangeFromPrevClose(bar, prev ?? undefined);
     const chgSign = chg >= 0 ? "+" : "";
     const chgUp = chg >= 0;
     const chgCls = barPriceClass(chgUp);

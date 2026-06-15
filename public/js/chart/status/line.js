@@ -1,5 +1,5 @@
 import { getMarketStatusDetails, renderMarketStatusIcons } from "../market/status.js";
-import { barPriceClass, candleValueColor, isBarUp } from "../bar/style.js";
+import { barPriceClass, candleValueColor, isBarUp, barChangeFromPrevClose } from "../bar/style.js";
 import { precisionFromSettings } from "../timezone/list.js";
 
 /** @deprecated use getMarketStatusDetails */
@@ -125,8 +125,7 @@ export function renderStatusLine(el, opts) {
   }
 
   if (sl.showBarChange) {
-    const barChg = bar.close - bar.open;
-    const barPct = bar.open ? (barChg / bar.open) * 100 : 0;
+    const { change: barChg, pct: barPct } = barChangeFromPrevClose(bar, prevBar);
     const sign = barChg >= 0 ? "+" : "";
     const chgUp = barChg >= 0;
     const chgCls = barPriceClass(chgUp);

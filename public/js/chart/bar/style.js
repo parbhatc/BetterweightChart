@@ -37,3 +37,16 @@ export function candleValueColor(sym, up) {
   if (s.wickVisible !== false) return s.wickDownColor ?? "#f23645";
   return s.bordersVisible !== false ? s.bordersDownColor ?? "#f23645" : TV_DOWN_RGB;
 }
+
+/**
+ * Bar change for status line / tooltips: close vs previous close (TV convention).
+ * Falls back to close − open when there is no previous bar.
+ * @param {{ open: number, close: number }} bar
+ * @param {{ close: number } | undefined} [prevBar]
+ */
+export function barChangeFromPrevClose(bar, prevBar) {
+  const base = prevBar?.close ?? bar.open;
+  const change = bar.close - base;
+  const pct = base ? (change / base) * 100 : 0;
+  return { change, pct, base };
+}

@@ -3,6 +3,8 @@
  * WebSocket protocol adapted from https://github.com/parbhatc/tradingview
  */
 
+import { normalizeBar } from "../custom.js";
+
 /** @typedef {import("../types.js").Bar} Bar */
 
 /**
@@ -56,14 +58,16 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
       if (data.s === "error") throw new Error(data.errmsg || "History error");
 
       /** @type {Bar[]} */
-      const bars = data.t.map((time, i) => ({
-        time,
-        open: data.o[i],
-        high: data.h[i],
-        low: data.l[i],
-        close: data.c[i],
-        volume: data.v?.[i],
-      }));
+      const bars = data.t.map((time, i) =>
+        normalizeBar({
+          time,
+          open: data.o[i],
+          high: data.h[i],
+          low: data.l[i],
+          close: data.c[i],
+          volume: data.v?.[i],
+        }),
+      );
 
       return { bars, meta: data.meta };
     },
@@ -74,7 +78,7 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
       const es = new EventSource(`${root}/stream?${q}`);
       es.onmessage = (ev) => {
         try {
-          const bar = JSON.parse(ev.data);
+          const bar = normalizeBar(JSON.parse(ev.data));
           onTick(bar);
         } catch {
           // ignore

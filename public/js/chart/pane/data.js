@@ -10,7 +10,7 @@ import {
 import { isElectronicSession } from "../../primitives/session/background.js";
 import { resolveTimezone } from "../timezone/list.js";
 import { BAR_SEC } from "../constants.js";
-import { chartDebug, chartDebugTime } from "../../debug/chart/index.js";
+import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
 
 /**
  * Bars shown on chart + whitespace extension — must match series.setData for X mapping.
@@ -86,7 +86,6 @@ export function ensureFutureWhitespace(opts) {
   if (!r || r.to == null || !Number.isFinite(r.to)) return;
   const realCount = visible.length;
   const have = getFutureWhitespaceBars() ?? CHART_FUTURE_WHITESPACE_MIN;
-  // Only grow data when the viewport extends into future space — not while panning history.
   if (r.to < realCount - 16) return;
   const neededAhead = Math.ceil(r.to) - realCount + CHART_FUTURE_WHITESPACE_MARGIN;
   if (neededAhead <= have) return;
@@ -111,11 +110,52 @@ export function ensureFutureWhitespace(opts) {
  */
 export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutions, onPrimaryPane) {
   chartDebugTime("data", `refreshPaneCandleData pane ${pane.index}`, () => {
+    applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions);
+    pane.sessionBg?.requestRefresh();
+    onPrimaryPane?.(pane);
+  });
+}
+
+/**
+ * Push latest pane.bars to the series (includes future whitespace).
+ * Used when a new bar is added or a fast-path update is not possible.
+ */
+export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions) {
+  return chartDebugTime("data", `setData live pane ${pane.index}`, () => {
     const visible = barsForPane(pane, settingsStore, symbolInfo);
     pane.timeToIdx = barIndex(visible);
     if (pane.futureWhitespaceBars == null) pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
+    const ws = pane.futureWhitespaceBars;
     pane.series.setData(buildChartSeriesForPane(pane, visible, settingsStore, resolutions));
-    pane.sessionBg?.requestRefresh();
-    onPrimaryPane?.(pane);
+    chartDebugCount("data", "setData");
+    chartDebug("data", "setData live", { pane: pane.index, bars: visible.length, ws });
+  });
+}
+
+/**
+ * Patch the forming candle in-place (O(1)) while future whitespace trails the series.
+ * @returns {boolean} false when caller should fall back to applyLiveBarToPaneSeries
+ */
+export function updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInfo) {
+  return chartDebugTime("data", `update forming pane ${pane.index}`, () => {
+    const sym = settingsStore.get().symbol ?? {};
+    const visible = barsForPane(pane, settingsStore, symbolInfo);
+    const idx = visible.findIndex((b) => b.time === bar.time);
+    if (idx < 0) return false;
+
+    const context = visible.slice(Math.max(0, idx - 1), idx + 1);
+    const candle = buildCandleSeriesData(context, sym).at(-1);
+    if (!candle) return false;
+
+    try {
+      pane.series.update(candle, true);
+      chartDebugCount("data", "update");
+      chartDebug("data", "update forming", { pane: pane.index, time: bar.time, close: bar.close });
+      return true;
+    } catch (err) {
+      chartDebugCount("data", "updateFail");
+      chartDebug("data", "update forming failed", { pane: pane.index, err: String(err) });
+      return false;
+    }
   });
 }

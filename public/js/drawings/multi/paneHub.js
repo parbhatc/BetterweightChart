@@ -332,6 +332,15 @@ export function createMultiPaneDrawingHub(opts) {
 
     },
 
+    copySelectedDrawing: () => getActive()?.copySelectedDrawing() ?? false,
+
+    hasDrawingClipboard: () => getActive()?.hasDrawingClipboard() ?? false,
+
+    pasteDrawing: (src) => getActive()?.pasteDrawing(src) ?? false,
+
+    pasteDrawingFromSystemClipboard: () =>
+      getActive()?.pasteDrawingFromSystemClipboard() ?? Promise.resolve(false),
+
     setTarget() {
 
       /* per-pane controllers stay on their chart */

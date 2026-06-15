@@ -2,7 +2,7 @@
  * Opt-in chart debug logging for perf issues (lag, setData, pan, etc.)
  *
  * Enable:
- *   ?debug=1  or  ?debug=perf,lag,data
+ *   ?debug=1  or  ?debug=perf,tick,data
  *   localStorage.setItem("bwc-debug", "1")
  *   window.__BWC_DEBUG__.enable()
  *
@@ -98,7 +98,7 @@ export function setChartDebugVerbose(on = true) {
 }
 
 /**
- * @param {string} category perf | pan | data | crosshair | session | whitespace | boot
+ * @param {string} category perf | pan | data | tick | crosshair | session | whitespace | boot
  * @param {string} message
  * @param {unknown} [detail]
  */

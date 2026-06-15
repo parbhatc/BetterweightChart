@@ -36,7 +36,7 @@ import { keepsToolAfterCommit } from "../tools/shape/index.js";
 import { applyMagnetSnap } from "../tools/snap/magnet.js";
 import { loadAlwaysRemoveLocked, saveAlwaysRemoveLocked } from "../toolbars/utility/settings/store.js";
 import { shouldShowLockedRemoveConfirm, showRemoveLockedConfirmDialog } from "../settings/confirm/remove.js";
-import { newDrawing } from "./factory/index.js";
+import { newDrawing, cloneDrawing, CLIPBOARD_PREFIX } from "./factory/index.js";
 import { createTooltipOverlay } from "./tooltip/overlay.js";
 import { createDrawingDrag } from "./drag/index.js";
 import { createPointerHandlers } from "./pointer/handlers.js";
@@ -77,6 +77,8 @@ export function createDrawingController(opts) {
   /** @type {{ start: import("../types.js").DrawPoint, end: import("../types.js").DrawPoint } | null} */
   let measureOverlay = null;
   let measureDragActive = false;
+  /** @type {import("../types.js").UserDrawing | null} */
+  let drawingClipboard = null;
   /** @type {import("../types.js").UserDrawing | null} */
   let preview = null;
   /** @type {string | null} */
@@ -233,6 +235,49 @@ export function createDrawingController(opts) {
     if (!keepsToolAfterCommit(committed.type)) setActiveTool("cursor");
     selectDrawing(committed.id);
     emit("change");
+  }
+
+  function copySelectedDrawing() {
+    const sel = getSelectedDrawing();
+    if (!sel) return false;
+    drawingClipboard = JSON.parse(JSON.stringify(sel));
+    try {
+      navigator.clipboard.writeText(`${CLIPBOARD_PREFIX}${JSON.stringify(drawingClipboard)}`);
+    } catch {
+      /* ignore */
+    }
+    return true;
+  }
+
+  function hasDrawingClipboard() {
+    return drawingClipboard != null;
+  }
+
+  /**
+   * @param {import("../types.js").UserDrawing} [source]
+   */
+  function pasteDrawing(source) {
+    const src = source ?? drawingClipboard;
+    if (!src) return false;
+    const { barSec = 60 } = getContext();
+    const pasted = cloneDrawing(src, { timeDelta: barSec });
+    commitDrawing(pasted);
+    drawingClipboard = JSON.parse(JSON.stringify(src));
+    return true;
+  }
+
+  async function pasteDrawingFromSystemClipboard() {
+    if (drawingClipboard && pasteDrawing()) return true;
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text.startsWith(CLIPBOARD_PREFIX)) return false;
+      const parsed = JSON.parse(text.slice(CLIPBOARD_PREFIX.length));
+      if (!parsed?.type || !Array.isArray(parsed.points)) return false;
+      drawingClipboard = parsed;
+      return pasteDrawing(parsed);
+    } catch {
+      return false;
+    }
   }
 
   function resetPlacement() {
@@ -754,6 +799,15 @@ export function createDrawingController(opts) {
       ev.preventDefault();
       removeDrawings({ includeLocked: getAlwaysRemoveLocked() });
     }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
+      if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;
+      if (copySelectedDrawing()) ev.preventDefault();
+    }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "v") {
+      if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;
+      ev.preventDefault();
+      if (!pasteDrawing()) void pasteDrawingFromSystemClipboard();
+    }
   }
 
   /**
@@ -826,6 +880,10 @@ export function createDrawingController(opts) {
     getDrawingScreenAnchor,
     isDraggingDrawing: () => isDraggingDrawing,
     clearAll,
+    copySelectedDrawing,
+    hasDrawingClipboard,
+    pasteDrawing,
+    pasteDrawingFromSystemClipboard,
     setTarget,
     on(event, fn) {
       listeners[event]?.add(fn);

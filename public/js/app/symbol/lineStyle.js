@@ -9,6 +9,31 @@ export function resolveSymbolLineColor(sc, sym, bar, prevBar) {
   return isBarUp(bar, prevBar, sym.colorBarsOnPrevClose) ? up : down;
 }
 
+/**
+ * Bar used for custom price-line color — always the forming candle, not crosshair hover.
+ * @param {object} pane
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {object | null} symbolInfo
+ */
+export function priceLineBarForPane(pane, settingsStore, symbolInfo) {
+  const visible = barsForPane(pane, settingsStore, symbolInfo);
+  const bar = visible.at(-1);
+  const prevBar = visible.length > 1 ? visible.at(-2) : undefined;
+  return { bar, prevBar, close: bar?.close ?? null };
+}
+
+/**
+ * @param {object} pane
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {object | null} symbolInfo
+ */
+export function resolvePriceLineColorForPane(pane, settingsStore, symbolInfo) {
+  const sc = settingsStore.get().scales ?? {};
+  const sym = settingsStore.get().symbol ?? {};
+  const { bar, prevBar } = priceLineBarForPane(pane, settingsStore, symbolInfo);
+  return resolveSymbolLineColor(sc, sym, bar, prevBar);
+}
+
 /** @type {Map<number, string>} */
 const paneStyleKeys = new Map();
 let applyingSymbolLineStyle = false;
@@ -28,16 +53,26 @@ export function applySymbolLineStyle(opts) {
     const sym = settingsStore.get().symbol ?? {};
     for (const pane of getAllChartPanes()) {
       const visible = barsForPane(pane, settingsStore, symbolInfo);
-      const bar = pane.hoverBar ?? visible.at(-1);
-      const prevBar = pane.hoverBar != null ? pane.hoverPrev : visible.length > 1 ? visible.at(-2) : undefined;
+      const useCustomPriceLabel = Boolean(sc.countdownToBarClose);
+      const { bar, prevBar } = useCustomPriceLabel
+        ? priceLineBarForPane(pane, settingsStore, symbolInfo)
+        : {
+            bar: pane.hoverBar ?? visible.at(-1),
+            prevBar:
+              pane.hoverBar != null
+                ? pane.hoverPrev
+                : visible.length > 1
+                  ? visible.at(-2)
+                  : undefined,
+          };
       const options = {
-        lastValueVisible: Boolean(sc.symbolLabelValue),
-        priceLineVisible: Boolean(sc.symbolLabelLine),
+        lastValueVisible: useCustomPriceLabel ? false : Boolean(sc.symbolLabelValue),
+        priceLineVisible: useCustomPriceLabel ? false : Boolean(sc.symbolLabelLine),
         priceLineColor: resolveSymbolLineColor(sc, sym, bar, prevBar),
         priceLineWidth: Number(sc.symbolLabelLineWidth) || 1,
         title: sc.symbolLabelName ? pane.symbol : "",
       };
-      const key = `${options.lastValueVisible}|${options.priceLineVisible}|${options.priceLineColor}|${options.priceLineWidth}|${options.title}`;
+      const key = `${useCustomPriceLabel}|${options.lastValueVisible}|${options.priceLineVisible}|${options.priceLineWidth}|${options.title}`;
       if (paneStyleKeys.get(pane.index) === key) continue;
       paneStyleKeys.set(pane.index, key);
       pane.series.applyOptions(options);

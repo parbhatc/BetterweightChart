@@ -1,6 +1,6 @@
 /**
  * TradingView UDF-style datafeed for lightweight-charts.
- * Mirrors the Advanced Chart datafeed API surface (onReady, resolveSymbol, getBars, searchSymbols).
+ * Mirrors the UDF datafeed API surface (onReady, resolveSymbol, getBars, searchSymbols).
  */
 
 import { loadLastResolution } from "../ui/timeframe/favorites.js";

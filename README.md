@@ -120,7 +120,55 @@ const widget = await bootChart({
   countBack: 500,
 });
 
-// widget.chart, widget.series, widget.settings, widget.reload(), widget.setBars(), widget.setTheme()
+// widget.chart, widget.series, widget.settings — see Widget API below
+```
+
+### Widget API (`bootChart` return value)
+
+```javascript
+const widget = await bootChart({ mount: el, symbol: "NQ", bars: myBars });
+
+// Live updates
+widget.update({ time: 1710000060, open: 100, high: 101, low: 99, close: 100.5 });
+
+// History (getBars-style)
+const { bars } = await widget.fetchBars({ countBack: 200 });
+const { bars: older } = await widget.fetchBars({ to: bars[0].time - 60, countBack: 100 });
+await widget.loadMoreHistory(); // auto-prepends when panning left, or call manually
+
+// Navigation
+widget.setSymbol("ES");
+widget.setResolution("5");
+widget.reload();
+widget.reset();           // price + time + scroll to latest
+widget.reset({ price: false }); // time scale only
+
+widget.getBars();
+widget.getSymbol();
+widget.setBars(allBars);  // static/simple feeds
+widget.setTheme("light");
+widget.openSettings("symbol");
+```
+
+### Simple datafeed (easiest custom data)
+
+```javascript
+import { bootChart, createSimpleDatafeed } from "https://YOUR_HOST/chart/sdk.js";
+
+const feed = createSimpleDatafeed({
+  symbol: "BTC",
+  bars: myBars,
+  resolution: "5",
+  tick: 0.01,
+});
+
+const widget = await bootChart({ mount: el, datafeed: feed, symbol: "BTC" });
+
+// Live — updates chart if subscribed, or use widget.update()
+feed.push({ time: 1710000300, open: 64000, high: 64100, low: 63900, close: 64050 });
+
+// Or bypass feed stream:
+widget.update({ time: 1710000300, open: 64000, high: 64100, low: 63900, close: 64050 });
 ```
 
 ### Custom datafeed (your own candles)
@@ -216,6 +264,35 @@ const { controller } = mountDrawings({
 controller.setActiveTool("trend-line");
 controller.on("change", () => console.log(controller.getDrawings()));
 ```
+
+## Datafeed API
+
+| Feature | Status |
+|---------|--------|
+| `onReady` | Implemented |
+| `resolveSymbol` | Implemented |
+| `getBars` (countBack / from / to) | Implemented on feed + `widget.fetchBars()` |
+| `searchSymbols` | Implemented (UI + feed) |
+| `subscribeBars` / live stream | Proxy + static/simple `pushBar`; HTTP fake feed has no stream |
+| Scroll-back history (`loadMoreHistory`) | Implemented — prepends older bars when panning left |
+| `firstDataRequest` flag | Passed through types; server may ignore |
+| Quotes (`getQuotes`, `subscribeQuotes`) | Not implemented |
+| Timescale marks / chart marks | Not implemented |
+| Server time (`getServerTime`) | Not implemented |
+| Symbol info fields (expiry, units, etc.) | Partial — basics only |
+| Studies / indicators API | Not implemented (drawings only) |
+| Full UDF symbol group / currency | Partial |
+
+Your `getBars` handler receives `{ from, to, countBack, firstDataRequest }`. Return `{ bars, noData?: true }`.
+
+### Chart features
+
+| Feature | Status |
+|---------|--------|
+| Measure tool (A→B stats, click to dismiss) | Implemented |
+| Drawing copy/paste (Ctrl+C / Ctrl+V, context menu) | Implemented |
+| Multi-pane future whitespace growth | Implemented per pane |
+| Countdown to bar close (price axis) | Implemented |
 
 ## REST API
 

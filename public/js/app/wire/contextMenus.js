@@ -50,7 +50,8 @@ export function wireContextMenus(opts) {
       priceText: formatPrice(getCrosshairPrice()),
       drawingCount: getDrawingCount(),
       lockCursorByTime: getLockCursorByTime(),
-      canPaste: true,
+      canPaste: Boolean(getDrawing()?.hasDrawingClipboard?.()) || true,
+      hasSelectedDrawing: Boolean(getDrawing()?.getSelectedDrawing?.()),
     }),
     actions: {
       resetChart: resetChartView,
@@ -63,7 +64,11 @@ export function wireContextMenus(opts) {
           /* ignore */
         }
       },
+      copyDrawing: () => {
+        getDrawing()?.copySelectedDrawing?.();
+      },
       paste: async () => {
+        if (await getDrawing()?.pasteDrawingFromSystemClipboard?.()) return;
         try {
           const text = await navigator.clipboard.readText();
           const n = parseFloat(text.replace(/,/g, ""));

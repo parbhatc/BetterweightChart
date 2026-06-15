@@ -5,24 +5,23 @@ import {
   enforcePriceBarRatio,
   enforcePriceBarRatioOnPriceZoom,
 } from "../../chart/price/barRatio.js";
-import { renderStatusLine } from "../../chart/status/line.js";
 import { mountMarketStatusPopup } from "../../chart/market/status.js";
-import { barTimeLabel } from "../../chart/format.js";
 import { precisionFromSettings, priceFormatFromPrecisionSetting, resolveTimezone } from "../../chart/timezone/list.js";
 import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes } from "../../chart/settings/applier.js";
 import {
+  applyLiveBarToPaneSeries,
   barSecForPane,
   barsForPane,
   buildChartSeriesForPane,
   chartMapBarsForPane,
-  ensureFutureWhitespace as growFutureWhitespace,
   refreshPaneCandleData as refreshPaneCandles,
+  updateFormingBarOnPaneSeries,
 } from "../../chart/pane/data.js";
 import { measureVisiblePriceRange, snapTimeToNearestBar } from "../../chart/coords/timeScale.js";
 import { buildCandleSeriesData } from "../../chart/bar/data.js";
 import { withFutureWhitespace } from "../../chart/future/whitespace.js";
 import { createMultiPaneDrawingHub } from "../../drawings/multi/paneHub.js";
-import { SessionBackgroundPrimitive, isElectronicSession } from "../../primitives/session/background.js";
+import { isElectronicSession } from "../../primitives/session/background.js";
 import { createAppLoader } from "../../ui/loader/app.js";
 import { createChartSettings, mountChartSettings } from "../../ui/chart/settings.js";
 import { mountSymbolSearch } from "../../ui/symbol/search.js";
@@ -42,7 +41,6 @@ import { createLayoutSync } from "../layout/sync.js";
 import { wireContextMenus } from "../wire/contextMenus.js";
 import { applySymbolLineStyle } from "../symbol/lineStyle.js";
 import { createBarLoader } from "../bar/loader.js";
-import { rafThrottle, trackChartPanning } from "../../chart/pan/perf.js";
 import {
   chartDebug,
   chartDebugCount,
@@ -52,36 +50,12 @@ import {
   createPanFpsMonitor,
   installChartDebugGlobal,
 } from "../../debug/chart/index.js";
+import { barTimeLabel } from "../../chart/format.js";
+import { chartThemeFallback } from "./themes.js";
+import { createPaneExtras } from "./paneExtras.js";
+import { createChartWidgetApi } from "./widgetApi.js";
 
 export { readPageOptions };
-
-const CHART_THEMES = {
-  dark: {
-    bg: "#131722",
-    text: "#d1d4dc",
-    grid: "#1e222d",
-    border: "#2a2e39",
-    crosshair: "#758696",
-    labelBg: "#363a45",
-    up: "#089981",
-    down: "#f23645",
-  },
-  light: {
-    bg: "#ffffff",
-    text: "#131722",
-    grid: "#f0f3fa",
-    border: "#e0e3eb",
-    crosshair: "#9598a1",
-    labelBg: "#131722",
-    up: "#089981",
-    down: "#f23645",
-  },
-};
-
-/** @param {string} [mode] */
-function chartThemeFallback(mode) {
-  return CHART_THEMES[mode === "light" ? "light" : "dark"];
-}
 
 /**
  * Boot the chart widget. Safe to call from index or embed pages.
@@ -139,15 +113,6 @@ export async function bootChart(overrides = {}) {
   }
   /** @type {object | null} */
   let symbolInfo = null;
-  /** @type {object | undefined} */
-  let hoverBar;
-  /** @type {object | undefined} */
-  let hoverPrev;
-  /** @type {number | null} */
-  let crosshairPrice = null;
-  let lockCursorByTime = false;
-  /** @type {number | null} */
-  let lockedCrosshairTime = null;
   /** @type {ReturnType<typeof createMultiPaneDrawingHub> | null} */
   let drawingHub = null;
   /** @type {ReturnType<typeof createMultiPaneDrawingHub>["facade"] | null} */
@@ -289,6 +254,7 @@ export async function bootChart(overrides = {}) {
    *   futureWhitespaceBars?: number | null,
    *   statusEl?: HTMLElement | null,
    *   sessionBg?: import("../primitives/sessionBackgroundPrimitive.js").SessionBackgroundPrimitive,
+   *   priceLineLabel?: object,
    *   hoverBar?: object,
    *   hoverPrev?: object,
    *   timeToIdx?: Map<number, number>,
@@ -339,25 +305,6 @@ export async function bootChart(overrides = {}) {
 
   const panFps = createPanFpsMonitor();
 
-  chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-    chartDebugCount("perf", "visibleRange");
-    chartDebugTime("perf", "visibleRangeHandler", () => {
-      maintainLockedRatio();
-      if (layoutManager?.getSync().dateRange) syncLayoutDateRangeFrom(chart);
-
-      const r = chart.timeScale().getVisibleLogicalRange();
-      const realCount = bars.length;
-      if (!r || r.to < realCount - 16) return;
-
-      if (growWhitespaceScheduled) return;
-      growWhitespaceScheduled = true;
-      requestAnimationFrame(() => {
-        growWhitespaceScheduled = false;
-        chartDebugTime("whitespace", "ensureFutureWhitespace", () => ensureFutureWhitespace());
-      });
-    });
-  });
-
   el.addEventListener(
     "wheel",
     (ev) => {
@@ -391,27 +338,24 @@ export async function bootChart(overrides = {}) {
     statusEl: statusEl ?? null,
     timeToIdx: new Map(),
   });
+  const ui = {
+    get barsLoading() {
+      return barsLoading;
+    },
+    set barsLoading(v) {
+      barsLoading = v;
+    },
+    chartPanning: false,
+    hoverBar: undefined,
+    hoverPrev: undefined,
+    crosshairPrice: null,
+    lockCursorByTime: false,
+    lockedCrosshairTime: null,
+  };
   let barsLoading = true;
   let timeToIdx = new Map();
   /** @type {number | null} */
   let futureWhitespaceBars = null;
-  let growWhitespaceScheduled = false;
-  let chartPanning = false;
-  /** @type {Map<number, object>} */
-  const pendingStatusPanes = new Map();
-
-  const flushPendingStatusLines = () => {
-    for (const pane of pendingStatusPanes.values()) refreshPaneStatusLine(pane);
-    pendingStatusPanes.clear();
-  };
-
-  const scheduleStatusLine = rafThrottle((/** @type {object} */ pane) => {
-    if (chartPanning) {
-      pendingStatusPanes.set(pane.index, pane);
-      return;
-    }
-    refreshPaneStatusLine(pane);
-  });
 
   function barSecForPaneLocal(pane) {
     return barSecForPane(pane, resolutions);
@@ -446,159 +390,49 @@ export async function bootChart(overrides = {}) {
     return withFutureWhitespace(candles, barSec(), ws);
   }
 
-  function ensureFutureWhitespace() {
-    growFutureWhitespace({
-      chart,
-      series,
-      barsForChart,
-      buildChartSeriesForDisplay,
-      getFutureWhitespaceBars: () => futureWhitespaceBars,
-      setFutureWhitespaceBars: (n) => {
-        futureWhitespaceBars = n;
-      },
-      requestAllSessionBgRefresh,
-    });
-  }
+  const { syncLayoutDateRangeFrom, syncLayoutCrosshairFrom, wireLayoutPaneSync } = createLayoutSync({
+    getLayoutManager: () => layoutManager,
+    getLayoutCharts,
+  });
 
-  function requestAllSessionBgRefresh() {
+  function applySymbolLineStyleLocal() {
+    applySymbolLineStyle({ settingsStore, getAllChartPanes, symbolInfo });
     for (const pane of getAllChartPanes()) {
-      pane.sessionBg?.requestRefresh();
+      pane.priceLineLabel?.requestRefresh();
     }
   }
 
-  /** @param {ChartPane} pane */
-  function attachSessionBackground(pane) {
-    const bg = new SessionBackgroundPrimitive();
-    bg.setSettingsProvider(() => settingsStore.get().symbol ?? {});
-    bg.setSymbolProvider(() => pane.symbolInfo ?? symbolInfo);
-    bg.setContextProvider(() => ({
-      bars: barsForPane(pane, settingsStore, symbolInfo),
-      barSec: barSecForPaneLocal(pane),
-    }));
-    pane.series.attachPrimitive(bg);
-    pane.sessionBg = bg;
-  }
+  const viewportDeps = {
+    maintainLockedRatio: null,
+    syncLayoutDateRangeFrom: null,
+    getLayoutManager: () => layoutManager,
+    prependHistory: null,
+    setPrimaryFutureWhitespace: (n) => {
+      futureWhitespaceBars = n;
+    },
+  };
 
-  /** @param {ChartPane} pane @param {number} time */
-  function statusBarAtTime(pane, time) {
-    const idx = pane.timeToIdx?.get(time);
-    if (idx == null) return undefined;
-    return barsForPane(pane, settingsStore, symbolInfo)[idx];
-  }
+  const paneExtras = createPaneExtras({
+    settingsStore,
+    symbolInfo,
+    resolutions,
+    barsForPane: (pane) => barsForPane(pane, settingsStore, symbolInfo),
+    barSecForPane: barSecForPaneLocal,
+    getLayoutManager: () => layoutManager,
+    getActivePane,
+    getAllChartPanes,
+    panFps,
+    syncLayoutCrosshairFrom,
+    applySymbolLineStyleLocal,
+    ui,
+    viewportDeps,
+  });
 
-  /** @param {ChartPane} pane */
-  function refreshPaneStatusLine(pane) {
-    if (!pane.statusEl) return;
-    if (barsLoading || !pane.bars.length) {
-      pane.statusEl.innerHTML = "";
-      return;
-    }
-    const visible = barsForPane(pane, settingsStore, symbolInfo);
-    const rawBar = pane.hoverBar ?? visible.at(-1);
-    const bar = rawBar?.time != null ? (statusBarAtTime(pane, rawBar.time) ?? rawBar) : rawBar;
-    const prev =
-      pane.hoverBar != null
-        ? pane.hoverPrev
-        : visible.length > 1
-          ? visible.at(-2)
-          : undefined;
-    renderStatusLine(pane.statusEl, {
-      symbol: pane.symbol,
-      symbolInfo: pane.symbolInfo,
-      resolution: pane.resolution,
-      bar,
-      prevBar: prev,
-      settings: settingsStore.get(),
-    });
-  }
-
-  /** @param {ChartPane} pane */
-  function wirePaneCrosshair(pane) {
-    pane.chart.subscribeCrosshairMove((param) => {
-      if (chartPanning) {
-        chartDebugCount("crosshair", "skippedPan");
-        return;
-      }
-      chartDebugCount("crosshair", "move");
-
-      if (!chartPanning) syncLayoutCrosshairFrom(pane.chart, pane.series, param);
-
-      const isActive = pane.index === (layoutManager?.getActivePaneIndex() ?? 0);
-
-      if (isActive && lockCursorByTime && lockedCrosshairTime != null && param?.point) {
-        const price = pane.series.coordinateToPrice(param.point.y);
-        if (price != null) pane.chart.setCrosshairPosition(price, lockedCrosshairTime, pane.series);
-      }
-
-      if (isActive && !chartPanning) {
-        if (param?.point) {
-          const p = pane.series.coordinateToPrice(param.point.y);
-          crosshairPrice = p != null && Number.isFinite(p) ? p : null;
-        } else {
-          crosshairPrice = null;
-        }
-      }
-
-      const seriesBar = param.seriesData?.get(pane.series);
-      const seriesOhlc = seriesBar && "open" in seriesBar ? seriesBar : null;
-
-      if (!param?.time) {
-        pane.hoverBar = undefined;
-        pane.hoverPrev = undefined;
-        if (isActive) {
-          hoverBar = undefined;
-          hoverPrev = undefined;
-          applySymbolLineStyleLocal();
-        }
-        scheduleStatusLine(pane);
-        return;
-      }
-
-      const visible = barsForPane(pane, settingsStore, symbolInfo);
-      const idx = pane.timeToIdx?.get(param.time);
-      let nextBar = idx != null ? visible[idx] : undefined;
-      let prevBar = idx != null && idx > 0 ? visible[idx - 1] : undefined;
-      if (!nextBar) {
-        nextBar = seriesOhlc ?? undefined;
-        if (!nextBar) return;
-      }
-
-      const barChanged = pane.hoverBar?.time !== nextBar.time;
-      pane.hoverBar = nextBar;
-      pane.hoverPrev = prevBar;
-      if (isActive) {
-        hoverBar = pane.hoverBar;
-        hoverPrev = pane.hoverPrev;
-        if (barChanged) applySymbolLineStyleLocal();
-      }
-      scheduleStatusLine(pane);
-    });
-  }
-
-  /** @param {ChartPane} pane */
-  function wirePanePanPerf(pane) {
-    trackChartPanning(pane.el, {
-      onStart: () => {
-        chartPanning = true;
-        panFps.start();
-      },
-      onEnd: () => {
-        chartPanning = false;
-        panFps.stop();
-        flushPendingStatusLines();
-        const active = getActivePane();
-        if (active) scheduleStatusLine(active);
-      },
-    });
-  }
-
-  /** @param {ChartPane} pane @param {HTMLElement} [statusLineEl] */
-  function setupPaneExtras(pane, statusLineEl) {
-    if (statusLineEl) pane.statusEl = statusLineEl;
-    attachSessionBackground(pane);
-    wirePanePanPerf(pane);
-    wirePaneCrosshair(pane);
-  }
+  const {
+    setupPaneExtras,
+    refreshPaneStatusLine,
+    refreshStatusLine,
+  } = paneExtras;
 
   setupPaneExtras(chartPanes.get(0), statusEl ?? undefined);
 
@@ -612,12 +446,9 @@ export async function bootChart(overrides = {}) {
   function refreshCandleData() {
     for (const pane of getAllChartPanes()) {
       refreshPaneCandleData(pane);
+      pane.priceLineLabel?.requestRefresh();
     }
     applySymbolLineStyleLocal();
-  }
-
-  function applySymbolLineStyleLocal() {
-    applySymbolLineStyle({ settingsStore, getAllChartPanes, symbolInfo });
   }
 
   function applyChartTimezone() {
@@ -668,11 +499,8 @@ export async function bootChart(overrides = {}) {
     refreshCandleData();
     applyChartTimezone();
     refreshStatusLine();
-  }
-
-  function refreshStatusLine() {
     for (const pane of getAllChartPanes()) {
-      refreshPaneStatusLine(pane);
+      pane.priceLineLabel?.requestRefresh();
     }
   }
 
@@ -687,11 +515,6 @@ export async function bootChart(overrides = {}) {
   }
   settingsStore.onChange(applyChartSettings);
   applyChartSettingsFn = applyChartSettings;
-
-  const { syncLayoutDateRangeFrom, syncLayoutCrosshairFrom, wireLayoutPaneSync } = createLayoutSync({
-    getLayoutManager: () => layoutManager,
-    getLayoutCharts,
-  });
 
   /** @param {number} index */
   function switchActivePane(index) {
@@ -764,27 +587,40 @@ export async function bootChart(overrides = {}) {
     scheduleAutosaveLayout();
   }
 
-  const { loadPaneBars, loadBarsForPanes, loadBars: loadBarsAll } = createBarLoader({
+  const { loadPaneBars, loadBarsForPanes, loadBars: loadBarsAll, pushLiveBar, prependHistory } =
+    createBarLoader({
     datafeed,
     countBack: opts.countBack,
     getLayoutManager: () => layoutManager,
     loader,
     refreshPaneCandleData,
-    settingsStore,
+    applyLiveBarToPane: (pane) =>
+      applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions),
+    updateFormingBarOnPane: (pane, bar) =>
+      updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInfo),
+    getBarSecForPane: (pane) => barSecForPaneLocal(pane),
     setBarsLoading: (v) => {
       barsLoading = v;
+      ui.barsLoading = v;
     },
     refreshStatusLine,
     getActivePaneIndex: () => layoutManager?.getActivePaneIndex() ?? 0,
     setHoverState: (bar, prev) => {
-      hoverBar = bar;
-      hoverPrev = prev;
+      ui.hoverBar = bar;
+      ui.hoverPrev = prev;
     },
     setPrimaryBars: (pane) => {
       bars = pane.bars;
       futureWhitespaceBars = pane.futureWhitespaceBars;
     },
+    onPaneBarUpdate: (pane) => {
+      pane.priceLineLabel?.requestRefresh();
+    },
   });
+
+  viewportDeps.maintainLockedRatio = maintainLockedRatio;
+  viewportDeps.syncLayoutDateRangeFrom = syncLayoutDateRangeFrom;
+  viewportDeps.prependHistory = prependHistory;
 
   async function loadBars() {
     return loadBarsAll(getAllChartPanes, () => getActivePane() ?? chartPanes.get(0));
@@ -887,6 +723,7 @@ export async function bootChart(overrides = {}) {
           bars: [],
           index: paneIndex,
           destroy: () => {
+            paneState.priceLineLabel?.destroy();
             drawingHub?.detachPane(paneIndex);
             chartPanes.delete(paneIndex);
             paneChart.chart.remove();
@@ -955,21 +792,21 @@ export async function bootChart(overrides = {}) {
     resetTimeScale,
     getState: {
       getSymbol: () => symbol,
-      getCrosshairPrice: () => crosshairPrice,
+      getCrosshairPrice: () => ui.crosshairPrice,
       formatPrice,
       getDrawingCount: () => drawing?.getCount?.() ?? 0,
-      getLockCursorByTime: () => lockCursorByTime,
-      getHoverBar: () => hoverBar,
+      getLockCursorByTime: () => ui.lockCursorByTime,
+      getHoverBar: () => ui.hoverBar,
       getBars: () => bars,
-      getLockedCrosshairTime: () => lockedCrosshairTime,
+      getLockedCrosshairTime: () => ui.lockedCrosshairTime,
       setCrosshairPrice: (n) => {
-        crosshairPrice = n;
+        ui.crosshairPrice = n;
       },
       setLockCursorByTime: (v) => {
-        lockCursorByTime = v;
+        ui.lockCursorByTime = v;
       },
       setLockedCrosshairTime: (t) => {
-        lockedCrosshairTime = t;
+        ui.lockedCrosshairTime = t;
       },
       getDrawing: () => drawing,
     },
@@ -1097,30 +934,35 @@ export async function bootChart(overrides = {}) {
         panes: getAllChartPanes().length,
       });
     }
-    return {
+    return createChartWidgetApi({
       datafeed,
       chart,
       series,
-      settings: settingsStore,
-      openSettings: (section) => mountChartSettingsUi().open(section),
-      getBars: () => bars,
-      getSymbol: () => symbol,
-      getResolution: () => resolution,
-      reload: () => loadBars(),
-      /** Push new candles when using createStaticDatafeed or a feed with setBars(). */
-      async setBars(newBars, sym = symbol) {
-        if (typeof datafeed.setBars !== "function") {
-          throw new Error("setBars requires a static or custom datafeed with setBars()");
-        }
-        datafeed.setBars(sym, newBars);
-        await loadBars();
-      },
-      setTheme(mode) {
-        applyThemeMode(mode);
-      },
-      lastBar: last,
+      settingsStore,
+      getActivePane,
+      getAllChartPanes,
+      getBarsSnapshot: () => getActivePane()?.bars ?? bars,
+      getSymbol: () => getActivePane()?.symbol ?? symbol,
+      getResolution: () => getActivePane()?.resolution ?? resolution,
+      getSymbolInfo: () => getActivePane()?.symbolInfo ?? symbolInfo,
+      loadBars,
+      loadPaneBars,
+      loadBarsForPanes,
+      pushLiveBar,
+      prependHistory,
+      resetChartView,
+      resetTimeScale,
+      scrollToLatest,
+      applyThemeMode,
+      applySymbolFormat,
+      refreshWatermark,
+      refreshStatusLine,
       barTimeLabel,
-    };
+      mountChartSettingsUi,
+      layoutManager,
+      lastBar: last,
+      countBack: opts.countBack,
+    });
   } finally {
     loader.hide();
     document.getElementById("app-loader")?.classList.add("app-loader--hidden");

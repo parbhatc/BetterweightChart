@@ -17,6 +17,7 @@ const ICONS = {
  *   drawingCount: number,
  *   lockCursorByTime: boolean,
  *   canPaste: boolean,
+ *   hasSelectedDrawing: boolean,
  * }} MenuState
  */
 
@@ -24,6 +25,7 @@ const ICONS = {
  * @typedef {{
  *   resetChart: () => void,
  *   copyPrice: () => void,
+ *   copyDrawing: () => void,
  *   paste: () => void,
  *   toggleLockCursor: () => void,
  *   removeDrawings: () => void,
@@ -90,6 +92,7 @@ export function mountChartContextMenu(opts) {
       ${rowItem({ id: "reset", label: "Reset chart view", shortcut: "Alt + R", icon: ICONS.reset })}
       ${rowDivider()}
       ${rowItem({ id: "copy-price", label: copyLabel })}
+      ${s.hasSelectedDrawing ? rowItem({ id: "copy-drawing", label: "Copy drawing", shortcut: "Ctrl + C" }) : ""}
       ${rowItem({ id: "paste", label: "Paste", shortcut: "Ctrl + V", disabled: !s.canPaste })}
       ${rowDivider()}
       ${rowItem({
@@ -125,6 +128,9 @@ export function mountChartContextMenu(opts) {
         break;
       case "copy-price":
         actions.copyPrice();
+        break;
+      case "copy-drawing":
+        actions.copyDrawing?.();
         break;
       case "paste":
         actions.paste();
@@ -167,6 +173,14 @@ export function mountChartContextMenu(opts) {
       ev.preventDefault();
       actions.resetChart();
       close();
+    }
+    if (ev.ctrlKey && ev.key.toLowerCase() === "c" && !root.hidden) {
+      const s = getState();
+      if (s.hasSelectedDrawing) {
+        ev.preventDefault();
+        actions.copyDrawing?.();
+        close();
+      }
     }
     if (ev.ctrlKey && ev.key.toLowerCase() === "v" && !root.hidden) {
       ev.preventDefault();

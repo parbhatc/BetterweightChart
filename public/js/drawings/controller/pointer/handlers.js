@@ -28,6 +28,12 @@ import {
   disjointChannelPointerMove,
 } from "../placement/disjointChannel.js";
 
+/** @param {{ start: { time: number, price: number }, end: { time: number, price: number } } | null} overlay */
+function isMeasureComplete(overlay) {
+  if (!overlay?.start || !overlay?.end) return false;
+  return overlay.start.time !== overlay.end.time || overlay.start.price !== overlay.end.price;
+}
+
 /** @param {import("../types.js").UserDrawing} drawing */
 function positionMoveDragExtras(drawing) {
   if (!isPositionTool(drawing.type)) return {};
@@ -49,6 +55,13 @@ export function createPointerHandlers(api) {
 
     const existingMeasure = api.getMeasureOverlay();
     const wantsMeasure = api.getMeasureMode() || (api.isCursorTool() && ev.shiftKey);
+
+    if (existingMeasure && isMeasureComplete(existingMeasure)) {
+      api.setMeasureOverlay(null);
+      api.syncChartPointerHandling();
+      return;
+    }
+
     if (existingMeasure && !wantsMeasure) {
       api.setMeasureOverlay(null);
       api.syncChartPointerHandling();

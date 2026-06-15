@@ -75,7 +75,12 @@ function normalizeConfig(cfg) {
  * @param {(userInput: string, exchange?: string, symbolType?: string, limit?: number) => object[] | Promise<object[]>} [handlers.searchSymbols]
  * @param {(...args: unknown[]) => void} [handlers.subscribeBars]
  * @param {(...args: unknown[]) => void} [handlers.unsubscribeBars]
- * @returns {Datafeed & { setBars?: (symbol: string, bars: Bar[]) => void }}
+ * @returns {Datafeed & {
+ *   setBars?: (symbol: string, bars: Bar[]) => void,
+ *   getBarsFor?: (symbol: string) => Bar[],
+ *   pushBar?: (bar: Bar, symbol?: string) => Bar | null,
+ *   updateBar?: (bar: Bar, symbol?: string) => Bar | null,
+ * }}
  */
 export function createCustomDatafeed(handlers) {
   const {
@@ -207,6 +212,9 @@ export function createStaticDatafeed(opts = {}) {
     };
   }
 
+  /** @type {Map<string, { onTick: (bar: Bar) => void, symbol: string }>} */
+  const streamSubs = new Map();
+
   const feed = createCustomDatafeed({
     onReady: () => ({
       supported_resolutions: resolutions.map((r) => r.id),
@@ -250,7 +258,50 @@ export function createStaticDatafeed(opts = {}) {
       if (!rows?.length) return { bars: [], noData: true };
       return { bars: sliceBars(rows, periodParams) };
     },
+
+    subscribeBars(symbolInfo, _resolution, onTick, subscriberUID) {
+      streamSubs.set(subscriberUID, { onTick, symbol: String(symbolInfo.ticker || symbolInfo.name).toUpperCase() });
+    },
+
+    unsubscribeBars(subscriberUID) {
+      streamSubs.delete(subscriberUID);
+    },
   });
+
+  function emitBar(sym, bar) {
+    const n = normalizeBar(bar);
+    for (const sub of streamSubs.values()) {
+      if (sub.symbol === sym) sub.onTick(n);
+    }
+  }
+
+  /**
+   * @param {string} sym
+   * @param {Partial<Bar> & { time: number }} bar
+   * @returns {Bar | null}
+   */
+  function upsertBar(sym, bar) {
+    const key = String(sym).toUpperCase();
+    if (!barsBySymbol[key]) {
+      barsBySymbol[key] = [];
+      metaBySymbol[key] = { name: key, exchange: opts.exchange ?? "CUSTOM", type: opts.type ?? "stock", tick: opts.tick ?? 0.01 };
+    }
+    const rows = barsBySymbol[key];
+    const n = normalizeBar(bar);
+    const last = rows[rows.length - 1];
+    if (last?.time === n.time) {
+      rows[rows.length - 1] = n;
+    } else if (!last || n.time > last.time) {
+      rows.push(n);
+    } else {
+      return null;
+    }
+    emitBar(key, n);
+    return n;
+  }
+
+  feed.pushBar = (bar, sym = symbol) => upsertBar(sym, bar);
+  feed.updateBar = (bar, sym = symbol) => upsertBar(sym, bar);
 
   feed.setBars = (sym, rows) => {
     const key = String(sym).toUpperCase();
