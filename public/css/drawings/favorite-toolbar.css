@@ -1,0 +1,115 @@
+.tv-floating-toolbar {
+  position: fixed;
+  z-index: 20;
+  pointer-events: auto;
+}
+
+.tv-floating-toolbar[hidden] {
+  display: none !important;
+}
+
+.tv-floating-toolbar__widget-wrapper {
+  display: flex;
+  align-items: stretch;
+  background: var(--tv-surface);
+  border: 1px solid var(--tv-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px color-mix(in srgb, #000 45%, transparent);
+  overflow: hidden;
+}
+
+.tv-floating-toolbar.is-dragging .tv-floating-toolbar__widget-wrapper {
+  cursor: grabbing;
+}
+
+.tv-floating-toolbar__drag {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--tv-muted);
+  cursor: grab;
+  touch-action: none;
+  background: color-mix(in srgb, var(--tv-bg) 40%, var(--tv-surface));
+  border-right: 1px solid var(--tv-border);
+}
+
+.tv-floating-toolbar__drag:hover {
+  color: var(--tv-text);
+}
+
+.tv-floating-toolbar__content {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px;
+  min-height: 36px;
+}
+
+.tv-floating-toolbar__widget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tv-favorited-drawings-toolbar__widget {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.tv-favorited-drawings-toolbar__widget:hover {
+  color: var(--tv-text);
+  background: color-mix(in srgb, var(--tv-text) 6%, transparent);
+}
+
+.tv-favorited-drawings-toolbar__widget.is-active {
+  color: var(--tv-accent);
+  background: color-mix(in srgb, var(--tv-accent) 16%, transparent);
+  box-shadow: inset 0 0 0 2px var(--tv-accent);
+}
+
+.tv-favorited-drawings-toolbar__widget .draw-tools__icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.draw-tools__fav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.draw-tools__flyout-item:hover .draw-tools__fav-btn,
+.draw-tools__fav-btn.is-fav {
+  opacity: 1;
+}
+
+.draw-tools__fav-btn:hover {
+  color: var(--tv-text);
+  background: color-mix(in srgb, var(--tv-text) 8%, transparent);
+}
+
+.draw-tools__fav-btn.is-fav {
+  color: #f2b01e;
+}

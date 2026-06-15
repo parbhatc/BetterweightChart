@@ -1,0 +1,43 @@
+{
+  "name": "betterweightchart",
+  "version": "1.0.0",
+  "description": "TradingView-style chart on lightweight-charts with 68 drawing tools",
+  "private": false,
+  "type": "module",
+  "exports": {
+    ".": "./public/js/sdk.js",
+    "./chart": "./public/chart/sdk.js",
+    "./api": "./public/chart/api.js",
+    "./app": "./public/chart/app.js"
+  },
+  "files": [
+    "public",
+    "server",
+    "scripts"
+  ],
+  "scripts": {
+    "postinstall": "node scripts/sync-vendor.mjs",
+    "vendor": "node scripts/sync-vendor.mjs",
+    "start": "node server/index.mjs",
+    "dev": "nodemon server/index.mjs"
+  },
+  "dependencies": {
+    "lightweight-charts": "^5.0.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/parbhatc/BetterweightChart.git"
+  },
+  "keywords": [
+    "lightweight-charts",
+    "tradingview",
+    "chart",
+    "drawings",
+    "ohlc"
+  ],
+  "license": "MIT"
+}
+

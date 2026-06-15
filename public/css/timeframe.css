@@ -1,0 +1,227 @@
+.tv-tf__bar {
+  display: flex;
+  align-items: center;
+  gap: 0.05rem;
+}
+
+.tv-tf__favorites,
+.tv-tf__overflow {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.tv-tf__btn {
+  border: none;
+  background: transparent;
+  color: var(--tv-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.25rem 0.42rem;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 1.85rem;
+  line-height: 1.2;
+}
+
+.tv-tf__btn:hover {
+  background: var(--tv-surface);
+  color: var(--tv-text);
+}
+
+.tv-tf__btn.is-active {
+  background: color-mix(in srgb, var(--tv-accent) 18%, transparent);
+  color: var(--tv-accent);
+}
+
+.tv-tf__menu-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: width 0.15s ease, opacity 0.12s ease, margin 0.15s ease;
+}
+
+.tv-tf:hover .tv-tf__menu-wrap,
+.tv-tf--open .tv-tf__menu-wrap,
+.tv-tf__bar:hover .tv-tf__menu-wrap,
+.tv-tf__bar--open .tv-tf__menu-wrap,
+.tv-tf__bar:focus-within .tv-tf__menu-wrap {
+  width: 1.05rem;
+  margin-left: 0.05rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tv-tf__menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tv-tf__menu-btn svg {
+  display: block;
+  opacity: 0.85;
+}
+
+.tv-tf:hover .tv-tf__menu-btn:hover,
+.tv-tf--open .tv-tf__menu-btn,
+.tv-tf__bar:hover .tv-tf__menu-btn:hover,
+.tv-tf__bar--open .tv-tf__menu-btn {
+  background: color-mix(in srgb, var(--tv-text) 8%, transparent);
+  color: var(--tv-text);
+}
+
+.tv-tf__menu-btn:hover svg {
+  opacity: 1;
+}
+
+.tv-tf__panel {
+  position: fixed;
+  z-index: 450;
+  width: 14.5rem;
+  background: var(--tv-surface);
+  border: 1px solid var(--tv-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 20px color-mix(in srgb, #000 40%, transparent);
+  color: var(--tv-text);
+  font-size: 0.8rem;
+  overflow: hidden;
+}
+
+.tv-tf__panel[hidden] {
+  display: none !important;
+}
+
+.tv-tf__panel-scroll {
+  max-height: inherit;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  padding: 0.25rem 0;
+}
+
+.tv-tf__panel-scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.tv-tf__panel-scroll::-webkit-scrollbar-thumb {
+  background: var(--tv-border);
+  border-radius: 3px;
+}
+
+.tv-tf__group-divider {
+  height: 1px;
+  margin: 0.25rem 0.5rem;
+  background: var(--tv-border);
+}
+
+.tv-tf__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--tv-muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.45rem 0.65rem;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tv-tf__group-head:hover {
+  color: var(--tv-text);
+  background: color-mix(in srgb, var(--tv-text) 4%, transparent);
+}
+
+.tv-tf__group-chev {
+  display: flex;
+  color: var(--tv-muted);
+  transition: transform 0.15s ease;
+}
+
+.tv-tf__group-chev.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.tv-tf__group-body[hidden] {
+  display: none;
+}
+
+.tv-tf__interval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.32rem 0.45rem 0.32rem 0.85rem;
+  cursor: pointer;
+  border-radius: 2px;
+  margin: 0 0.25rem;
+}
+
+.tv-tf__interval:hover {
+  background: color-mix(in srgb, var(--tv-accent) 10%, transparent);
+}
+
+.tv-tf__interval.is-active {
+  background: color-mix(in srgb, var(--tv-accent) 16%, transparent);
+  color: var(--tv-accent);
+}
+
+.tv-tf__interval-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tv-tf__fav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.65rem;
+  height: 1.65rem;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+  opacity: 0;
+  flex-shrink: 0;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.tv-tf__interval:hover .tv-tf__fav-btn,
+.tv-tf__fav-btn.is-fav {
+  opacity: 1;
+}
+
+.tv-tf__fav-btn:hover {
+  color: #f57c00;
+  background: color-mix(in srgb, #f57c00 12%, transparent);
+}
+
+.tv-tf__fav-btn.is-fav {
+  color: #f57c00;
+}
+
+.tv-tf__fav-btn svg {
+  display: block;
+}

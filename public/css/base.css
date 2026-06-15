@@ -1,0 +1,72 @@
+:root,
+[data-theme="dark"] {
+  --tv-bg: #131722;
+  --tv-surface: #1e222d;
+  --tv-border: #2a2e39;
+  --tv-text: #d1d4dc;
+  --tv-muted: #787b86;
+  --tv-accent: #2962ff;
+  --tv-up: #089981;
+  --tv-down: #f23645;
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --tv-bg: #ffffff;
+  --tv-surface: #f0f3fa;
+  --tv-border: #e0e3eb;
+  --tv-text: #131722;
+  --tv-muted: #787b86;
+  --tv-accent: #2962ff;
+  --tv-up: #089981;
+  --tv-down: #f23645;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  background: var(--tv-bg);
+  color: var(--tv-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.tv-app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+}
+
+.tv-app--embed .tv-app {
+  height: 100%;
+}
+
+.tv-workspace {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.tv-workspace--embed,
+.tv-workspace--no-draw {
+  min-height: 0;
+}
+
+.tv-workspace--no-draw .drawing-toolbar {
+  display: none;
+}
+
+[hidden] {
+  display: none !important;
+}

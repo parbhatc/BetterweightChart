@@ -1,0 +1,33 @@
+.tv-tz-clock {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+
+.tv-tz-clock__btn {
+  border: none;
+  background: transparent;
+  color: var(--tv-muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  padding: 0.25rem 0.45rem;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+.tv-tz-clock__btn:hover {
+  color: var(--tv-text);
+  background: color-mix(in srgb, var(--tv-text) 8%, transparent);
+}
+
+.ctx-menu--tz {
+  position: fixed;
+  left: auto;
+  min-width: 14rem;
+  max-width: 16rem;
+  max-height: min(58vh, 24rem);
+  z-index: 420;
+}
