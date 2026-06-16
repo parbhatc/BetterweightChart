@@ -38,10 +38,10 @@ export class UserDrawingsPrimitive {
     this._getContext = fn;
   }
 
-  /** @param {UserDrawing[]} drawings */
-  setDrawings(drawings) {
+  /** @param {UserDrawing[]} drawings @param {{ skipPriceLines?: boolean }} [opts] */
+  setDrawings(drawings, opts = {}) {
     this._drawings = drawings ?? [];
-    this._syncPriceLines();
+    if (!opts.skipPriceLines) this._syncPriceLines();
     this._requestUpdate?.();
   }
 
@@ -63,10 +63,10 @@ export class UserDrawingsPrimitive {
     this._requestUpdate?.();
   }
 
-  /** @param {boolean} hidden */
-  setDrawingsHidden(hidden) {
+  /** @param {boolean} hidden @param {{ skipPriceLines?: boolean }} [opts] */
+  setDrawingsHidden(hidden, opts = {}) {
     this._drawingsHidden = Boolean(hidden);
-    this._syncPriceLines();
+    if (!opts.skipPriceLines) this._syncPriceLines();
     this._requestUpdate?.();
   }
 
@@ -79,10 +79,10 @@ export class UserDrawingsPrimitive {
     });
   }
 
-  /** @param {string | null} id */
-  setSelectedId(id) {
+  /** @param {string | null} id @param {{ skipPriceLines?: boolean }} [opts] */
+  setSelectedId(id, opts = {}) {
     this._selectedId = id;
-    this._syncPriceLines();
+    if (!opts.skipPriceLines) this._syncPriceLines();
     this._requestUpdate?.();
   }
 

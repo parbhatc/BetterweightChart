@@ -12,7 +12,9 @@ import { chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
 import {
   buildChartSeriesForPane,
   ensureFutureWhitespace as growFutureWhitespace,
+  applyLiveBarToPaneSeries,
 } from "../../chart/pane/data.js";
+import { CHART_FUTURE_WHITESPACE_MIN } from "../../chart/future/whitespace.js";
 
 /**
  * @param {object} deps
@@ -30,6 +32,7 @@ export function createPaneExtras(deps) {
     panFps,
     syncLayoutCrosshairFrom,
     applySymbolLineStyleLocal,
+    getDrawingHub,
     ui,
     viewportDeps,
   } = deps;
@@ -142,7 +145,17 @@ export function createPaneExtras(deps) {
       }
       chartDebugCount("crosshair", "move");
 
-      if (!ui.chartPanning) syncLayoutCrosshairFrom(pane.chart, pane.series, param);
+      if (!ui.chartPanning && pane.bars.length) {
+        const hub = getDrawingHub?.();
+        if (hub?.shouldUseGlobalCrosshair?.()) {
+          const ctrl = hub.getController?.(pane.index);
+          if (!hub.isCrosshairEcho?.(pane.chart) && !ctrl?.isApplyingCrosshairSync?.()) {
+            hub.publishGlobalCrosshairFromLayout(pane, param);
+          }
+        } else {
+          syncLayoutCrosshairFrom(pane.chart, pane.series, param);
+        }
+      }
 
       const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
 
@@ -234,6 +247,23 @@ export function createPaneExtras(deps) {
         buildChartSeriesForPane(pane, vis, settingsStore, resolutions),
       getFutureWhitespaceBars: () => pane.futureWhitespaceBars,
       setFutureWhitespaceBars: (n) => {
+        const all = getAllChartPanes();
+        const multi = all.length > 1;
+        if (multi) {
+          const maxN = Math.max(
+            n,
+            ...all.map((p) => p.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN),
+          );
+          for (const p of all) {
+            const prev = p.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
+            p.futureWhitespaceBars = maxN;
+            if (p.index === 0) viewportDeps?.setPrimaryFutureWhitespace?.(maxN);
+            if (p !== pane && p.bars.length && maxN > prev && !ui.barsLoading) {
+              applyLiveBarToPaneSeries(p, settingsStore, symbolInfo, resolutions);
+            }
+          }
+          return;
+        }
         pane.futureWhitespaceBars = n;
         if (pane.index === 0) viewportDeps?.setPrimaryFutureWhitespace?.(n);
       },
@@ -245,8 +275,8 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane */
   function scheduleWhitespaceGrow(pane) {
-    if (ui.chartPanning) {
-      deferWhitespacePane = pane;
+    if (ui.barsLoading || ui.chartPanning) {
+      if (ui.chartPanning) deferWhitespacePane = pane;
       return;
     }
     ensurePaneFutureWhitespace(pane);
@@ -257,6 +287,7 @@ export function createPaneExtras(deps) {
     let growScheduled = false;
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      if (ui.barsLoading) return;
       chartDebugCount("perf", "visibleRange");
       chartDebugTime("perf", `visibleRangeHandler pane ${pane.index}`, () => {
         if (pane.index === 0) {

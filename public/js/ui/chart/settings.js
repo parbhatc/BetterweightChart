@@ -1,4 +1,5 @@
 import { closeAllContextMenus } from "../context/registry.js";
+import { chartDebug } from "../../debug/chart/index.js";
 import { createColorPicker } from "../color/picker.js";
 import { TIMEZONE_OPTIONS, PRECISION_OPTIONS } from "../../chart/timezone/list.js";
 import {
@@ -170,7 +171,7 @@ export function mountChartSettings(opts) {
   }
 
   function setDraft(section, key, value, { skipHistory = false } = {}) {
-    if (draft?.[section] && key in draft[section]) {
+    if (draft?.[section]) {
       draft[section][key] = value;
     }
     store.set(section, key, value, { skipHistory });
@@ -631,7 +632,8 @@ export function mountChartSettings(opts) {
     )}${sectionBlock(
       "Buttons",
       `${selectCell("Navigation", "canvas", "navButtonsVisibility", SCALE_VISIBILITY_OPTIONS)}
-        ${selectCell("Pane", "canvas", "paneButtonsVisibility", SCALE_VISIBILITY_OPTIONS)}`,
+        ${selectCell("Pane", "canvas", "paneButtonsVisibility", SCALE_VISIBILITY_OPTIONS)}
+        ${checkRow("TradingView logo", "canvas", "attributionLogo")}`,
       { fields: true },
     )}${sectionBlock(
       "Margins",
@@ -742,6 +744,7 @@ export function mountChartSettings(opts) {
 
   function open(section) {
     closeAllContextMenus();
+    chartDebug("context", "settings:open", { section: section ?? activeSection });
     activeSection = section === undefined ? resolveSettingsSection(loadSettingsUiState().lastSection) : resolveSettingsSection(section);
     saveSettingsUiState({ lastSection: activeSection });
     snapshot = structuredClone(store.get());
@@ -1018,11 +1021,17 @@ export function mountChartSettings(opts) {
     undoDepthAtOpen = 0;
   }
 
-  triggerEl?.addEventListener("click", (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    open();
-  });
+  function bindTrigger(el) {
+    if (!(el instanceof HTMLElement) || el.dataset.chartSettingsTrigger) return;
+    el.dataset.chartSettingsTrigger = "1";
+    el.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      open();
+    });
+  }
+
+  if (triggerEl) bindTrigger(triggerEl);
 
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape" && dialogEl && !dialogEl.hidden) {
@@ -1032,5 +1041,5 @@ export function mountChartSettings(opts) {
     handleUndoRedo(ev);
   });
 
-  return { open, close };
+  return { open, close, bindTrigger };
 }

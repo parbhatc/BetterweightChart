@@ -1,0 +1,121 @@
+import {
+  createLayoutManager,
+  removeLayoutFromLibrary,
+  upsertLayoutLibraryEntry,
+} from "../../../ui/header/layout/manager.js";
+import {
+  setLayoutToolDefaults,
+  setLayoutToolDefaultsChangeHandler,
+} from "../../../drawings/toolbars/defaults/layoutScope.js";
+import { mountHeaderToolbar } from "../../../ui/header/toolbar/index.js";
+import { chartDebug } from "../../../debug/chart/index.js";
+import { createSecondaryPaneFactory } from "./secondaryPane.js";
+
+/**
+ * @param {import("./state.js").BootContext} ctx
+ */
+export function wireLayoutChrome(ctx) {
+  if (!ctx.opts.chrome || !ctx.chromeEl || !ctx.stageEl || !(ctx.chartWrap instanceof HTMLElement)) {
+    return;
+  }
+
+  ctx.layoutManager = createLayoutManager({
+    stageEl: ctx.stageEl,
+    primaryWrapEl: ctx.chartWrap,
+    createSecondaryPane: createSecondaryPaneFactory(ctx),
+    destroySecondaryPane: (pane) => pane.destroy(),
+    onLayoutChange: async () => {
+      chartDebug("layout", "onLayoutChange", {
+        layoutId: ctx.layoutManager?.getLayoutId(),
+        panes: ctx.getAllChartPanes().length,
+      });
+      ctx.drawingHub?.resetGlobalCrosshair?.();
+      const empty = ctx.getAllChartPanes().filter((p) => !p.bars.length);
+      if (empty.length) {
+        chartDebug("layout", "load empty panes", { indexes: empty.map((p) => p.index) });
+        await ctx.loadBarsForPanes(empty);
+      }
+      if (ctx.layoutManager?.getSync().dateRange) {
+        ctx.syncLayoutDateRangeFrom(ctx.chart);
+      }
+    },
+    onActivePaneChange: (index) => {
+      ctx.switchActivePane(index);
+    },
+  });
+
+  ctx.chartWrap.addEventListener("mousedown", () => ctx.layoutManager?.setActivePane(0));
+
+  const toolbarRight = ctx.chromeEl.querySelector(".tv-toolbar__right");
+  if (!toolbarRight) return;
+
+  ctx.headerToolbarUi = mountHeaderToolbar({
+    mountEl: toolbarRight,
+    getChart: () => ctx.chart,
+    layoutManager: ctx.layoutManager,
+    onSaveLayout: ctx.autosaveLayout,
+    onLoadLayout: (item) => {
+      ctx.applyLayoutChartSettings(item.chartSettings);
+      setLayoutToolDefaults(item.toolDefaults);
+      ctx.layoutManager.setToolDefaultsSnapshot(item.toolDefaults ?? null);
+      ctx.drawingHub?.setDrawingsByPane?.(item.drawings);
+      ctx.autosaveLayout();
+    },
+    onLayoutChange: ctx.scheduleAutosaveLayout,
+    onCreateLayout: () => {
+      void (async () => {
+        if (ctx.layoutManager.isDirty()) ctx.autosaveLayout();
+        const unique = await ctx.uniqueLayoutName("Layout", "Create new layout", "Create");
+        if (!unique) return;
+        ctx.layoutManager.setLayoutName(unique);
+        ctx.drawingHub?.setDrawingsByPane?.({});
+        ctx.layoutManager.setDrawingsSnapshot(null);
+        setLayoutToolDefaults({});
+        ctx.layoutManager.setToolDefaultsSnapshot(null);
+        ctx.layoutManager.markDirty();
+        ctx.headerToolbarUi?.updateSaveState();
+      })();
+    },
+    onDuplicateLayout: () => {
+      void (async () => {
+        ctx.autosaveLayout();
+        const unique = await ctx.uniqueLayoutName(
+          `${ctx.layoutManager.getLayoutName()} copy`,
+          "Make a copy",
+          "Create copy",
+        );
+        if (!unique) return;
+        const entry = { ...ctx.buildLayoutEntry(), name: unique };
+        upsertLayoutLibraryEntry(entry);
+        ctx.layoutManager.setLayoutName(unique);
+        ctx.layoutManager.markDirty();
+        ctx.headerToolbarUi?.updateSaveState();
+      })();
+    },
+    onDeleteLayout: (name) => {
+      removeLayoutFromLibrary(name);
+    },
+  });
+
+  const chartSettingsUi = ctx.mountChartSettingsUi();
+  chartSettingsUi.bindTrigger(document.getElementById("settings-btn"));
+  setLayoutToolDefaultsChangeHandler(ctx.scheduleAutosaveLayout);
+  if (ctx.drawing) {
+    ctx.drawing.on("change", ctx.scheduleAutosaveLayout);
+  }
+  ctx._layoutRestorePending = true;
+  try {
+    ctx.restoreLayoutChartSettings();
+    ctx.restoreLayoutToolDefaults();
+    ctx.restoreLayoutDrawings();
+    if (ctx.layoutManager.getAutoSave()) {
+      ctx.autosaveLayout();
+    } else {
+      ctx.headerToolbarUi?.updateSaveState();
+    }
+  } finally {
+    ctx._layoutRestorePending = false;
+    ctx.headerToolbarUi?.updateSaveState();
+  }
+  ctx.mountChartSettingsUi();
+}

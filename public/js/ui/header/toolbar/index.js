@@ -11,7 +11,7 @@ import {
 } from "../icons.js";
 import { mountFullscreenMode } from "../fullscreen/mode.js";
 import { createChartSnapshot } from "../snapshot/chart.js";
-import { getLayoutDef, LAYOUT_GROUPS } from "../layout/definitions.js";
+import { getLayoutDef, getLayoutGroupsForViewport } from "../layout/definitions.js";
 import { getLayoutIcon } from "../layout/icons.js";
 import { loadSavedLayouts, removeLayoutFromLibrary } from "../layout/manager.js";
 import { showLayoutConfirmDialog, showLayoutNameDialog } from "../layout/dialogs.js";
@@ -47,11 +47,11 @@ export function mountHeaderToolbar(opts) {
     <button type="button" class="tv-header-tools__btn" id="header-toolbar-layouts" aria-label="Layout setup" data-tooltip="Layout setup" title="Layout setup" aria-haspopup="menu">
       <span class="tv-header-tools__icon tv-header-tools__icon--layout" data-layout-icon aria-hidden="true"></span>
     </button>
-    <div class="tv-header-tools__save-wrap">
+    <div class="tv-header-tools__save-wrap" data-save-wrap>
       <button type="button" class="tv-header-tools__save-btn" id="header-toolbar-save-load" aria-label="All changes saved" data-tooltip="All changes saved" title="All changes saved">
         <span class="tv-header-tools__save-stack">
           <span class="tv-header-tools__save-text" data-layout-name>Unnamed</span>
-          <span class="tv-header-tools__save-action" data-dirty-save-label hidden>Save</span>
+          <span class="tv-header-tools__save-action" data-dirty-save-label hidden aria-hidden="true">Save</span>
         </span>
       </button>
       <button type="button" class="tv-header-tools__save-menu-btn" data-name="save-load-menu" aria-label="Manage layouts" data-tooltip="Manage layouts" title="Manage layouts" aria-haspopup="menu">
@@ -85,6 +85,7 @@ export function mountHeaderToolbar(opts) {
   const layoutBtn = root.querySelector("#header-toolbar-layouts");
   const layoutIconEl = root.querySelector("[data-layout-icon]");
   const saveBtn = root.querySelector("#header-toolbar-save-load");
+  const saveWrap = root.querySelector("[data-save-wrap]");
   const saveMenuBtn = root.querySelector("[data-name=save-load-menu]");
   const layoutNameEl = root.querySelector("[data-layout-name]");
   const saveActionEl = root.querySelector("[data-dirty-save-label]");
@@ -128,14 +129,21 @@ export function mountHeaderToolbar(opts) {
   function updateSaveState() {
     if (!(saveBtn instanceof HTMLButtonElement) || !(layoutNameEl instanceof HTMLElement)) return;
     const dirty = layoutManager.isDirty();
+    const autoSave = layoutManager.getAutoSave();
+    const showDirty = dirty && !autoSave;
     layoutNameEl.textContent = layoutManager.getLayoutName();
-    saveBtn.classList.toggle("tv-header-tools__save-btn--dirty", dirty);
+    saveWrap?.classList.toggle("tv-header-tools__save-wrap--autosave", autoSave);
+    saveWrap?.classList.toggle("tv-header-tools__save-wrap--dirty", showDirty);
+    saveBtn.classList.toggle("tv-header-tools__save-btn--dirty", showDirty);
     if (saveActionEl instanceof HTMLElement) {
-      saveActionEl.hidden = !dirty;
+      saveActionEl.hidden = !showDirty;
+      saveActionEl.setAttribute("aria-hidden", showDirty ? "false" : "true");
     }
-    saveBtn.dataset.tooltip = dirty ? "Save layout" : "All changes saved";
-    saveBtn.title = dirty ? "Save layout" : "All changes saved";
-    saveBtn.setAttribute("aria-label", dirty ? "Save layout" : "All changes saved");
+    const savedLabel = autoSave ? "Auto-saving layout" : "All changes saved";
+    const tooltip = showDirty ? "Save layout" : savedLabel;
+    saveBtn.dataset.tooltip = tooltip;
+    saveBtn.title = tooltip;
+    saveBtn.setAttribute("aria-label", tooltip);
   }
 
   function updateLayoutIcon() {
@@ -216,7 +224,7 @@ export function mountHeaderToolbar(opts) {
     menu.className = "tv-header-menu tv-header-menu--layouts";
     menu.innerHTML = `
       <div class="tv-header-layouts" data-name="layouts-list">
-        ${LAYOUT_GROUPS.map(
+        ${getLayoutGroupsForViewport().map(
           (group) => `
           <div class="tv-header-layouts__row">
             <div class="tv-header-layouts__label">${group.label}</div>
@@ -379,6 +387,7 @@ export function mountHeaderToolbar(opts) {
       if (!(input instanceof HTMLInputElement) || input.type !== "checkbox") return;
       if (input.dataset.saveAction !== "autosave") return;
       layoutManager.setAutoSave(input.checked);
+      updateSaveState();
       if (input.checked && layoutManager.isDirty()) {
         performSave();
       }

@@ -1,6 +1,7 @@
 import { closeAllContextMenus, registerContextMenu } from "./registry.js";
 import { hitPriceScale, hitTimeScale } from "../../chart/scale/settings.js";
 import { DRAWING_UI_SELECTOR } from "../../drawings/constants.js";
+import { runContextMenuAction } from "../../debug/chart/contextMenu.js";
 
 const ICONS = {
   reset: `<svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true"><g fill="none" fill-rule="evenodd" stroke="currentColor"><path d="M6.5 15A8.5 8.5 0 1 0 15 6.5H8.5"></path><path d="M12 10 8.5 6.5 12 3"></path></g></svg>`,
@@ -122,32 +123,41 @@ export function mountChartContextMenu(opts) {
   }
 
   function runAction(id) {
-    switch (id) {
-      case "reset":
-        actions.resetChart();
-        break;
-      case "copy-price":
-        actions.copyPrice();
-        break;
-      case "copy-drawing":
-        actions.copyDrawing?.();
-        break;
-      case "paste":
-        actions.paste();
-        break;
-      case "lock-cursor":
-        actions.toggleLockCursor();
-        break;
-      case "remove-drawings":
-        actions.removeDrawings();
-        break;
-      case "settings":
-        actions.openSettings();
-        break;
-      default:
-        break;
-    }
-    close();
+    const detail =
+      id === "remove-drawings" ? { drawingCount: getState().drawingCount } : undefined;
+    runContextMenuAction(
+      "chart",
+      id,
+      close,
+      () => {
+        switch (id) {
+          case "reset":
+            actions.resetChart();
+            break;
+          case "copy-price":
+            actions.copyPrice();
+            break;
+          case "copy-drawing":
+            actions.copyDrawing?.();
+            break;
+          case "paste":
+            actions.paste();
+            break;
+          case "lock-cursor":
+            actions.toggleLockCursor();
+            break;
+          case "remove-drawings":
+            actions.removeDrawings();
+            break;
+          case "settings":
+            actions.openSettings();
+            break;
+          default:
+            break;
+        }
+      },
+      detail,
+    );
   }
 
   root.addEventListener("click", (ev) => {

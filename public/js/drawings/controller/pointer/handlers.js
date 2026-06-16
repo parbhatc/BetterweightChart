@@ -92,7 +92,7 @@ export function createPointerHandlers(api) {
   function shouldSwallowDrawMove(ev) {
     if (!api.isPrimaryButtonDown(ev)) return false;
     if (api.getMeasureDragActive() || api.getFreehandDrawing()) return true;
-    if (api.hasActiveDrag() || api.isDragging()) return true;
+    if (api.hasActiveDrag() || api.isDragging()) return !api.isCursorTool();
     if (api.isCursorTool() || api.getActiveTool() === "eraser") return false;
     if (api.useMobileDragPlacement?.()) return true;
     return true;
@@ -355,6 +355,11 @@ export function createPointerHandlers(api) {
   }
 
   function onPointerMove(ev) {
+    if (api.isValuesTooltipPinned?.()) {
+      api.updateValuesTooltipAt(ev.clientX, ev.clientY);
+      return;
+    }
+
     if (pendingMobileTap && api.isPrimaryButtonDown(ev)) {
       const dx = ev.clientX - pendingMobileTap.startX;
       const dy = ev.clientY - pendingMobileTap.startY;
@@ -424,9 +429,16 @@ export function createPointerHandlers(api) {
       return;
     }
 
+    if (api.isCursorTool() && api.isDragging() && api.isPrimaryButtonDown(ev)) {
+      api.syncNativeCrosshairAt?.(ev.clientX, ev.clientY);
+    }
+
     api.tryActivateDrag(ev.clientX, ev.clientY);
     if (api.hasActiveDrag()) {
-      if (api.isPrimaryButtonDown(ev)) api.applyDrawingDrag(ev.clientX, ev.clientY);
+      if (api.isPrimaryButtonDown(ev)) {
+        api.applyDrawingDrag(ev.clientX, ev.clientY);
+        if (api.isCursorTool()) api.syncNativeCrosshairAt?.(ev.clientX, ev.clientY);
+      }
       return;
     }
 
@@ -519,19 +531,22 @@ export function createPointerHandlers(api) {
     }
     api.finishPointerDrag(ev);
     api.clearLongPress();
-    api.hideValuesTooltip();
+    if (api.isValuesTooltipPinned?.()) api.unpinValuesTooltip();
+    else api.hideValuesTooltip();
     if (api.shouldSyncDrawCrosshair?.() && !pinnedFromMobileTap && !api.useMobileDragPlacement?.()) {
       api.pinDrawCrosshairAt?.(ev.clientX, ev.clientY);
     }
     if (api.shouldSyncDrawCrosshair?.() && api.useMobileDragPlacement?.()) {
       crosshairScrollAnchor = null;
       requestAnimationFrame(() => api.syncDrawCrosshairAtMediaAnchor?.());
+    } else if (api.useMobileDragPlacement?.() && api.isCursorTool()) {
+      api.clearDrawCrosshair?.();
     }
   }
 
   function onPointerLeave(ev) {
     api.clearLongPress();
-    api.hideValuesTooltip();
+    if (!api.isValuesTooltipPinned?.()) api.hideValuesTooltip();
     api.setHoveredDrawing(null);
     if (["dot", "demonstration"].includes(api.getActiveTool())) {
       api.hideCursorMark();
@@ -568,12 +583,24 @@ export function createPointerHandlers(api) {
 
   function onDocumentPointerMove(ev) {
     if (api.useMobileDragPlacement?.()) return;
+    if (
+      api.isCursorTool() &&
+      api.isPrimaryButtonDown?.(ev) &&
+      (api.hasActiveDrag?.() || api.isDragging?.())
+    ) {
+      api.syncNativeCrosshairAt?.(ev.clientX, ev.clientY);
+      return;
+    }
     if (!api.shouldSyncDrawCrosshair?.()) return;
     if (!api.isPrimaryButtonDown?.(ev)) return;
     api.syncDrawCrosshair(ev.clientX, ev.clientY);
   }
 
   function onDocumentPointerUp(ev) {
+    if (api.isValuesTooltipPinned?.()) {
+      api.unpinValuesTooltip();
+      return;
+    }
     if (api.useMobileDragPlacement?.()) return;
     if (!api.shouldSyncDrawCrosshair?.()) return;
     if (ev.pointerType === "mouse") return;

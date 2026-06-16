@@ -52,6 +52,7 @@ export function applySettingsToChart(opts) {
       background: { type: ColorType.Solid, color: cv.backgroundColor || themeColors.bg },
       textColor: cv.scalesTextColor || themeColors.text,
       fontSize: Number(cv.scalesFontSize) || 12,
+      attributionLogo: Boolean(cv.attributionLogo),
     },
     grid: {
       vertLines: {

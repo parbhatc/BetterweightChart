@@ -34,7 +34,7 @@ import { isPositionTool, positionDragUpdate, positionAnchorPoints, positionGeome
  * @param {() => void} api.emitChange
  * @param {(active: boolean) => void} api.setDraggingDrawing
  * @param {() => void} api.clearLongPress
- * @param {() => void} api.hideValuesTooltip
+ * @param {() => void} api.unpinValuesTooltip
  * @param {(id: string | null) => void} api.selectDrawing
  * @param {(tool: string) => void} api.setActiveTool
  * @param {() => boolean} api.isCursorTool
@@ -108,7 +108,7 @@ export function createDrawingDrag(api) {
   function onDocumentPointerUp(ev) {
     finishPointerDrag(ev);
     api.clearLongPress();
-    api.hideValuesTooltip();
+    api.unpinValuesTooltip();
   }
 
   function bindDocumentDragListeners() {
@@ -175,7 +175,7 @@ export function createDrawingDrag(api) {
     api.setDraggingDrawing(true);
     bindDocumentDragListeners();
     api.clearLongPress();
-    api.hideValuesTooltip();
+    api.unpinValuesTooltip();
     api.syncChartPointerHandling();
   }
 

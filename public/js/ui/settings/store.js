@@ -6,6 +6,18 @@ import {
 
 const MAX_UNDO = 100;
 
+/** @param {typeof DEFAULT_SETTINGS | null | undefined} next */
+function normalizeSettings(next) {
+  const merged = cloneSettingsDefaults();
+  if (!next || typeof next !== "object") return merged;
+  for (const [section, values] of Object.entries(next)) {
+    if (merged[section] && values && typeof values === "object") {
+      Object.assign(merged[section], values);
+    }
+  }
+  return merged;
+}
+
 export function createChartSettings() {
   /** @type {typeof DEFAULT_SETTINGS} */
   let settings = cloneSettingsDefaults();
@@ -69,7 +81,11 @@ export function createChartSettings() {
     },
     /** @param {string} section @param {string} key @param {unknown} value @param {{ skipHistory?: boolean }} [opts] */
     set(section, key, value, opts = {}) {
-      if (!settings[section] || !(key in settings[section])) return;
+      if (!settings[section]) return;
+      const defaults = cloneSettingsDefaults();
+      if (!(key in settings[section])) {
+        if (!defaults[section] || !(key in defaults[section])) return;
+      }
       if (!opts.skipHistory) pushUndo();
       settings[section][key] = value;
       emit();
@@ -87,7 +103,7 @@ export function createChartSettings() {
     /** @param {typeof DEFAULT_SETTINGS} next @param {{ skipHistory?: boolean }} [opts] */
     replace(next, opts = {}) {
       if (!opts.skipHistory) pushUndo();
-      settings = structuredClone(next);
+      settings = normalizeSettings(next);
       emit();
     },
     reset() {

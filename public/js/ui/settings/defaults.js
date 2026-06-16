@@ -83,6 +83,7 @@ export const DEFAULT_SETTINGS = {
     scalesLineColor: "rgba(242, 242, 242, 0)",
     navButtonsVisibility: "visibleOnMouseOver",
     paneButtonsVisibility: "visibleOnMouseOver",
+    attributionLogo: true,
     marginTop: 10,
     marginBottom: 8,
     marginRight: 10,

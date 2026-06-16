@@ -161,7 +161,9 @@ export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutio
  */
 export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions) {
   return chartDebugTime("data", `setData live pane ${pane.index}`, () => {
+    if (!pane.bars?.length) return;
     const visible = barsForPane(pane, settingsStore, symbolInfo);
+    if (!visible.length) return;
     const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
     const shifted = ensureShiftedBars(pane, visible, tz);
     pane.timeToIdx = barIndex(shifted);

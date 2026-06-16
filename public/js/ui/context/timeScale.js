@@ -1,4 +1,5 @@
 import { closeAllContextMenus, registerContextMenu } from "./registry.js";
+import { runContextMenuAction, debugContextMenu } from "../../debug/chart/contextMenu.js";
 import { hitTimeScale } from "../../chart/scale/settings.js";
 import { TIMEZONE_OPTIONS } from "../../chart/timezone/list.js";
 
@@ -189,28 +190,31 @@ export function mountTimeScaleContextMenu(opts) {
   }
 
   function runAction(id, row) {
-    switch (id) {
-      case "reset-time":
-        actions.resetTimeScale();
-        close();
-        break;
-      case "timezone":
-        openTimezoneSubmenu(row);
-        break;
-      case "session-breaks":
-        actions.toggleSessionBreaks();
-        close();
-        break;
-      case "session":
-        openSessionSubmenu(row);
-        break;
-      case "settings":
-        actions.openSettings();
-        close();
-        break;
-      default:
-        break;
+    if (id === "timezone") {
+      debugContextMenu("time-scale", id);
+      openTimezoneSubmenu(row);
+      return;
     }
+    if (id === "session") {
+      debugContextMenu("time-scale", id);
+      openSessionSubmenu(row);
+      return;
+    }
+    runContextMenuAction("time-scale", id, close, () => {
+      switch (id) {
+        case "reset-time":
+          actions.resetTimeScale();
+          break;
+        case "session-breaks":
+          actions.toggleSessionBreaks();
+          break;
+        case "settings":
+          actions.openSettings();
+          break;
+        default:
+          break;
+      }
+    });
   }
 
   root.addEventListener("click", (ev) => {

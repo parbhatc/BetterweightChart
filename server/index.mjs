@@ -30,6 +30,8 @@ const MIME = {
   ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
   ".map": "application/json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".ico": "image/x-icon",
 };
 
 const HDR = { "X-Chart-Api": "custom-lightweight-chart" };

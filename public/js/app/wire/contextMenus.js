@@ -7,56 +7,48 @@ import {
 import { resolvePriceScaleModeKey } from "../../chart/scale/settings.js";
 
 /**
- * Wire chart, price-scale, and time-scale context menus.
+ * Wire chart, price-scale, and time-scale context menus for one pane.
  * @param {object} opts
  */
-export function wireContextMenus(opts) {
+export function wirePaneContextMenus(opts) {
   const {
-    chartWrap,
-    chart,
-    el,
-    series,
-    getState,
-    actions,
+    pane,
+    wrapEl,
     settingsStore,
     chartSettings,
+    getChartSettings = () => chartSettings,
     activePriceScaleId,
+    activatePane,
+    formatPrice,
+    ui,
+    getDrawing,
+    getDrawingCount,
     resetChartView,
     resetTimeScale,
   } = opts;
 
-  const {
-    getSymbol,
-    getCrosshairPrice,
-    formatPrice,
-    getDrawingCount,
-    getLockCursorByTime,
-    getHoverBar,
-    getBars,
-    getLockedCrosshairTime,
-    setCrosshairPrice,
-    setLockCursorByTime,
-    setLockedCrosshairTime,
-    getDrawing,
-  } = getState;
+  const { chart, series, el: chartEl } = pane;
 
   mountChartContextMenu({
-    container: chartWrap,
+    container: wrapEl,
     chart,
-    chartEl: el,
+    chartEl,
+    onBeforeOpen: async () => {
+      await activatePane(pane.index);
+    },
     getState: () => ({
-      symbol: getSymbol(),
-      price: getCrosshairPrice(),
-      priceText: formatPrice(getCrosshairPrice()),
-      drawingCount: getDrawingCount(),
-      lockCursorByTime: getLockCursorByTime(),
+      symbol: pane.symbol,
+      price: ui.crosshairPrice,
+      priceText: formatPrice(ui.crosshairPrice),
+      drawingCount: getDrawingCount(pane.index),
+      lockCursorByTime: ui.lockCursorByTime,
       canPaste: Boolean(getDrawing()?.hasDrawingClipboard?.()) || true,
       hasSelectedDrawing: Boolean(getDrawing()?.getSelectedDrawing?.()),
     }),
     actions: {
-      resetChart: resetChartView,
+      resetChart: () => resetChartView(pane),
       copyPrice: async () => {
-        const price = getCrosshairPrice();
+        const price = ui.crosshairPrice;
         if (price == null) return;
         try {
           await navigator.clipboard.writeText(formatPrice(price));
@@ -73,31 +65,34 @@ export function wireContextMenus(opts) {
           const text = await navigator.clipboard.readText();
           const n = parseFloat(text.replace(/,/g, ""));
           if (!Number.isFinite(n)) return;
-          setCrosshairPrice(n);
-          const time = getLockedCrosshairTime() ?? getHoverBar()?.time ?? getBars().at(-1)?.time;
+          ui.crosshairPrice = n;
+          const time = ui.lockedCrosshairTime ?? pane.hoverBar?.time ?? pane.bars.at(-1)?.time;
           if (time != null) chart.setCrosshairPosition(n, time, series);
         } catch {
           /* ignore */
         }
       },
       toggleLockCursor: () => {
-        const next = !getLockCursorByTime();
-        setLockCursorByTime(next);
+        const next = !ui.lockCursorByTime;
+        ui.lockCursorByTime = next;
         if (next) {
-          setLockedCrosshairTime(getHoverBar()?.time ?? getBars().at(-1)?.time ?? null);
+          ui.lockedCrosshairTime = pane.hoverBar?.time ?? pane.bars.at(-1)?.time ?? null;
         } else {
-          setLockedCrosshairTime(null);
+          ui.lockedCrosshairTime = null;
         }
       },
       removeDrawings: () => getDrawing()?.clearAll(),
-      openSettings: () => chartSettings.open(),
+      openSettings: () => getChartSettings().open(),
     },
   });
 
   mountPriceScaleContextMenu({
-    container: chartWrap,
-    chartEl: el,
+    container: wrapEl,
+    chartEl,
     chart,
+    onBeforeOpen: async () => {
+      await activatePane(pane.index);
+    },
     getState: (side) => {
       const sc = settingsStore.get().scales ?? {};
       const mode = resolvePriceScaleModeKey(sc);
@@ -115,7 +110,7 @@ export function wireContextMenus(opts) {
     actions: {
       setAutoScale: () => {
         settingsStore.set("scales", "autoScale", true);
-        resetChartView();
+        resetChartView(pane);
       },
       toggleLockRatio: () => {
         const sc = settingsStore.get().scales ?? {};
@@ -150,14 +145,17 @@ export function wireContextMenus(opts) {
         const next = sc.scalesPlacement === "left" ? "right" : "left";
         settingsStore.set("scales", "scalesPlacement", next);
       },
-      openSettings: () => chartSettings.open("scales"),
+      openSettings: () => getChartSettings().open("scales"),
     },
   });
 
   mountTimeScaleContextMenu({
-    container: chartWrap,
-    chartEl: el,
+    container: wrapEl,
+    chartEl,
     chart,
+    onBeforeOpen: async () => {
+      await activatePane(pane.index);
+    },
     getState: () => {
       const sym = settingsStore.get().symbol ?? {};
       return {
@@ -167,14 +165,64 @@ export function wireContextMenus(opts) {
       };
     },
     actions: {
-      resetTimeScale,
+      resetTimeScale: () => resetTimeScale(pane),
       setTimezone: (tz) => settingsStore.set("symbol", "timezone", tz),
       toggleSessionBreaks: () => {
         const sym = settingsStore.get().symbol ?? {};
         settingsStore.set("symbol", "sessionBreaks", !sym.sessionBreaks);
       },
       setSession: (session) => settingsStore.set("symbol", "session", session),
-      openSettings: () => chartSettings.open("symbol"),
+      openSettings: () => getChartSettings().open("symbol"),
     },
+  });
+}
+
+/**
+ * @param {object} opts — legacy single-pane API; prefer wirePaneContextMenus.
+ */
+export function wireContextMenus(opts) {
+  const { chartWrap, chart, el, series, getState, settingsStore, chartSettings, activePriceScaleId, resetChartView, resetTimeScale } = opts;
+  const ui = {
+    get crosshairPrice() {
+      return getState.getCrosshairPrice();
+    },
+    set crosshairPrice(v) {
+      getState.setCrosshairPrice?.(v);
+    },
+    get lockCursorByTime() {
+      return getState.getLockCursorByTime();
+    },
+    set lockCursorByTime(v) {
+      getState.setLockCursorByTime?.(v);
+    },
+    get lockedCrosshairTime() {
+      return getState.getLockedCrosshairTime();
+    },
+    set lockedCrosshairTime(v) {
+      getState.setLockedCrosshairTime?.(v);
+    },
+    hoverBar: undefined,
+  };
+  wirePaneContextMenus({
+    pane: {
+      index: 0,
+      chart,
+      series,
+      el,
+      symbol: getState.getSymbol(),
+      bars: getState.getBars(),
+      hoverBar: getState.getHoverBar?.(),
+    },
+    wrapEl: chartWrap,
+    settingsStore,
+    chartSettings,
+    activePriceScaleId,
+    activatePane: opts.activatePane ?? (() => {}),
+    formatPrice: getState.formatPrice,
+    ui,
+    getDrawing: getState.getDrawing,
+    getDrawingCount: () => getState.getDrawingCount(),
+    resetChartView: (pane) => resetChartView(pane ?? { chart, bars: getState.getBars() }),
+    resetTimeScale: (pane) => resetTimeScale(pane ?? { chart, bars: getState.getBars() }),
   });
 }

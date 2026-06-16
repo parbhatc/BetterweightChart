@@ -1,4 +1,5 @@
-import { DEFAULT_LAYOUT_ID, getLayoutDef } from "./definitions.js";
+import { clampLayoutIdForViewport, DEFAULT_LAYOUT_ID, getLayoutDef, onMobileLayoutViewportChange } from "./definitions.js";
+import { chartDebug } from "../../../debug/chart/index.js";
 
 const STORAGE_KEY = "tv-chart-layout-state";
 
@@ -72,7 +73,9 @@ export function createLayoutManager(opts) {
   }
 
   function setLayout(id, { silent = false } = {}) {
+    id = clampLayoutIdForViewport(id);
     const def = getLayoutDef(id);
+    const fromPaneCount = secondaryPanes.length + 1;
     layoutId = def.id;
     if (!silent) dirty = true;
 
@@ -87,7 +90,15 @@ export function createLayoutManager(opts) {
     }
 
     applyPlacements();
-    onLayoutChange?.(layoutId);
+    chartDebug("layout", "change", {
+      id: layoutId,
+      fromPaneCount,
+      toPaneCount: def.count,
+      cols: def.cols,
+      rows: def.rows,
+      silent,
+    });
+    if (!silent) onLayoutChange?.(layoutId);
     persist();
   }
 
@@ -197,7 +208,7 @@ export function createLayoutManager(opts) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;
       const data = JSON.parse(raw);
-      if (data.layoutId) layoutId = data.layoutId;
+      if (data.layoutId) layoutId = clampLayoutIdForViewport(data.layoutId);
       if (data.layoutName) layoutName = data.layoutName;
       if (data.sync) sync = { ...sync, ...data.sync };
       if (data.drawings && typeof data.drawings === "object") drawingsSnapshot = data.drawings;
@@ -216,6 +227,11 @@ export function createLayoutManager(opts) {
 
   restore();
   setLayout(layoutId, { silent: true });
+
+  const stopMobileLayoutWatch = onMobileLayoutViewportChange(() => {
+    const clamped = clampLayoutIdForViewport(layoutId);
+    if (clamped !== layoutId) setLayout(clamped);
+  });
 
   return {
     getLayoutId: () => layoutId,
@@ -239,6 +255,7 @@ export function createLayoutManager(opts) {
     getActivePaneIndex: () => activePaneIndex,
     getSecondaryPanes,
     getGridEl: () => gridEl,
+    destroy: () => stopMobileLayoutWatch(),
   };
 }
 

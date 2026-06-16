@@ -3,14 +3,20 @@ import { barPriceClass, candleValueColor, isBarUp, barChangeFromPrevClose } from
 
 /**
  * @param {object} deps
+ * @param {import("lightweight-charts").IChartApi} [deps.chart]
+ * @param {import("lightweight-charts").ISeriesApi} [deps.series]
+ * @param {(bar: object, prev: object | null) => void} [deps.onBarHover]
+ * @param {(pinned: boolean) => void} [deps.onPinChange]
  */
 export function createTooltipOverlay(deps) {
-  const { getContext, resolvePoint, valuesTooltip, overlayRoot } = deps;
+  const { getContext, resolvePoint, valuesTooltip, overlayRoot, chart, series, onBarHover, onPinChange } = deps;
 
   /** @type {ReturnType<typeof setTimeout> | null} */
   let longPressTimer = null;
   /** @type {{ x: number, y: number } | null} */
   let longPressOrigin = null;
+  let pinned = false;
+  let savedHorzCrosshairVisible = true;
 
   function nearestBar(time) {
     const { bars } = getContext();
@@ -30,16 +36,7 @@ export function createTooltipOverlay(deps) {
     };
   }
 
-  function hideValuesTooltip() {
-    valuesTooltip.hidden = true;
-  }
-
-  function showValuesTooltip(clientX, clientY) {
-    const point = resolvePoint(clientX, clientY);
-    if (!point) return;
-    const { bar, prev } = nearestBar(point.time);
-    if (!bar) return;
-
+  function buildTooltipHtml(bar, prev) {
     const ctx = getContext();
     const precision = ctx.precision ?? 2;
     const fmt = (n) =>
@@ -81,15 +78,85 @@ export function createTooltipOverlay(deps) {
       `<span class="chart-values-tooltip__row"><span>Change</span><span class="chart-values-tooltip__val ${chgCls}" style="color:${chgColor}">${chgSign}${fmt(chg)} (${chgSign}${chgPct.toFixed(2)}%)</span></span>`,
     );
     rows.push(row("Volume", fmtVol(bar.volume), true));
+    return rows.join("");
+  }
 
-    valuesTooltip.innerHTML = rows.join("");
-
+  /** @param {number} clientX @param {number} clientY */
+  function positionTooltip(clientX, clientY) {
     const rect = overlayRoot.getBoundingClientRect();
-    const x = clientX - rect.left + 12;
-    const y = clientY - rect.top + 12;
-    valuesTooltip.style.left = `${x}px`;
-    valuesTooltip.style.top = `${y}px`;
+    valuesTooltip.style.left = `${clientX - rect.left + 12}px`;
+    valuesTooltip.style.top = `${clientY - rect.top + 12}px`;
+  }
+
+  /** @param {object} bar */
+  function syncCrosshairToBar(bar) {
+    if (!chart || !series || !bar) return;
+    chart.setCrosshairPosition(bar.close, bar.time, series);
+  }
+
+  /**
+   * @param {number} clientX
+   * @param {number} clientY
+   * @returns {{ bar: object, prev: object | null } | null}
+   */
+  function renderAt(clientX, clientY) {
+    const point = resolvePoint(clientX, clientY);
+    if (!point) return null;
+    const { bar, prev } = nearestBar(point.time);
+    if (!bar) return null;
+    valuesTooltip.innerHTML = buildTooltipHtml(bar, prev);
+    positionTooltip(clientX, clientY);
     valuesTooltip.hidden = false;
+    syncCrosshairToBar(bar);
+    onBarHover?.(bar, prev);
+    return { bar, prev };
+  }
+
+  function hideValuesTooltip() {
+    if (pinned) return;
+    valuesTooltip.hidden = true;
+  }
+
+  function isValuesTooltipPinned() {
+    return pinned;
+  }
+
+  function unpinValuesTooltip() {
+    if (!pinned) {
+      valuesTooltip.hidden = true;
+      return;
+    }
+    pinned = false;
+    valuesTooltip.hidden = true;
+    if (chart) {
+      chart.applyOptions({
+        crosshair: { horzLine: { visible: savedHorzCrosshairVisible } },
+      });
+    }
+    onPinChange?.(false);
+  }
+
+  function pinValuesTooltip(clientX, clientY) {
+    const hit = renderAt(clientX, clientY);
+    if (!hit) return;
+    pinned = true;
+    if (chart) {
+      const horz = chart.options().crosshair?.horzLine;
+      savedHorzCrosshairVisible = horz?.visible !== false;
+      chart.applyOptions({
+        crosshair: {
+          horzLine: { visible: false },
+          vertLine: { visible: true },
+        },
+      });
+    }
+    onPinChange?.(true);
+  }
+
+  /** @param {number} clientX @param {number} clientY */
+  function updateValuesTooltipAt(clientX, clientY) {
+    if (!pinned) return;
+    renderAt(clientX, clientY);
   }
 
   function clearLongPress() {
@@ -105,20 +172,22 @@ export function createTooltipOverlay(deps) {
     longPressOrigin = { x: clientX, y: clientY };
     longPressTimer = setTimeout(() => {
       if (!longPressOrigin) return;
-      showValuesTooltip(longPressOrigin.x, longPressOrigin.y);
+      pinValuesTooltip(longPressOrigin.x, longPressOrigin.y);
       clearLongPress();
     }, VALUES_TOOLTIP_LONG_PRESS_MS);
   }
 
   function cancelLongPressIfMoved(clientX, clientY) {
-    if (!longPressOrigin || !longPressTimer) return;
+    if (pinned || !longPressOrigin || !longPressTimer) return;
     const moved = Math.hypot(clientX - longPressOrigin.x, clientY - longPressOrigin.y);
     if (moved > VALUES_TOOLTIP_MOVE_THRESHOLD) clearLongPress();
   }
 
   return {
     hideValuesTooltip,
-    showValuesTooltip,
+    unpinValuesTooltip,
+    isValuesTooltipPinned,
+    updateValuesTooltipAt,
     clearLongPress,
     scheduleLongPress,
     cancelLongPressIfMoved,

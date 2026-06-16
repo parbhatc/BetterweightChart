@@ -38,7 +38,5 @@ export function applyCanvasPresetForTheme(store, mode) {
     scalesLineColor: mode === "dark" ? "rgba(242, 242, 242, 0)" : "rgba(15, 23, 42, 0)",
     watermarkColor: mode === "dark" ? "rgba(148, 163, 184, 0.25)" : "rgba(100, 116, 139, 0.2)",
   };
-  for (const [key, value] of Object.entries(patch)) {
-    store.set("canvas", key, value, { skipHistory: true });
-  }
+  store.merge({ canvas: patch }, { skipHistory: true });
 }

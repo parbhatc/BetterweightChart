@@ -130,3 +130,42 @@ export function getLayoutDef(id) {
 }
 
 export const DEFAULT_LAYOUT_ID = "s";
+
+/** Layouts available on mobile (groups 1 and 2 only). */
+export const MOBILE_LAYOUT_IDS = ["s", "2h", "2v"];
+
+const MOBILE_LAYOUT_ID_SET = new Set(MOBILE_LAYOUT_IDS);
+const MOBILE_LAYOUT_GROUP_LABELS = new Set(["1", "2"]);
+
+const MOBILE_LAYOUT_MQ =
+  typeof window !== "undefined" ? window.matchMedia("(max-width: 768px)") : null;
+
+/** @returns {boolean} */
+export function isMobileLayoutViewport() {
+  return Boolean(MOBILE_LAYOUT_MQ?.matches);
+}
+
+/** @param {string} id */
+export function isLayoutAllowedOnMobile(id) {
+  return MOBILE_LAYOUT_ID_SET.has(id);
+}
+
+/** @param {string} id */
+export function clampLayoutIdForViewport(id) {
+  if (!isMobileLayoutViewport()) return id;
+  return isLayoutAllowedOnMobile(id) ? id : DEFAULT_LAYOUT_ID;
+}
+
+/** @returns {{ label: string, ids: string[] }[]} */
+export function getLayoutGroupsForViewport() {
+  if (!isMobileLayoutViewport()) return LAYOUT_GROUPS;
+  return LAYOUT_GROUPS.filter((g) => MOBILE_LAYOUT_GROUP_LABELS.has(g.label));
+}
+
+/** @param {(matches: boolean) => void} fn */
+export function onMobileLayoutViewportChange(fn) {
+  if (!MOBILE_LAYOUT_MQ) return () => {};
+  const handler = () => fn(MOBILE_LAYOUT_MQ.matches);
+  MOBILE_LAYOUT_MQ.addEventListener("change", handler);
+  return () => MOBILE_LAYOUT_MQ.removeEventListener("change", handler);
+}

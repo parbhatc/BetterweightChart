@@ -1,5 +1,6 @@
 import { closeAllContextMenus, registerContextMenu } from "./registry.js";
 import { hitPriceScale } from "../../chart/scale/settings.js";
+import { runContextMenuAction } from "../../debug/chart/contextMenu.js";
 
 const ICONS = {
   settings: `<svg viewBox="0 0 28 28" width="18" height="18" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 14a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-1 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"></path><path fill-rule="evenodd" d="M8.5 5h11l5 9-5 9h-11l-5-9 5-9Zm-3.86 9L9.1 6h9.82l4.45 8-4.45 8H9.1l-4.45-8Z"></path></svg>`,
@@ -129,41 +130,42 @@ export function mountPriceScaleContextMenu(opts) {
   }
 
   function runAction(id) {
-    switch (id) {
-      case "auto-scale":
-        actions.setAutoScale();
-        break;
-      case "lock-ratio":
-        actions.toggleLockRatio();
-        break;
-      case "scale-price-only":
-        actions.toggleScalePriceChartOnly();
-        break;
-      case "invert-scale":
-        actions.toggleInvertScale();
-        break;
-      case "mode-regular":
-        actions.setPriceScaleMode("regular");
-        break;
-      case "mode-percent":
-        actions.setPriceScaleMode("percent");
-        break;
-      case "mode-indexed":
-        actions.setPriceScaleMode("indexed100");
-        break;
-      case "mode-log":
-        actions.setPriceScaleMode("logarithmic");
-        break;
-      case "move-scale":
-        actions.moveScale();
-        break;
-      case "settings":
-        actions.openSettings();
-        break;
-      default:
-        break;
-    }
-    close();
+    runContextMenuAction("price-scale", id, close, () => {
+      switch (id) {
+        case "auto-scale":
+          actions.setAutoScale();
+          break;
+        case "lock-ratio":
+          actions.toggleLockRatio();
+          break;
+        case "scale-price-only":
+          actions.toggleScalePriceChartOnly();
+          break;
+        case "invert-scale":
+          actions.toggleInvertScale();
+          break;
+        case "mode-regular":
+          actions.setPriceScaleMode("regular");
+          break;
+        case "mode-percent":
+          actions.setPriceScaleMode("percent");
+          break;
+        case "mode-indexed":
+          actions.setPriceScaleMode("indexed100");
+          break;
+        case "mode-log":
+          actions.setPriceScaleMode("logarithmic");
+          break;
+        case "move-scale":
+          actions.moveScale();
+          break;
+        case "settings":
+          actions.openSettings();
+          break;
+        default:
+          break;
+      }
+    });
   }
 
   root.addEventListener("click", (ev) => {

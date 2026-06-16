@@ -3,7 +3,7 @@
  * Supports mapping times beyond the last bar (future whitespace).
  */
 
-import { chartDebug } from "../../debug/chart/index.js";
+import { chartDebugCount } from "../../debug/chart/index.js";
 
 /** @param {{ time: number }[]} seriesData @param {number} barSec @param {number} timeUtc */
 export function timeToLogical(seriesData, barSec, timeUtc) {
@@ -196,7 +196,7 @@ export function pixelToPoint(chart, series, bars, barSec, x, y) {
     const logical = ts.coordinateToLogical(x);
     if (logical != null && Number.isFinite(logical)) {
       time = logicalToChartTime(bars, barSec, logical);
-      chartDebug("drawings", "pixelToPoint", { x, logical, time, barSec, bars: bars.length });
+      chartDebugCount("drawings", "pixelToPoint");
     }
   }
 

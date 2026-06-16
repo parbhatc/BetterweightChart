@@ -65,6 +65,21 @@ export function createBarLoader(opts) {
 
   /** @type {Map<number, string>} */
   const streamUidByPane = new Map();
+  /** @type {Map<number, Promise<object | undefined>>} */
+  const loadInFlightByPane = new Map();
+  let barsLoadingCount = 0;
+  /** @type {Promise<unknown> | null} */
+  let loadBarsForPanesPromise = null;
+  let overlayLoaderEnabled = true;
+
+  function setBarsLoadingState(active) {
+    barsLoadingCount = Math.max(0, barsLoadingCount + (active ? 1 : -1));
+    setBarsLoading(barsLoadingCount > 0);
+  }
+
+  function setOverlayLoaderEnabled(enabled) {
+    overlayLoaderEnabled = Boolean(enabled);
+  }
 
   function unsubscribePane(paneIndex) {
     const uid = streamUidByPane.get(paneIndex);
@@ -238,7 +253,10 @@ export function createBarLoader(opts) {
     if (!opts.force && pane.bars?.length) {
       return pane.bars.at(-1);
     }
-    return chartDebugTimeAsync("data", `loadPaneBars pane ${pane.index}`, async () => {
+    const inFlight = loadInFlightByPane.get(pane.index);
+    if (inFlight) return inFlight;
+
+    const task = chartDebugTimeAsync("data", `loadPaneBars pane ${pane.index}`, async () => {
       if (!pane.symbolInfo) pane.symbolInfo = await datafeed.resolveSymbol(pane.symbol);
       const result = await datafeed.getBars(pane.symbolInfo, pane.resolution, { countBack });
       pane.bars = result.bars;
@@ -258,22 +276,62 @@ export function createBarLoader(opts) {
       }
       return pane.bars.at(-1);
     });
+
+    loadInFlightByPane.set(pane.index, task);
+    try {
+      return await task;
+    } finally {
+      if (loadInFlightByPane.get(pane.index) === task) {
+        loadInFlightByPane.delete(pane.index);
+      }
+    }
   }
 
   async function loadBarsForPanes(panes) {
-    setBarsLoading(true);
-    refreshStatusLine();
-    try {
-      return await loader.wrap(async () => {
-        let last;
-        for (const pane of panes) {
-          last = await loadPaneBars(pane);
-        }
-        return last;
-      });
-    } finally {
-      setBarsLoading(false);
+    const targets = panes.filter(Boolean);
+    if (!targets.length) return undefined;
+
+    if (loadBarsForPanesPromise) {
+      await loadBarsForPanesPromise;
+      const pending = targets.filter((p) => !p.bars?.length);
+      if (!pending.length) return pending.at(-1)?.bars?.at(-1);
+      return loadBarsForPanes(pending);
+    }
+
+    const task = (async () => {
+      setBarsLoadingState(true);
       refreshStatusLine();
+      try {
+        const run = async () => {
+          chartDebug("data", "loadBarsForPanes start", {
+            panes: targets.map((p) => p.index),
+          });
+          await Promise.all(
+            targets.map((pane) =>
+              loadPaneBars(pane).catch((err) => {
+                chartDebug("data", "loadPaneBars failed", { pane: pane.index, err: String(err) });
+                return undefined;
+              }),
+            ),
+          );
+          chartDebug("data", "loadBarsForPanes done", {
+            panes: targets.map((p) => p.index),
+          });
+          return targets.at(-1)?.bars?.at(-1);
+        };
+        if (overlayLoaderEnabled) return await loader.wrap(run);
+        return await run();
+      } finally {
+        setBarsLoadingState(false);
+        refreshStatusLine();
+      }
+    })();
+
+    loadBarsForPanesPromise = task;
+    try {
+      return await task;
+    } finally {
+      if (loadBarsForPanesPromise === task) loadBarsForPanesPromise = null;
     }
   }
 
@@ -293,5 +351,6 @@ export function createBarLoader(opts) {
     prependHistory,
     ensureHistoryNearEdge,
     needsMoreHistory,
+    setOverlayLoaderEnabled,
   };
 }

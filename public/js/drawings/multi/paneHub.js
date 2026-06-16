@@ -23,12 +23,19 @@ const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "ed
  * @param {(paneIndex: number) => object} opts.getContextForPane
 
  * @param {() => boolean} [opts.getSyncDrawings]
+ * @param {() => boolean} [opts.getSyncCrosshair]
 
  */
 
 export function createMultiPaneDrawingHub(opts) {
 
-  const { toolbarEl, getContextForPane, getSyncDrawings = () => false } = opts;
+  const {
+    toolbarEl,
+    getContextForPane,
+    getSyncDrawings = () => false,
+    getSyncCrosshair = () => false,
+    onValuesTooltipBarChange,
+  } = opts;
 
 
 
@@ -43,6 +50,17 @@ export function createMultiPaneDrawingHub(opts) {
   let activeIndex = 0;
 
   let syncingDrawings = false;
+  /** @type {number | null} */
+  let pendingDragSyncIndex = null;
+  /** @type {number} */
+  let dragSyncRaf = 0;
+  /** @type {{ sourceIndex: number, snapshot: { time?: number, price?: number, drawDot?: boolean } | null } | null} */
+  let pendingGlobalCrosshair = null;
+  /** @type {number} */
+  let globalCrosshairRaf = 0;
+  let lastGlobalCrosshairKey = "";
+  /** @type {Set<import("lightweight-charts").IChartApi>} */
+  const crosshairEchoCharts = new Set();
 
 
 
@@ -82,7 +100,25 @@ export function createMultiPaneDrawingHub(opts) {
 
 
 
-  function syncDrawingsFrom(sourceIndex) {
+  function syncPlacementFrom(sourceIndex) {
+    if (!getSyncDrawings()) return;
+    const source = controllers.get(sourceIndex);
+    if (!source) return;
+    const snapshot = source.getPlacementSyncSnapshot();
+    syncingDrawings = true;
+    try {
+      for (const [idx, ctrl] of controllers) {
+        if (idx === sourceIndex) continue;
+        ctrl.applyPlacementSyncSnapshot(snapshot);
+      }
+    } finally {
+      syncingDrawings = false;
+    }
+  }
+
+
+
+  function syncDrawingsFrom(sourceIndex, opts = {}) {
 
     if (!getSyncDrawings()) return;
 
@@ -91,6 +127,7 @@ export function createMultiPaneDrawingHub(opts) {
     if (!source) return;
 
     const clone = structuredClone(source.getDrawings());
+    const selectedId = source.getSelectedId();
 
     syncingDrawings = true;
 
@@ -100,7 +137,12 @@ export function createMultiPaneDrawingHub(opts) {
 
         if (idx === sourceIndex) continue;
 
-        ctrl.replaceDrawings(clone, { silent: true });
+        if (opts.dragFrame) {
+          ctrl.applyDrawingsSync(clone, selectedId);
+        } else {
+          ctrl.replaceDrawings(clone, { silent: true });
+          ctrl.selectDrawing(selectedId, { silent: true });
+        }
 
       }
 
@@ -110,6 +152,108 @@ export function createMultiPaneDrawingHub(opts) {
 
     }
 
+  }
+
+  function shouldUseGlobalCrosshair() {
+    if (controllers.size <= 1) return false;
+    return getSyncDrawings() || getSyncCrosshair();
+  }
+
+  /** @param {import("lightweight-charts").IChartApi} chart */
+  function isCrosshairEcho(chart) {
+    return crosshairEchoCharts.has(chart);
+  }
+
+  /**
+   * @param {number} sourceIndex
+   * @param {{ time?: number, price?: number, drawDot?: boolean } | null} snapshot
+   */
+  function publishGlobalCrosshair(sourceIndex, snapshot) {
+    if (!shouldUseGlobalCrosshair()) return;
+    if (snapshot == null) lastGlobalCrosshairKey = "";
+    pendingGlobalCrosshair = { sourceIndex, snapshot };
+    if (globalCrosshairRaf) return;
+    globalCrosshairRaf = requestAnimationFrame(() => {
+      globalCrosshairRaf = 0;
+      flushGlobalCrosshair();
+    });
+  }
+
+  function flushGlobalCrosshair() {
+    const pending = pendingGlobalCrosshair;
+    pendingGlobalCrosshair = null;
+    if (!pending || !shouldUseGlobalCrosshair()) return;
+
+    const { sourceIndex, snapshot } = pending;
+    const key =
+      snapshot == null ? "clear" : `${snapshot.time}:${snapshot.price}:${snapshot.drawDot ? 1 : 0}`;
+    if (key === lastGlobalCrosshairKey) return;
+    lastGlobalCrosshairKey = key;
+
+    syncingDrawings = true;
+    try {
+      for (const [idx, ctrl] of controllers) {
+        if (idx === sourceIndex) continue;
+        const chart = charts.get(idx);
+        if (chart) crosshairEchoCharts.add(chart);
+        ctrl.applyCrosshairSyncSnapshot?.(snapshot);
+      }
+    } finally {
+      syncingDrawings = false;
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => crosshairEchoCharts.clear());
+      });
+    }
+  }
+
+  /** @param {number} sourceIndex @param {{ clear?: boolean }} [opts] */
+  function publishGlobalCrosshairFromController(sourceIndex, opts = {}) {
+    if (!shouldUseGlobalCrosshair()) return;
+    const source = controllers.get(sourceIndex);
+    if (!source) return;
+    const snapshot = opts.clear ? null : (source.getCrosshairSyncSnapshot?.() ?? null);
+    publishGlobalCrosshair(sourceIndex, snapshot);
+  }
+
+  /**
+   * @param {{ index: number, series: import("lightweight-charts").ISeriesApi }} pane
+   * @param {import("lightweight-charts").MouseEventParams} param
+   */
+  function publishGlobalCrosshairFromLayout(pane, param) {
+    if (!shouldUseGlobalCrosshair()) return;
+    if (!pane.bars?.length) return;
+    let snapshot = null;
+    if (param?.time != null && param.point) {
+      const price = pane.series.coordinateToPrice(param.point.y);
+      if (price != null && Number.isFinite(price)) {
+        snapshot = { time: param.time, price };
+      }
+    }
+    publishGlobalCrosshair(pane.index, snapshot);
+  }
+
+  function resetGlobalCrosshair() {
+    lastGlobalCrosshairKey = "";
+    pendingGlobalCrosshair = null;
+    if (globalCrosshairRaf) {
+      cancelAnimationFrame(globalCrosshairRaf);
+      globalCrosshairRaf = 0;
+    }
+    crosshairEchoCharts.clear();
+  }
+
+  function scheduleDragSync(sourceIndex) {
+    if (!getSyncDrawings()) return;
+    pendingDragSyncIndex = sourceIndex;
+    if (dragSyncRaf) return;
+    dragSyncRaf = requestAnimationFrame(() => {
+      dragSyncRaf = 0;
+      const idx = pendingDragSyncIndex;
+      pendingDragSyncIndex = null;
+      if (idx == null || syncingDrawings) return;
+      syncDrawingsFrom(idx, { dragFrame: true });
+      publishGlobalCrosshairFromController(idx);
+    });
   }
 
 
@@ -125,6 +269,7 @@ export function createMultiPaneDrawingHub(opts) {
       if (syncingDrawings) return;
 
       syncDrawingsFrom(paneIndex);
+      syncPlacementFrom(paneIndex);
 
     });
 
@@ -135,6 +280,8 @@ export function createMultiPaneDrawingHub(opts) {
 
 
     ctrl.on("selectionChange", () => {
+
+      if (syncingDrawings) return;
 
       if (ctrl.getSelectedId()) activeIndex = paneIndex;
 
@@ -148,6 +295,21 @@ export function createMultiPaneDrawingHub(opts) {
 
       if (paneIndex === activeIndex) emit("dragChange");
 
+      if (syncingDrawings) return;
+      if (!getSyncDrawings()) return;
+      if (!ctrl.isDraggingDrawing()) publishGlobalCrosshairFromController(paneIndex, { clear: true });
+
+    });
+
+    ctrl.on("dragSync", () => {
+      if (syncingDrawings) return;
+      scheduleDragSync(paneIndex);
+    });
+
+    ctrl.on("crosshairSync", () => {
+      if (syncingDrawings) return;
+      if (ctrl.isDraggingDrawing?.()) return;
+      publishGlobalCrosshairFromController(paneIndex);
     });
 
 
@@ -162,6 +324,9 @@ export function createMultiPaneDrawingHub(opts) {
 
     ctrl.on("placementChange", () => {
       if (paneIndex === activeIndex) emit("placementChange");
+      if (syncingDrawings) return;
+      syncPlacementFrom(paneIndex);
+      publishGlobalCrosshairFromController(paneIndex);
     });
 
   }
@@ -191,6 +356,8 @@ export function createMultiPaneDrawingHub(opts) {
       container: pane.container,
 
       getContext: () => getContextForPane(paneIndex),
+
+      onValuesTooltipBarChange: (bar, prev) => onValuesTooltipBarChange?.(paneIndex, bar, prev),
 
     });
 
@@ -432,7 +599,9 @@ export function createMultiPaneDrawingHub(opts) {
       for (const [key, list] of Object.entries(data)) {
         const idx = Number(key);
         const ctrl = controllers.get(idx);
-        if (ctrl && Array.isArray(list)) ctrl.replaceDrawings(list, { silent: true });
+        if (ctrl && Array.isArray(list)) {
+          ctrl.replaceDrawings(list, { silent: true, source: `pane ${idx}` });
+        }
       }
     } finally {
       syncingDrawings = false;
@@ -458,6 +627,12 @@ export function createMultiPaneDrawingHub(opts) {
     getDrawingsByPane,
 
     setDrawingsByPane,
+
+    shouldUseGlobalCrosshair,
+    isCrosshairEcho,
+    publishGlobalCrosshairFromLayout,
+
+    resetGlobalCrosshair,
 
     mainToolbar,
 
