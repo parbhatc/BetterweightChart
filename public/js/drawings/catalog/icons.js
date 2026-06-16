@@ -1,4 +1,4 @@
-/** TradingView-style drawing toolbar icons (28×28 viewBox). */
+/** Drawing toolbar icons (28×28 viewBox). */
 
 export const CHEVRON_RIGHT = `<svg class="draw-tools__chevron" viewBox="0 0 10 16" aria-hidden="true"><path fill="currentColor" d="M.6 1.4l1.4-1.4 8 8-8 8-1.4-1.4 6.389-6.532-6.389-6.668z"/></svg>`;
 

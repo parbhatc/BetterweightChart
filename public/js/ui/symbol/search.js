@@ -1,5 +1,5 @@
 /**
- * TradingView-style symbol search dropdown.
+ * Symbol search dropdown.
  * @param {object} opts
  * @param {HTMLElement} opts.root
  * @param {ReturnType<import("../../datafeed/client.js").createDatafeed>} opts.datafeed

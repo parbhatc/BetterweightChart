@@ -1,4 +1,5 @@
 import { renderStatusLine } from "../../chart/status/line.js";
+import { getMarketStatusDetails } from "../../chart/market/status.js";
 import { precisionFromSettings } from "../../chart/timezone/list.js";
 import { isScaleVisible, resolvePriceScalePlacement } from "../../chart/scale/settings.js";
 import { rafThrottle, trackChartPanning } from "../../chart/pan/perf.js";
@@ -15,7 +16,7 @@ import {
   ensureFutureWhitespace as growFutureWhitespace,
   applyLiveBarToPaneSeries,
 } from "../../chart/pane/data.js";
-import { CHART_FUTURE_WHITESPACE_MIN } from "../../chart/future/whitespace.js";
+import { CHART_FUTURE_WHITESPACE_MIN, isFutureWhitespaceEnabled } from "../../chart/future/whitespace.js";
 
 /**
  * @param {object} deps
@@ -41,11 +42,9 @@ export function createPaneExtras(deps) {
   /** @type {Map<number, object>} */
   const pendingStatusPanes = new Map();
 
-  /** @param {object} pane @param {number} time */
-  function statusBarAtTime(pane, time) {
-    const idx = pane.timeToIdx?.get(time);
-    if (idx == null) return undefined;
-    return barsForPane(pane)[idx];
+  /** @param {object} pane @param {number} utcTime */
+  function statusBarAtTime(pane, utcTime) {
+    return pane.timeAdapter?.index.utcBarByUtcTime(utcTime) ?? barsForPane(pane).find((b) => b.time === utcTime);
   }
 
   /** @param {object} pane */
@@ -96,11 +95,15 @@ export function createPaneExtras(deps) {
     const bg = new SessionBackgroundPrimitive();
     bg.setSettingsProvider(() => settingsStore.get().symbol ?? {});
     bg.setSymbolProvider(() => pane.symbolInfo ?? symbolInfo);
-    bg.setContextProvider(() => ({
-      bars: barsForPane(pane),
-      mapBars: pane.mapBars,
-      barSec: barSecForPane(pane),
-    }));
+    bg.setContextProvider(() => {
+      const view = pane._chartView;
+      const ta = view?.timeAdapter ?? pane.timeAdapter;
+      return {
+        bars: barsForPane(pane),
+        barSec: barSecForPane(pane),
+        timeAdapter: ta,
+      };
+    });
     pane.series.attachPrimitive(bg);
     pane.sessionBg = bg;
   }
@@ -116,8 +119,10 @@ export function createPaneExtras(deps) {
         const { close } = priceLineBarForPane(pane, settingsStore, symbolInfo);
         const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
         const placement = resolvePriceScalePlacement(sc.scalesPlacement);
+        const marketOpen = getMarketStatusDetails(pane.symbolInfo ?? symbolInfo).open;
         return {
           enabled,
+          marketOpen,
           scaleVisible: isScaleVisible(sc.currencyUnitVisibility),
           lineVisible: Boolean(sc.symbolLabelLine),
           lineWidth: Number(sc.symbolLabelLineWidth) || 1,
@@ -162,7 +167,9 @@ export function createPaneExtras(deps) {
 
       if (isActive && ui.lockCursorByTime && ui.lockedCrosshairTime != null && param?.point) {
         const price = pane.series.coordinateToPrice(param.point.y);
-        if (price != null) pane.chart.setCrosshairPosition(price, ui.lockedCrosshairTime, pane.series);
+        const chartTime =
+          pane.timeAdapter?.time.toChart(ui.lockedCrosshairTime) ?? ui.lockedCrosshairTime;
+        if (price != null) pane.chart.setCrosshairPosition(price, chartTime, pane.series);
       }
 
       if (isActive && !ui.chartPanning) {
@@ -189,10 +196,9 @@ export function createPaneExtras(deps) {
         return;
       }
 
-      const visible = barsForPane(pane);
-      const idx = pane.timeToIdx?.get(param.time);
-      let nextBar = idx != null ? visible[idx] : undefined;
-      let prevBar = idx != null && idx > 0 ? visible[idx - 1] : undefined;
+      const idx = pane.timeAdapter?.index.chart(param.time);
+      let nextBar = pane.timeAdapter?.index.utcBarByChartTime(param.time);
+      let prevBar = idx != null && idx > 0 ? pane.timeAdapter?.index.utcBar(idx - 1) : undefined;
       if (!nextBar) {
         nextBar = seriesOhlc ?? undefined;
         if (!nextBar) return;
@@ -241,12 +247,15 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane */
   function ensurePaneFutureWhitespace(pane) {
+    const sc = settingsStore.get().scales ?? {};
+    if (!isFutureWhitespaceEnabled(sc)) return;
     const visible = barsForPane(pane);
     growFutureWhitespace({
       chart: pane.chart,
       series: pane.series,
       pane,
       barSec: barSecForPane(pane, resolutions),
+      futureWhitespaceEnabled: isFutureWhitespaceEnabled(settingsStore.get().scales),
       barsForChart: () => visible,
       buildChartSeriesForDisplay: (vis) =>
         buildChartSeriesForPane(pane, vis, settingsStore, resolutions),
@@ -280,6 +289,8 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane */
   function scheduleWhitespaceGrow(pane) {
+    const sc = settingsStore.get().scales ?? {};
+    if (!isFutureWhitespaceEnabled(sc)) return;
     if (ui.barsLoading || ui.chartPanning) {
       if (ui.chartPanning) deferWhitespacePane = pane;
       return;

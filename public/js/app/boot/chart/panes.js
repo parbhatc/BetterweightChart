@@ -5,9 +5,8 @@ import {
   buildChartSeriesForPane,
   refreshPaneCandleData as refreshPaneCandles,
 } from "../../../chart/pane/data.js";
-import { CHART_FUTURE_WHITESPACE_MIN } from "../../../chart/future/whitespace.js";
+import { futureWhitespaceBarCount, withFutureWhitespace } from "../../../chart/future/whitespace.js";
 import { buildCandleSeriesData } from "../../../chart/bar/data.js";
-import { withFutureWhitespace } from "../../../chart/future/whitespace.js";
 import { isElectronicSession } from "../../../primitives/session/background.js";
 import { resolveTimezone } from "../../../chart/timezone/list.js";
 import { createLayoutSync } from "../../layout/sync.js";
@@ -75,8 +74,9 @@ export function attachPaneHelpers(ctx) {
     const pane = getActivePane();
     if (pane) return buildChartSeriesForPaneLocal(pane, visible);
     const sym = ctx.settingsStore.get().symbol ?? {};
+    const sc = ctx.settingsStore.get().scales ?? {};
     const candles = buildCandleSeriesData(visible, sym);
-    const ws = ctx.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
+    const ws = futureWhitespaceBarCount({ futureWhitespaceBars: ctx.futureWhitespaceBars }, sc);
     return withFutureWhitespace(candles, barSec(), ws);
   }
 
@@ -86,7 +86,7 @@ export function attachPaneHelpers(ctx) {
 
   function refreshPaneCandleData(pane) {
     refreshPaneCandles(pane, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions, (p) => {
-      if (p.index === 0) ctx.timeToIdx = p.timeToIdx;
+      if (p.index === 0) ctx.timeAdapter = p.timeAdapter;
     });
   }
 

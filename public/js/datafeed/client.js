@@ -1,5 +1,5 @@
 /**
- * TradingView UDF-style datafeed for lightweight-charts.
+ * HTTP UDF-compatible datafeed for lightweight-charts.
  * Mirrors the UDF datafeed API surface (onReady, resolveSymbol, getBars, searchSymbols).
  */
 
@@ -123,4 +123,28 @@ export function readPageOptions(search = window.location.search) {
     datafeedType: datafeed ?? undefined,
     tradingview: datafeed === "tradingview",
   };
+}
+
+/**
+ * Build a shareable chart URL from current view state.
+ * @param {object} state
+ * @param {string} [state.symbol]
+ * @param {string} [state.resolution]
+ * @param {"dark" | "light"} [state.theme]
+ * @param {string} [state.datafeedType]
+ * @param {boolean} [state.drawings]
+ * @param {boolean} [state.chrome]
+ */
+export function buildChartShareUrl(state) {
+  const url = new URL(`${window.location.origin}${window.location.pathname}`);
+  const sp = new URLSearchParams();
+  if (state.symbol) sp.set("symbol", state.symbol);
+  if (state.resolution) sp.set("resolution", state.resolution);
+  if (state.theme) sp.set("theme", state.theme);
+  if (state.datafeedType) sp.set("datafeed", state.datafeedType);
+  if (state.drawings === false) sp.set("drawings", "0");
+  if (state.chrome === false) sp.set("chrome", "0");
+  const query = sp.toString();
+  if (query) url.search = query;
+  return url.href;
 }

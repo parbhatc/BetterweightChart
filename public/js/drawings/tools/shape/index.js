@@ -140,6 +140,14 @@ export function isRectangleTool(type) {
   return type === "rectangle";
 }
 
+export {
+  rectangleAnchorPoints,
+  rectangleCornerDragUpdate,
+  rectangleBoundsFromPoints,
+  rectangleCornersFromBounds,
+  rectangleStorageFromCorners,
+} from "./rectangle.js";
+
 /** @param {string} type */
 export function isRotatedRectangleTool(type) {
   return type === "rotated-rectangle";
@@ -286,7 +294,7 @@ export function finalizeShapeDrawing(drawing) {
   return { ...shapeDraftFromDrawing(drawing), ...drawing };
 }
 
-/** Tools that stay active after placing (path/polyline like TradingView). */
+/** Tools that stay active after placing (path, polyline). */
 export function keepsToolAfterCommit(type) {
   return isFreehandTool(type) || isPathTool(type) || isPolylineTool(type);
 }

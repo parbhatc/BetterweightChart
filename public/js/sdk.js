@@ -4,7 +4,7 @@
  * @example
  * import { bootChart, ChartApi } from "https://your-host/chart/sdk.js";
  */
-export { ChartApi, bootChart, createDatafeed, readPageOptions } from "./api/chart/index.js";
+export { ChartApi, bootChart, createDatafeed, readPageOptions, CHART_FEATURES } from "./api/chart/index.js";
 export { bootChart as createChart } from "./app/boot/chart.js";
 export {
   mountDrawings,

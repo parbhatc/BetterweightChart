@@ -1,6 +1,6 @@
 # BetterweightChart
 
-Standalone TradingView-style chart on [lightweight-charts](https://github.com/tradingview/lightweight-charts) v5 with 68 drawing tools. Uses **fake OHLC data** — no live feed. Use on any site via **ES modules** (like lightweight-charts) or iframe embed.
+Standalone chart widget on [lightweight-charts](https://github.com/tradingview/lightweight-charts) v5 with 68 drawing tools. Uses **fake OHLC data** — no live feed. Use on any site via **ES modules** (like lightweight-charts) or iframe embed.
 
 ## Quick start
 
@@ -77,7 +77,7 @@ Host this repo (or deploy to your server), then import ES modules from stable pa
 
 | Import path | Exports |
 |-------------|---------|
-| `/chart/sdk.js` | `bootChart`, `ChartApi`, `mountDrawings`, `createDatafeed`, `createCustomDatafeed`, `createStaticDatafeed` |
+| `/chart/sdk.js` | `bootChart`, `ChartApi`, `mountDrawings`, `createDatafeed`, `CHART_FEATURES`, … |
 | `/chart/app.js` | `bootChart`, `readPageOptions` |
 | `/chart/api.js` | `ChartApi`, `createDatafeed` |
 
@@ -118,6 +118,12 @@ const widget = await bootChart({
   drawings: true,
   chrome: false,
   countBack: 500,
+});
+
+// Feature flags — set at chart creation
+await bootChart({
+  symbol: "ES",
+  disabled_features: ["future_whitespace"], // opt out of future whitespace (on by default)
 });
 
 // widget.chart, widget.series, widget.settings — see Widget API below
@@ -292,6 +298,9 @@ Your `getBars` handler receives `{ from, to, countBack, firstDataRequest }`. Ret
 | Measure tool (A→B stats, click to dismiss) | Implemented |
 | Drawing copy/paste (Ctrl+C / Ctrl+V, context menu) | Implemented |
 | Multi-pane future whitespace growth | Implemented per pane |
+| Future whitespace | On by default; disable with `disabled_features: ['future_whitespace']` at boot (not user-configurable) |
+| Drawing style templates (named save/apply/reset) | Implemented on edit toolbar |
+| Chart timezone (bar-shift + time adapter) | Implemented — UTC logic vs chart-time render |
 | Countdown to bar close (price axis) | Implemented |
 
 ## REST API
@@ -322,6 +331,60 @@ Your `getBars` handler receives `{ from, to, countBack, firstDataRequest }`. Ret
   height="480"
 ></iframe>
 ```
+
+### Feature flags
+
+Pass at chart creation via `disabled_features` / `enabled_features`:
+
+```javascript
+import { bootChart, CHART_FEATURES } from "https://YOUR_HOST/chart/sdk.js";
+
+await bootChart({
+  mount: el,
+  symbol: "NQ",
+  disabled_features: [CHART_FEATURES.FUTURE_WHITESPACE],
+});
+```
+
+| Feature id | Default | Description |
+|------------|---------|-------------|
+| `future_whitespace` | **on** | Appends empty bars to the series so you can pan/scroll into future time. **Drawing in future time works without this** — coords extrapolate past the last bar. Disable with `disabled_features`. |
+
+```javascript
+await bootChart({
+  mount: el,
+  symbol: "NQ",
+  disabled_features: ["future_whitespace"],
+});
+```
+
+Whitespace is controlled only at chart creation — there is no settings toggle.
+
+## Chart settings
+
+Open **Settings** (gear) → **Scales and lines** → **Time Scale** for date/time label options.
+
+## Drawing templates
+
+Select any drawing to open the floating edit toolbar. The **Templates** button (grid icon) supports:
+
+| Action | Behavior |
+|--------|----------|
+| **Save as template** | Prompt for a name; confirms before overwriting an existing name |
+| **Apply template** | Pick a saved template for that tool type and apply its styles to the selected drawing |
+| **Reset template** | Restore factory defaults for that tool type |
+
+Templates are saved with the layout (autosave / Save layout) and restored when you load that layout. The button shows a dot when templates exist for the current tool type.
+
+## Timezone model
+
+Lightweight Charts has no native timezone support. This app uses a three-layer model:
+
+1. **UTC (logic)** — bar storage, drawings, indicators, session math
+2. **View cache** — `public/js/chart/pane/viewCache.js` rebuilds on data/timezone/session change
+3. **Chart-time (render)** — bars shifted for display; crosshair and drawings map through `timeAdapter`
+
+Set the display timezone under **Settings → Symbol → Timezone**.
 
 ## Development
 

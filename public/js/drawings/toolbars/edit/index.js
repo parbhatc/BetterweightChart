@@ -18,6 +18,18 @@ import {
   saveLayoutScopedToolDefault,
 } from "../defaults/layoutScope.js";
 import { extractToolDefaults } from "../defaults/store.js";
+import { factoryDrawingDefaults } from "../defaults/factoryDefaults.js";
+import {
+  clearActiveTemplateName,
+  getActiveTemplateName,
+  hasNamedTemplate,
+  hasTemplateIndicator,
+  listNamedTemplates,
+  loadNamedTemplate,
+  saveNamedTemplate,
+  setActiveTemplateName,
+} from "../defaults/layoutTemplates.js";
+import { showLayoutConfirmDialog, showLayoutNameDialog } from "../../../ui/header/layout/dialogs.js";
 
 const EDIT_TOOL_HINTS = {
   templates: "Templates",
@@ -157,7 +169,7 @@ export function mountEditToolbar(opts) {
     const regressionTrend = isRegressionTrendTool(drawing.type);
     if (templatesBtn instanceof HTMLElement) {
       templatesBtn.hidden = regressionTrend;
-      templatesBtn.classList.toggle("has-template", hasLayoutScopedToolDefault(drawing.type));
+      templatesBtn.classList.toggle("has-template", hasTemplateIndicator(drawing.type));
     }
     if (lineColorBtn instanceof HTMLElement) lineColorBtn.hidden = regressionTrend;
     if (backgroundColorBtn instanceof HTMLElement) backgroundColorBtn.hidden = !channelBackground;
@@ -322,11 +334,64 @@ export function mountEditToolbar(opts) {
     });
   }
 
+  async function saveTemplate(drawing) {
+    const toolType = drawing.type;
+    const name = await showLayoutNameDialog({
+      title: "Save template",
+      label: "Template name",
+      placeholder: "My template",
+      confirmLabel: "Save",
+    });
+    if (!name) return;
+    if (hasNamedTemplate(toolType, name)) {
+      const confirmed = await showLayoutConfirmDialog({
+        title: "Override template?",
+        message: `A template named "${name}" already exists. Are you sure you want to override it?`,
+        confirmLabel: "Override",
+        cancelLabel: "Cancel",
+        destructive: true,
+      });
+      if (!confirmed) return;
+    }
+    const patch = extractToolDefaults(drawing);
+    saveNamedTemplate(toolType, name, patch);
+    saveLayoutScopedToolDefault(toolType, patch);
+    syncFromDrawing();
+  }
+
+  function openApplyTemplateMenu(anchor, drawing) {
+    const toolType = drawing.type;
+    const names = listNamedTemplates(toolType);
+    const activeName = getActiveTemplateName(toolType);
+    const items = names.length
+      ? names.map((name) => ({ id: name, label: name }))
+      : [{ id: "__none__", label: "No templates saved" }];
+    tvMenu.open(anchor, items, {
+      activeId: activeName ?? undefined,
+      onSelect: (name) => {
+        if (name === "__none__") return false;
+        const patch = loadNamedTemplate(toolType, name);
+        if (!Object.keys(patch).length) return;
+        setActiveTemplateName(toolType, name);
+        saveLayoutScopedToolDefault(toolType, patch);
+        controller.updateDrawing(drawing.id, patch);
+        syncFromDrawing();
+      },
+    });
+  }
+
+  function resetTemplate(drawing) {
+    const toolType = drawing.type;
+    clearActiveTemplateName(toolType);
+    clearLayoutScopedToolDefault(toolType);
+    controller.updateDrawing(drawing.id, factoryDrawingDefaults(toolType));
+    syncFromDrawing();
+  }
+
   function openTemplatesMenu(anchor) {
     const drawing = controller.getSelectedDrawing();
     if (!drawing) return;
     const toolType = drawing.type;
-    const hasTemplate = hasLayoutScopedToolDefault(toolType);
     tvMenu.open(
       anchor,
       [
@@ -337,19 +402,15 @@ export function mountEditToolbar(opts) {
       {
         onSelect: (id) => {
           if (id === "save") {
-            saveLayoutScopedToolDefault(toolType, extractToolDefaults(drawing));
-            syncFromDrawing();
+            void saveTemplate(drawing);
             return;
           }
           if (id === "apply") {
-            if (!hasTemplate) return;
-            controller.updateDrawing(drawing.id, loadLayoutScopedToolDefaults(toolType));
-            syncFromDrawing();
-            return;
+            openApplyTemplateMenu(anchor, drawing);
+            return false;
           }
           if (id === "reset") {
-            clearLayoutScopedToolDefault(toolType);
-            syncFromDrawing();
+            resetTemplate(drawing);
           }
         },
       },

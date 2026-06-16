@@ -9,7 +9,7 @@ import {
 import { dateTime12h, toDate } from "../format.js";
 
 const DEFAULT_VISIBLE_BARS = 96;
-/** Empty bars of whitespace on the right for future time (TradingView-style). */
+/** Empty bars of whitespace on the right for future time. */
 export const FUTURE_RIGHT_OFFSET = 48;
 
 /**

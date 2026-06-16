@@ -107,5 +107,5 @@ export function finalizeAnnotationDrawing(drawing) {
   return { ...annotationDraftFromDrawing(drawing), ...drawing };
 }
 
-/** Tools that stay active after placing (TradingView brush/highlighter/path behavior). */
+/** Tools that stay active after placing (brush, highlighter, path). */
 export { keepsToolAfterCommit } from "../shape/index.js";

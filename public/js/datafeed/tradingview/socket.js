@@ -27,7 +27,7 @@ function barFromTvValues(v) {
 }
 
 /**
- * Browser TradingView chart websocket (widgetdata endpoint).
+ * Browser websocket for remote chart data (widgetdata endpoint).
  */
 export class TradingViewSocket {
   constructor() {

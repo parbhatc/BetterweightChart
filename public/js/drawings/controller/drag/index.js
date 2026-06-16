@@ -1,4 +1,6 @@
 import { DRAWING_DRAG_ACTIVATION_PX } from "../../constants.js";
+import { debugDragEnd, debugDragStart, formatDrawPoint, summarizeDrawing } from "../../../debug/chart/drawings.js";
+import { chartDebugThrottle } from "../../../debug/chart/index.js";
 
 const COARSE_POINTER_MQ = window.matchMedia("(pointer: coarse)");
 import {
@@ -19,6 +21,7 @@ import {
 import { disjointChannelDragUpdate } from "../../tools/channel/disjoint.js";
 import { isRegressionTrendTool, regressionTrendDragUpdate, regressionTrendMedianAnchorIndices, clampRegressionPoint } from "../../tools/regression/trend.js";
 import { isPositionTool, positionDragUpdate, positionAnchorPoints, positionGeometry } from "../../tools/position/barrel.js";
+import { isRectangleTool, rectangleCornerDragUpdate } from "../../tools/shape/index.js";
 
 /**
  * @typedef {import("../../types.js").DrawPoint} DrawPoint
@@ -30,6 +33,9 @@ import { isPositionTool, positionDragUpdate, positionAnchorPoints, positionGeome
  * @param {() => UserDrawing[]} api.getDrawings
  * @param {(id: string, patch: object, opts?: { silent?: boolean }) => void} api.updateDrawing
  * @param {(clientX: number, clientY: number) => DrawPoint | null} api.resolvePoint
+ * @param {(points: import("../types.js").DrawPoint[]) => ({ x: number | null, y: number | null }[] | null)} [api.captureMoveDragAnchorPx]
+ * @param {(points: import("../types.js").DrawPoint[], startAnchorPx: ({ x: number | null, y: number | null } | null)[], startClientX: number, startClientY: number, clientX: number, clientY: number) => import("../types.js").DrawPoint[]} [api.shiftPointsByClientDelta]
+ * @param {(startClientY: number, clientY: number) => number} [api.moveDragPriceDelta]
  * @param {() => void} api.syncChartPointerHandling
  * @param {() => void} api.emitChange
  * @param {(active: boolean) => void} api.setDraggingDrawing
@@ -155,6 +161,11 @@ export function createDrawingDrag(api) {
 
   function endDrawingDrag() {
     if (!dragState) return;
+    const drawing = api.getDrawings().find((d) => d.id === dragState.drawingId);
+    debugDragEnd(dragState.mode, {
+      ...summarizeDrawing(drawing ?? { id: dragState.drawingId, points: dragState.startPoints }),
+      pointIndex: dragState.pointIndex,
+    });
     if (dragState.regressionGuide) api.setRegressionGuideDrawingId(null);
     dragState = null;
     api.setDraggingDrawing(false);
@@ -183,9 +194,19 @@ export function createDrawingDrag(api) {
     if (!pendingDrag || dragState) return;
     const moved = Math.hypot(clientX - pendingDrag.startClientX, clientY - pendingDrag.startClientY);
     if (moved < dragActivationPx()) return;
-    const { startClientX: _x, startClientY: _y, ...state } = pendingDrag;
+    const state = {
+      ...pendingDrag,
+      startAnchorPx: api.captureMoveDragAnchorPx?.(pendingDrag.startPoints) ?? null,
+    };
     pendingDrag = null;
     startDrawingDrag(state);
+    debugDragStart(state.mode, {
+      drawingId: state.drawingId,
+      type: api.getDrawings().find((d) => d.id === state.drawingId)?.type,
+      points: state.startPoints?.map((p) => ({ t: p.time, p: p.price })),
+      anchorPx: state.startAnchorPx,
+      pointIndex: state.pointIndex,
+    });
     applyDrawingDrag(clientX, clientY);
   }
 
@@ -197,11 +218,11 @@ export function createDrawingDrag(api) {
 
   function applyDrawingDrag(clientX, clientY) {
     if (!dragState) return;
-    const point = api.resolvePoint(clientX, clientY);
-    if (!point) return;
     const drawings = api.getDrawings();
 
-    if (dragState.mode === "point" && dragState.pointIndex != null) {
+    if (dragState.mode === "point") {
+      const point = api.resolvePoint(clientX, clientY);
+      if (!point) return;
       const drawing = drawings.find((d) => d.id === dragState.drawingId);
       if (drawing?.type === "trend-angle" && dragState.startPoints.length >= 2) {
         if (dragState.pointIndex === 0) {
@@ -295,6 +316,15 @@ export function createDrawingDrag(api) {
         api.updateDrawing(dragState.drawingId, patch, { silent: true });
         return;
       }
+      if (isRectangleTool(drawing?.type ?? "") && dragState.startPoints.length >= 2) {
+        const patch = rectangleCornerDragUpdate(
+          dragState.pointIndex ?? 0,
+          dragState.startPoints,
+          point,
+        );
+        api.updateDrawing(dragState.drawingId, patch, { silent: true });
+        return;
+      }
       const next = dragState.startPoints.map((p, i) =>
         i === dragState.pointIndex ? { time: point.time, price: point.price } : { ...p },
       );
@@ -302,15 +332,40 @@ export function createDrawingDrag(api) {
       return;
     }
 
-    const dt = point.time - dragState.originPoint.time;
-    const dp = point.price - dragState.originPoint.price;
+    if (!dragState.startAnchorPx || !api.shiftPointsByClientDelta) return;
+    const shift = (pts) =>
+      api.shiftPointsByClientDelta(
+        pts,
+        dragState.startAnchorPx,
+        dragState.startClientX,
+        dragState.startClientY,
+        clientX,
+        clientY,
+      );
+    const shifted = shift(dragState.startPoints);
+    const ta = api.getContext?.().timeAdapter;
+    const chart = api.getContext?.().chart;
+    chartDebugThrottle("drawings", "moveDragApply", "drag move (throttled)", {
+      dx: Number((clientX - dragState.startClientX).toFixed(1)),
+      dy: Number((clientY - dragState.startClientY).toFixed(1)),
+      before: dragState.startPoints.map((p, i) => ({
+        t: p.time,
+        p: p.price,
+        x: dragState.startAnchorPx?.[i]?.x,
+      })),
+      after: shifted.map((p) => ({
+        t: p.time,
+        p: p.price,
+        x: chart && ta ? ta.coord.xFromUtc(chart, p.time) : null,
+      })),
+    });
     const drawing = drawings.find((d) => d.id === dragState.drawingId);
     if (drawing?.type === "parallel-channel" && dragState.startPoints.length >= 2) {
       const offset = dragState.startPriceOffset ?? resolvePriceOffset(drawing);
       const p0 = dragState.startPoints[0];
       const p1 = dragState.startPoints[1];
-      const newP0 = { time: p0.time + dt, price: p0.price + dp };
-      const newP1 = { time: p1.time + dt, price: p1.price + dp };
+      const newP0 = shift([p0])[0];
+      const newP1 = shift([p1])[0];
       api.updateDrawing(
         dragState.drawingId,
         { points: parallelChannelPointsFromGeometry(newP0, newP1, offset), priceOffset: offset },
@@ -319,11 +374,12 @@ export function createDrawingDrag(api) {
       return;
     }
     if (drawing?.type === "flat-top-bottom" && dragState.startPoints.length >= 2) {
+      const dp = api.moveDragPriceDelta?.(dragState.startClientY, clientY) ?? 0;
       const flatPrice = (dragState.startFlatPrice ?? resolveFlatPrice(drawing)) + dp;
       const p0 = dragState.startPoints[0];
       const p1 = dragState.startPoints[1];
-      const newP0 = { time: p0.time + dt, price: p0.price + dp };
-      const newP1 = { time: p1.time + dt, price: p1.price + dp };
+      const newP0 = shift([p0])[0];
+      const newP1 = shift([p1])[0];
       api.updateDrawing(
         dragState.drawingId,
         { points: flatTopBottomPointsFromGeometry(newP0, newP1, flatPrice), flatPrice },
@@ -332,16 +388,16 @@ export function createDrawingDrag(api) {
       return;
     }
     if (isPositionTool(drawing?.type ?? "") && dragState.startPoints.length >= 2) {
+      const dp = api.moveDragPriceDelta?.(dragState.startClientY, clientY) ?? 0;
       const startEntry = dragState.startEntryPrice;
       const entryPrice =
-        startEntry != null && Number.isFinite(Number(startEntry)) ? Number(startEntry) + dp : undefined;
+        startEntry != null && Number.isFinite(Number(startEntry))
+          ? Number(startEntry) + dp
+          : undefined;
       api.updateDrawing(
         dragState.drawingId,
         {
-          points: dragState.startPoints.map((p) => ({
-            time: p.time + dt,
-            price: p.price + dp,
-          })),
+          points: shift(dragState.startPoints),
           ...(entryPrice != null ? { positionEntryPrice: entryPrice } : {}),
         },
         { silent: true },
@@ -351,12 +407,7 @@ export function createDrawingDrag(api) {
 
     api.updateDrawing(
       dragState.drawingId,
-      {
-        points: dragState.startPoints.map((p) => ({
-          time: p.time + dt,
-          price: p.price + dp,
-        })),
-      },
+      { points: shifted },
       { silent: true },
     );
   }
@@ -406,6 +457,12 @@ export function createDrawingDrag(api) {
       startPriceOffset: drawing.type === "parallel-channel" ? startPriceOffset : undefined,
       startFlatPrice: drawing.type === "flat-top-bottom" ? startFlatPrice : undefined,
       startMid,
+    });
+    debugDragStart("point", {
+      drawingId: drawing.id,
+      type: drawing.type,
+      pointIndex: anchorHit.pointIndex,
+      anchor: formatDrawPoint(originPoint),
     });
     applyDrawingDrag(ev.clientX, ev.clientY);
     return true;

@@ -7,7 +7,6 @@ import {
   OPEN_NEW_TAB,
   SCREENSHOT,
   SETTINGS,
-  TWEET_IMAGE,
 } from "../icons.js";
 import { mountFullscreenMode } from "../fullscreen/mode.js";
 import { createChartSnapshot } from "../snapshot/chart.js";
@@ -20,6 +19,7 @@ import { showLayoutConfirmDialog, showLayoutNameDialog } from "../layout/dialogs
  * @param {object} opts
  * @param {HTMLElement} opts.mountEl
  * @param {() => import("lightweight-charts").IChartApi | null} opts.getChart
+ * @param {() => string} [opts.getShareUrl]
  * @param {import("../layout/manager.js").ReturnType<typeof import("../layout/manager.js").createLayoutManager>} opts.layoutManager
  * @param {() => void} [opts.onSaveLayout]
  * @param {(entry: import("../layout/manager.js").SavedLayout) => void} [opts.onLoadLayout]
@@ -32,6 +32,7 @@ export function mountHeaderToolbar(opts) {
   const {
     mountEl,
     getChart,
+    getShareUrl,
     layoutManager,
     onSaveLayout,
     onLoadLayout,
@@ -80,7 +81,7 @@ export function mountHeaderToolbar(opts) {
     fullscreen = mountFullscreenMode({ appEl, toggleBtn: fullscreenBtn, iconEl: fullscreenIcon });
   }
 
-  const snapshot = createChartSnapshot(getChart);
+  const snapshot = createChartSnapshot(getChart, undefined, getShareUrl);
   const screenshotBtn = root.querySelector("#header-toolbar-screenshot");
   const layoutBtn = root.querySelector("#header-toolbar-layouts");
   const layoutIconEl = root.querySelector("[data-layout-icon]");
@@ -206,10 +207,6 @@ export function mountHeaderToolbar(opts) {
         <span class="tv-header-menu__icon">${OPEN_NEW_TAB}</span>
         <span class="tv-header-menu__label">Open in new tab</span>
       </button>
-      <button type="button" class="tv-header-menu__item" data-action="tweet">
-        <span class="tv-header-menu__icon">${TWEET_IMAGE}</span>
-        <span class="tv-header-menu__label">Tweet image</span>
-      </button>
     `;
     menu.addEventListener("click", async (ev) => {
       const btn = ev.target.closest("[data-action]");
@@ -220,7 +217,6 @@ export function mountHeaderToolbar(opts) {
       if (action === "copy") await snapshot.copyImage();
       if (action === "link") await snapshot.copyLink();
       if (action === "tab") await snapshot.openInNewTab();
-      if (action === "tweet") snapshot.tweetImage();
     });
     positionMenu(screenshotBtn, menu);
   }

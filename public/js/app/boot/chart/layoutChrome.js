@@ -7,7 +7,12 @@ import {
   setLayoutToolDefaults,
   setLayoutToolDefaultsChangeHandler,
 } from "../../../drawings/toolbars/defaults/layoutScope.js";
+import {
+  setLayoutDrawingTemplates,
+  setLayoutDrawingTemplatesChangeHandler,
+} from "../../../drawings/toolbars/defaults/layoutTemplates.js";
 import { mountHeaderToolbar } from "../../../ui/header/toolbar/index.js";
+import { buildChartShareUrl } from "../../../datafeed/client.js";
 import { chartDebug } from "../../../debug/chart/index.js";
 import { createSecondaryPaneFactory } from "./secondaryPane.js";
 
@@ -54,12 +59,23 @@ export function wireLayoutChrome(ctx) {
   ctx.headerToolbarUi = mountHeaderToolbar({
     mountEl: toolbarRight,
     getChart: () => ctx.chart,
+    getShareUrl: () =>
+      buildChartShareUrl({
+        symbol: ctx.symbol,
+        resolution: ctx.resolution,
+        theme: ctx.currentTheme,
+        datafeedType: ctx.opts.datafeedType,
+        drawings: ctx.opts.drawings,
+        chrome: ctx.opts.chrome,
+      }),
     layoutManager: ctx.layoutManager,
     onSaveLayout: ctx.saveLayoutToLibrary,
     onLoadLayout: (item) => {
       ctx.applyLayoutChartSettings(item.chartSettings);
       setLayoutToolDefaults(item.toolDefaults);
       ctx.layoutManager.setToolDefaultsSnapshot(item.toolDefaults ?? null);
+      setLayoutDrawingTemplates(item.drawingTemplates);
+      ctx.layoutManager.setDrawingTemplatesSnapshot(item.drawingTemplates ?? null);
       ctx.drawingHub?.setDrawingsByPane?.(item.drawings);
     },
     onLayoutChange: ctx.scheduleAutosaveLayout,
@@ -75,6 +91,8 @@ export function wireLayoutChrome(ctx) {
         ctx.layoutManager.setDrawingsSnapshot(null);
         setLayoutToolDefaults({});
         ctx.layoutManager.setToolDefaultsSnapshot(null);
+        setLayoutDrawingTemplates(null);
+        ctx.layoutManager.setDrawingTemplatesSnapshot(null);
         ctx.layoutManager.markDirty();
         ctx.headerToolbarUi?.updateSaveState();
       })();
@@ -108,6 +126,7 @@ export function wireLayoutChrome(ctx) {
   const chartSettingsUi = ctx.mountChartSettingsUi();
   chartSettingsUi.bindTrigger(document.getElementById("settings-btn"));
   setLayoutToolDefaultsChangeHandler(ctx.scheduleAutosaveLayout);
+  setLayoutDrawingTemplatesChangeHandler(ctx.scheduleAutosaveLayout);
   if (ctx.drawing) {
     ctx.drawing.on("change", ctx.scheduleAutosaveLayout);
   }
@@ -115,6 +134,7 @@ export function wireLayoutChrome(ctx) {
   try {
     ctx.restoreLayoutChartSettings();
     ctx.restoreLayoutToolDefaults();
+    ctx.restoreLayoutDrawingTemplates();
     ctx.restoreLayoutDrawings();
     if (ctx.layoutManager.getAutoSave()) {
       ctx.saveLayoutToLibrary();

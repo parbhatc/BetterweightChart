@@ -58,7 +58,7 @@ export function createChartWidgetApi(ctx) {
     getSymbolInfo,
 
     /**
-     * TradingView-style history request via datafeed.getBars().
+     * History request via datafeed.getBars().
      * @param {import("../../datafeed/types.js").PeriodParams} [periodParams]
      */
     async fetchBars(periodParams = {}) {

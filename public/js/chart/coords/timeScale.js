@@ -3,7 +3,7 @@
  * Supports mapping times beyond the last bar (future whitespace).
  */
 
-import { chartDebugCount } from "../../debug/chart/index.js";
+import { chartDebug } from "../../debug/chart/index.js";
 
 /** @param {{ time: number }[]} seriesData @param {number} barSec @param {number} timeUtc */
 export function timeToLogical(seriesData, barSec, timeUtc) {
@@ -74,6 +74,155 @@ export function barIndexToTime(barIdx, bars, barSec) {
   return logicalToChartTime(bars, barSec, barIdx);
 }
 
+/** Index of last real (non-whitespace) bar in bars array. */
+function realLastBarIndex(bars, lastRealChartTime) {
+  if (!bars.length) return -1;
+  if (lastRealChartTime == null) return bars.length - 1;
+  let idx = 0;
+  for (let i = 0; i < bars.length; i += 1) {
+    if (bars[i].time <= lastRealChartTime) idx = i;
+    else break;
+  }
+  return idx;
+}
+
+/**
+ * Map x pixel → logical bar index (LWC-aligned, with future/past extrapolation).
+ * @param {import("lightweight-charts").ITimeScaleApi} ts
+ * @param {{ time: number }[]} bars
+ * @param {number} barSec
+ * @param {number} x
+ * @param {number | null | undefined} [lastRealChartTime]
+ */
+export function coordinateToLogical(ts, bars, barSec, x, lastRealChartTime) {
+  if (!bars.length || x == null || !Number.isFinite(x)) return null;
+  const anchorIdx = realLastBarIndex(bars, lastRealChartTime);
+  const lastIdx = anchorIdx >= 0 ? anchorIdx : bars.length - 1;
+  const barSpacing = ts.options().barSpacing ?? 8;
+  const xLast =
+    typeof ts.logicalToCoordinate === "function" ? ts.logicalToCoordinate(lastIdx) : null;
+  const x0 = typeof ts.logicalToCoordinate === "function" ? ts.logicalToCoordinate(0) : null;
+
+  if (typeof ts.coordinateToLogical === "function") {
+    const logical = ts.coordinateToLogical(x);
+    if (logical != null && Number.isFinite(logical)) {
+      if (xLast != null && barSpacing > 0 && x > xLast + barSpacing * 0.15) {
+        return lastIdx + (x - xLast) / barSpacing;
+      }
+      if (x0 != null && barSpacing > 0 && x < x0 - barSpacing * 0.15) {
+        return (x - x0) / barSpacing;
+      }
+      return logical;
+    }
+  }
+
+  if (xLast != null && barSpacing > 0 && x > xLast + barSpacing * 0.15) {
+    return lastIdx + (x - xLast) / barSpacing;
+  }
+  if (x0 != null && barSpacing > 0 && x < x0 - barSpacing * 0.15) {
+    return (x - x0) / barSpacing;
+  }
+  return null;
+}
+
+/**
+ * Map x pixel → chart-time, including future/past beyond series data (no whitespace bars required).
+ * @param {import("lightweight-charts").ITimeScaleApi} ts
+ * @param {{ time: number }[]} bars
+ * @param {number} barSec
+ * @param {number} x
+ * @param {number | null | undefined} [lastRealChartTime]
+ */
+export function coordinateToChartTime(ts, bars, barSec, x, lastRealChartTime) {
+  if (!bars.length || x == null || !Number.isFinite(x)) {
+    chartDebug("drawings", "coordinateToChartTime: no bars or x", { x, bars: bars.length });
+    return null;
+  }
+  const logical = coordinateToLogical(ts, bars, barSec, x, lastRealChartTime);
+  if (logical == null || !Number.isFinite(logical)) {
+    chartDebug("drawings", "coordinateToChartTime: miss", { x, bars: bars.length });
+    return null;
+  }
+  const time = logicalToChartTime(bars, barSec, logical);
+  if (time == null || !Number.isFinite(time)) {
+    chartDebug("drawings", "coordinateToChartTime: logicalToChartTime failed", {
+      x,
+      logical,
+      barSec,
+      bars: bars.length,
+    });
+    return null;
+  }
+  return time;
+}
+
+/** @param {{ time: number }[]} bars @param {number} chartTime @param {number | null | undefined} [lastRealChartTime] */
+function isChartTimeOnSeries(bars, chartTime, lastRealChartTime) {
+  if (!bars.length) return false;
+  const last = lastRealChartTime ?? bars[bars.length - 1].time;
+  return chartTime >= bars[0].time && chartTime <= last;
+}
+
+/**
+ * Map chart-time → x pixel, including future/past beyond series data.
+ * @param {import("lightweight-charts").ITimeScaleApi} ts
+ * @param {{ time: number }[]} bars
+ * @param {number} barSec
+ * @param {number} timeUtc chart-time
+ * @param {number | null | undefined} [lastRealChartTime] last candle chart-time (excludes whitespace bars)
+ */
+export function chartTimeToCoordinate(ts, bars, barSec, timeUtc, lastRealChartTime) {
+  if (!bars.length || timeUtc == null || !Number.isFinite(timeUtc)) return null;
+  const barSpacing = ts.options().barSpacing ?? 8;
+  const anchorIdx = realLastBarIndex(bars, lastRealChartTime);
+  const onSeries = isChartTimeOnSeries(bars, timeUtc, lastRealChartTime);
+
+  const logical = timeToLogical(bars, barSec, timeUtc);
+  if (logical == null || !Number.isFinite(logical)) return null;
+
+  if (onSeries && typeof ts.logicalToCoordinate === "function") {
+    const viaLogical = ts.logicalToCoordinate(logical);
+    if (viaLogical != null && Number.isFinite(viaLogical)) {
+      if (typeof ts.timeToCoordinate === "function") {
+        const direct = ts.timeToCoordinate(timeUtc);
+        // LWC returns 0 for many out-of-range times — only trust direct when it agrees with logical.
+        if (
+          direct != null &&
+          Number.isFinite(direct) &&
+          direct > 0 &&
+          Math.abs(direct - viaLogical) < 2
+        ) {
+          return direct;
+        }
+      }
+      return viaLogical;
+    }
+  }
+
+  if (onSeries && typeof ts.timeToCoordinate === "function") {
+    const direct = ts.timeToCoordinate(timeUtc);
+    if (direct != null && Number.isFinite(direct) && direct > 0) return direct;
+  }
+
+  if (onSeries && typeof ts.logicalToCoordinate === "function") {
+    const x = ts.logicalToCoordinate(logical);
+    if (x != null && Number.isFinite(x)) return x;
+  }
+
+  if (barSpacing > 0 && typeof ts.logicalToCoordinate === "function" && anchorIdx >= 0) {
+    const xLast = ts.logicalToCoordinate(anchorIdx);
+    if (xLast != null && Number.isFinite(xLast) && logical >= anchorIdx) {
+      return xLast + (logical - anchorIdx) * barSpacing;
+    }
+    const x0 = ts.logicalToCoordinate(0);
+    if (x0 != null && Number.isFinite(x0) && logical < 0) {
+      return x0 + logical * barSpacing;
+    }
+  }
+
+  return null;
+}
+
 /** @param {number} time @param {{ time: number }[]} bars @param {number} barSec */
 export function snapTimeToNearestBar(time, bars, barSec) {
   if (!bars.length || time == null || !Number.isFinite(time)) return time;
@@ -93,7 +242,7 @@ export function clampTimeToBarRange(time, bars) {
   return time;
 }
 
-/** @param {{ bars?: { time: number }[], mapBars?: { time: number }[] }} ctx */
+/** @deprecated Use context.timeAdapter.coord — kept for legacy callers only. */
 export function coordMapBars(ctx) {
   return ctx.mapBars ?? ctx.bars ?? [];
 }
@@ -104,31 +253,31 @@ export function coordMapBars(ctx) {
  * @param {number} barSec
  * @param {number | null | undefined} [logical]
  * @param {number | null | undefined} [timeUtc]
+ * @param {number | null | undefined} [lastRealChartTime]
  */
-export function chartXAt(ts, seriesData, barSec, logical, timeUtc) {
+export function chartXAt(ts, seriesData, barSec, logical, timeUtc, lastRealChartTime) {
   try {
-    if (logical != null && Number.isFinite(logical) && typeof ts.logicalToCoordinate === "function") {
+    const anchorIdx = realLastBarIndex(seriesData, lastRealChartTime);
+    const lastIdx = anchorIdx >= 0 ? anchorIdx : seriesData.length - 1;
+    if (
+      logical != null &&
+      Number.isFinite(logical) &&
+      lastIdx >= 0 &&
+      logical >= 0 &&
+      logical <= lastIdx &&
+      typeof ts.logicalToCoordinate === "function"
+    ) {
       const x = ts.logicalToCoordinate(logical);
       if (x != null && Number.isFinite(x)) return x;
     }
 
-    if (timeUtc != null && Number.isFinite(timeUtc)) {
-      let x = typeof ts.timeToCoordinate === "function" ? ts.timeToCoordinate(timeUtc) : null;
+    if (timeUtc != null && Number.isFinite(timeUtc) && seriesData.length) {
+      const x = chartTimeToCoordinate(ts, seriesData, barSec, timeUtc, lastRealChartTime);
       if (x != null && Number.isFinite(x)) return x;
-
-      if (seriesData.length && typeof ts.logicalToCoordinate === "function") {
-        const logical = timeToLogical(seriesData, barSec, timeUtc);
-        if (logical != null && Number.isFinite(logical)) {
-          x = ts.logicalToCoordinate(logical);
-          if (x != null && Number.isFinite(x)) {
-            chartDebug("drawings", "chartXAt", { timeUtc, logical, x, barSec, bars: seriesData.length });
-            return x;
-          }
-        }
-      }
+      chartDebug("drawings", "chartXAt: miss", { timeUtc, barSec, bars: seriesData.length });
     }
-  } catch {
-    //
+  } catch (err) {
+    chartDebug("drawings", "chartXAt: error", String(err));
   }
   return null;
 }
@@ -185,26 +334,17 @@ export function pointToPixel(ts, series, bars, barSec, time, price) {
  * @param {number} barSec
  * @param {number} x
  * @param {number} y
+ * @param {number | null | undefined} [lastRealChartTime]
  */
-export function pixelToPoint(chart, series, bars, barSec, x, y) {
+export function pixelToPoint(chart, series, bars, barSec, x, y, lastRealChartTime) {
   const ts = chart.timeScale();
   const price = series.coordinateToPrice(y);
-  if (price == null || !Number.isFinite(price)) return null;
-
-  let time = null;
-  if (bars.length && typeof ts.coordinateToLogical === "function") {
-    const logical = ts.coordinateToLogical(x);
-    if (logical != null && Number.isFinite(logical)) {
-      time = logicalToChartTime(bars, barSec, logical);
-      chartDebugCount("drawings", "pixelToPoint");
-    }
+  if (price == null || !Number.isFinite(price)) {
+    chartDebug("drawings", "pixelToPoint: no price", { x, y });
+    return null;
   }
 
-  if (time == null && typeof ts.coordinateToTime === "function") {
-    const t = ts.coordinateToTime(x);
-    if (t != null) time = typeof t === "number" ? t : null;
-  }
-
+  const time = coordinateToChartTime(ts, bars, barSec, x, lastRealChartTime);
   if (time == null || !Number.isFinite(time)) return null;
   return { time, price: Number(price) };
 }

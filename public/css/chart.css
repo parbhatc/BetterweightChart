@@ -236,7 +236,8 @@
   position: absolute;
   width: 11px;
   height: 11px;
-  margin: -5.5px 0 0 -5.5px;
+  margin: 0;
+  transform: translate(-50%, -50%);
   border-radius: var(--radius-full);
   background: #2962ff;
   border: 2px solid color-mix(in srgb, #fff 92%, transparent);

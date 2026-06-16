@@ -26,18 +26,31 @@ import { attachBarLoader } from "./barLoader.js";
 import { wireLayoutChrome } from "./layoutChrome.js";
 import { wireKeyboardShortcuts } from "./keyboard.js";
 import { wireSymbolAndTimeframePickers } from "./pickers.js";
+import {
+  createFeatureFlags,
+  setBootFeatureFlags,
+} from "../../../chart/features.js";
 
 export { readPageOptions };
 
 /**
  * Boot the chart widget. Safe to call from index or embed pages.
- * @param {Partial<ReturnType<typeof readPageOptions>>} [overrides]
+ * @param {Partial<ReturnType<typeof readPageOptions>> & {
+ *   disabled_features?: string[],
+ *   enabled_features?: string[],
+ * }} [overrides]
  */
 export async function bootChart(overrides = {}) {
   installChartDebugGlobal();
   const debugOn = configureChartDebug();
 
   const ctx = createBootContext(overrides);
+  const featureFlags = createFeatureFlags({
+    disabled_features: overrides.disabled_features ?? ctx.opts.disabled_features,
+    enabled_features: overrides.enabled_features ?? ctx.opts.enabled_features,
+  });
+  setBootFeatureFlags(featureFlags);
+  ctx.featureFlags = featureFlags;
   ctx.debugOn = debugOn;
   document.documentElement.setAttribute("data-theme", ctx.currentTheme);
   mountAppTouchScrollLock();

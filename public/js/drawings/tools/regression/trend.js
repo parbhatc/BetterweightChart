@@ -238,7 +238,7 @@ export function regressionPearsonR(reg) {
   return num / den;
 }
 
-/** TradingView prints Pearson's R with 15 decimal places. */
+/** Pearson's R formatted with 15 decimal places. */
 export function formatRegressionPearsonR(r) {
   const n = Number(r);
   if (!Number.isFinite(n)) return "0";
@@ -287,7 +287,7 @@ export function regressionTrendGeometry(drawing, bars, tLo, tHi) {
 }
 
 /**
- * TradingView-style handles on upper + median line ends.
+ * Handles on upper + median line ends.
  * @param {import("../../types.js").UserDrawing} drawing
  * @param {{ time: number, open?: number, high?: number, low?: number, close?: number }[]} bars
  */

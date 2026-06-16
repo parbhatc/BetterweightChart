@@ -1,6 +1,4 @@
-import { chartXAt, coordMapBars } from "../../chart/coords/timeScale.js";
 import { resolveTimezone } from "../../chart/timezone/list.js";
-import { utcToChartTime } from "../../chart/timezone/chartTime.js";
 import { chartDebug, chartDebugCount } from "../../debug/chart/index.js";
 
 const RTH_OPEN = 9 * 60 + 30;
@@ -107,8 +105,8 @@ export class SessionBackgroundPrimitive {
     this._requestUpdate?.();
   }
 
-  /** @param {object[]} bars @param {number} barSec @param {string} tz @param {string | undefined} symbolType @param {string} fill */
-  _buildSpans(bars, barSec, tz, symbolType, fill) {
+  /** @param {object[]} bars @param {number} barSec @param {string} tz @param {string | undefined} symbolType @param {string} fill @param {ReturnType<import("../../chart/time/timeAdapter.js").createTimeAdapter> | null} timeAdapter */
+  _buildSpans(bars, barSec, tz, symbolType, fill, timeAdapter) {
     /** @type {{ from: number, to: number }[]} */
     const spans = [];
     let runStart = null;
@@ -119,8 +117,9 @@ export class SessionBackgroundPrimitive {
       const next = bars[i + 1];
       const eth = isElectronicSession(bar.time, tz, symbolType);
       if (eth) {
-        if (runStart == null) runStart = utcToChartTime(bar.time, tz);
-        runEnd = utcToChartTime(next?.time ?? bar.time + barSec, tz);
+        const toChart = (t) => (timeAdapter ? timeAdapter.time.toChart(t) : t);
+        if (runStart == null) runStart = toChart(bar.time);
+        runEnd = toChart(next?.time ?? bar.time + barSec);
       } else if (runStart != null && runEnd != null) {
         spans.push({ from: runStart, to: runEnd });
         runStart = null;
@@ -135,7 +134,8 @@ export class SessionBackgroundPrimitive {
   drawData() {
     const settings = this._getSettings();
     const symbolInfo = this._getSymbolInfo();
-    const { bars, barSec } = this._getContext();
+    const ctx = this._getContext();
+    const { bars, barSec } = ctx;
     const chart = this._chart;
     if (!chart || settings.session !== "electronic" || !bars.length) {
       return { spans: [], fill: "transparent", timeToX: null };
@@ -143,28 +143,29 @@ export class SessionBackgroundPrimitive {
 
     const tz = resolveTimezone(settings.timezone, symbolInfo);
     const fill = settings.ethBackground ?? "rgba(41, 98, 255, 0.08)";
-    const mapBars = coordMapBars(this._getContext());
+    const timeAdapter = ctx.timeAdapter ?? null;
+    const barSecResolved = barSec ?? 60;
     const cacheKey = `${settings.session}|${tz}|${symbolInfo?.type}|${bars.length}|${bars[0]?.time}|${bars.at(-1)?.time}|${fill}`;
     if (this._spanCache && this._spanCacheKey === cacheKey) {
       chartDebugCount("session", "cacheHit");
-      const ts = chart.timeScale();
       return {
         spans: this._spanCache.spans,
         fill: this._spanCache.fill,
-        timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, t),
+        timeToX: (chartTime) =>
+          timeAdapter ? timeAdapter.coord.xFromChart(chart, chartTime) : null,
       };
     }
 
-    const built = this._buildSpans(bars, barSec, tz, symbolInfo?.type, fill);
+    const built = this._buildSpans(bars, barSecResolved, tz, symbolInfo?.type, fill, timeAdapter);
     chartDebug("session", "cacheMiss", { bars: bars.length, spans: built.spans.length });
     this._spanCache = built;
     this._spanCacheKey = cacheKey;
-    const ts = chart.timeScale();
 
     return {
       spans: built.spans,
       fill: built.fill,
-      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, t),
+      timeToX: (chartTime) =>
+        timeAdapter ? timeAdapter.coord.xFromChart(chart, chartTime) : null,
     };
   }
 }

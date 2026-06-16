@@ -1,5 +1,5 @@
 /**
- * TradingView datafeed — search + history + live stream via server proxy.
+ * Remote market datafeed — search, history, and live stream via server proxy.
  * WebSocket protocol adapted from https://github.com/parbhatc/tradingview
  */
 

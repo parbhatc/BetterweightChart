@@ -1,6 +1,7 @@
 /** Minimum future whitespace bars appended past the last candle. */
-export const CHART_FUTURE_WHITESPACE_MIN = 48;
+import { CHART_FEATURES, isFeatureEnabled } from "../features.js";
 
+export const CHART_FUTURE_WHITESPACE_MIN = 48;
 /** Extra bars kept ahead of the visible logical range end. */
 export const CHART_FUTURE_WHITESPACE_MARGIN = 64;
 
@@ -10,9 +11,23 @@ export const CHART_FUTURE_WHITESPACE_CHUNK = 64;
 /** Upper cap on appended future whitespace bars. */
 export const CHART_FUTURE_WHITESPACE_MAX = 2880;
 
+/** @param {object} [scales] */
+export function isFutureWhitespaceEnabled(_scales) {
+  return isFeatureEnabled(CHART_FEATURES.FUTURE_WHITESPACE);
+}
+
+/**
+ * @param {object} pane
+ * @param {object} [scales]
+ */
+export function futureWhitespaceBarCount(pane, scales) {
+  if (!isFutureWhitespaceEnabled(scales)) return 0;
+  return pane.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
+}
+
 /**
  * Append lightweight-charts whitespace points after the last bar so the time
- * scale and crosshair can address future times (TradingView-style).
+ * scale and crosshair can address future times beyond the last candle.
  *
  * @param {{ time: number }[]} chartBars
  * @param {number} barSec

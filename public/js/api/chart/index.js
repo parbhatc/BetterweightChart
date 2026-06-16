@@ -36,13 +36,14 @@ export class ChartApi {
     return this.#get(`/api/v1/bars?${q}`);
   }
 
-  /** UDF-style datafeed config (same as createDatafeed().onReady()). */
+  /** UDF-compatible datafeed config (same as createDatafeed().onReady()). */
   datafeedConfig() {
     return this.#get("/datafeed/config");
   }
 }
 
 export { createDatafeed, readPageOptions } from "../../datafeed/client.js";
+export { CHART_FEATURES } from "../../chart/features.js";
 export {
   createCustomDatafeed,
   createStaticDatafeed,

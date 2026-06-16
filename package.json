@@ -1,7 +1,7 @@
 {
   "name": "betterweightchart",
   "version": "1.0.0",
-  "description": "TradingView-style chart on lightweight-charts with 68 drawing tools",
+  "description": "Chart widget on lightweight-charts with 68 drawing tools",
   "private": false,
   "type": "module",
   "exports": {

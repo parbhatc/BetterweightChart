@@ -91,7 +91,9 @@ export function createTooltipOverlay(deps) {
   /** @param {object} bar */
   function syncCrosshairToBar(bar) {
     if (!chart || !series || !bar) return;
-    chart.setCrosshairPosition(bar.close, bar.time, series);
+    const ta = getContext().timeAdapter;
+    const chartTime = ta ? ta.time.toChart(bar.time) : bar.time;
+    chart.setCrosshairPosition(bar.close, chartTime, series);
   }
 
   /**

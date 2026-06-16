@@ -34,7 +34,7 @@ export function createSecondaryPaneFactory(ctx) {
       bars: [],
       futureWhitespaceBars: null,
       statusEl: paneStatusEl,
-      timeToIdx: new Map(),
+      timeAdapter: null,
     };
     ctx.chartPanes.set(paneIndex, paneState);
     ctx.setupPaneExtras(paneState);

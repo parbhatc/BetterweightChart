@@ -5,6 +5,7 @@ import {
 } from "../../../ui/header/layout/manager.js";
 import { showLayoutNameDialog } from "../../../ui/header/layout/dialogs.js";
 import { getLayoutToolDefaultsSnapshot, setLayoutToolDefaults } from "../../../drawings/toolbars/defaults/layoutScope.js";
+import { getLayoutDrawingTemplatesSnapshot, setLayoutDrawingTemplates } from "../../../drawings/toolbars/defaults/layoutTemplates.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -18,6 +19,7 @@ export function attachLayoutPersistence(ctx) {
       drawings: ctx.drawingHub?.getDrawingsByPane?.(),
       chartSettings: structuredClone(ctx.settingsStore.get()),
       toolDefaults: getLayoutToolDefaultsSnapshot(),
+      drawingTemplates: getLayoutDrawingTemplatesSnapshot(),
     };
   }
 
@@ -48,6 +50,7 @@ export function attachLayoutPersistence(ctx) {
     ctx.layoutManager.setDrawingsSnapshot(entry.drawings ?? null);
     ctx.layoutManager.setChartSettingsSnapshot(entry.chartSettings ?? null);
     ctx.layoutManager.setToolDefaultsSnapshot(entry.toolDefaults ?? null);
+    ctx.layoutManager.setDrawingTemplatesSnapshot(entry.drawingTemplates ?? null);
     if (toLibrary) {
       upsertLayoutLibraryEntry(entry);
     }
@@ -78,6 +81,8 @@ export function attachLayoutPersistence(ctx) {
     ctx.layoutManager.setDrawingsSnapshot(null);
     setLayoutToolDefaults({});
     ctx.layoutManager.setToolDefaultsSnapshot(null);
+    setLayoutDrawingTemplates(null);
+    ctx.layoutManager.setDrawingTemplatesSnapshot(null);
     ctx.layoutManager.markSaved();
     ctx.headerToolbarUi?.updateSaveState();
   }
@@ -114,6 +119,14 @@ export function attachLayoutPersistence(ctx) {
     if (drawings) ctx.drawingHub.setDrawingsByPane(drawings);
   }
 
+  function restoreLayoutDrawingTemplates() {
+    let drawingTemplates = ctx.layoutManager?.getDrawingTemplatesSnapshot?.() ?? null;
+    if (!drawingTemplates && ctx.layoutManager) {
+      drawingTemplates = findLayoutByName(ctx.layoutManager.getLayoutName())?.drawingTemplates ?? null;
+    }
+    setLayoutDrawingTemplates(drawingTemplates);
+  }
+
   async function uniqueLayoutName(initial, title, confirmLabel) {
     const name = await showLayoutNameDialog({ title, value: initial, confirmLabel });
     if (!name) return null;
@@ -135,6 +148,7 @@ export function attachLayoutPersistence(ctx) {
     resetToUnsavedWorkspace,
     scheduleAutosaveLayout,
     restoreLayoutToolDefaults,
+    restoreLayoutDrawingTemplates,
     restoreLayoutDrawings,
     uniqueLayoutName,
   });

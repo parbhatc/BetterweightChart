@@ -49,3 +49,25 @@ export function debugDrawingAction(drawing, verb = "added") {
   const where = at ? formatDrawPoint(at) : "—";
   debugDrawings(`${verb} ${label} at ${where}`, summarizeDrawing(drawing));
 }
+
+/** @param {"click" | "staged" | "commit"} stage @param {{ time?: number, price?: number }} point @param {string} [tool] @param {object} [extra] */
+export function debugPlacement(stage, point, tool, extra) {
+  const label = tool ? drawingTypeLabel(tool) : "drawing";
+  const msg =
+    stage === "click"
+      ? `place click (${label})`
+      : stage === "staged"
+        ? `place staged (${label})`
+        : `place commit (${label})`;
+  debugDrawings(msg, { point: formatDrawPoint(point), tool, ...extra });
+}
+
+/** @param {"move" | "point"} mode @param {unknown} [detail] */
+export function debugDragStart(mode, detail) {
+  debugDrawings(`drag start [${mode}]`, detail);
+}
+
+/** @param {"move" | "point"} mode @param {unknown} [detail] */
+export function debugDragEnd(mode, detail) {
+  debugDrawings(`drag end [${mode}]`, detail);
+}

@@ -2,6 +2,20 @@
  * @typedef {{ id: string, label: string, icon?: string }} TvMenuItem
  */
 
+/**
+ * @param {string} value
+ */
+function escapeAttr(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+}
+
+/**
+ * @param {string} value
+ */
+function escapeHtml(value) {
+  return escapeAttr(value).replace(/>/g, "&gt;");
+}
+
 export function createTvMenu() {
   const root = document.createElement("div");
   root.className = "tv-menu-popover";
@@ -12,7 +26,7 @@ export function createTvMenu() {
   const inner = root.querySelector("[data-menu-inner]");
   if (!inner) throw new Error("TV menu mount failed");
 
-  /** @type {((id: string) => void) | null} */
+  /** @type {((id: string) => boolean | void) | null} */
   let onSelect = null;
   /** @type {((id: string, checked: boolean) => void) | null} */
   let onCheckboxChange = null;
@@ -27,7 +41,7 @@ export function createTvMenu() {
   /**
    * @param {HTMLElement} anchor
    * @param {TvMenuItem[]} items
-   * @param {{ activeId?: string, onSelect: (id: string) => void }} opts
+   * @param {{ activeId?: string, onSelect: (id: string) => boolean | void }} opts
    */
   function open(anchor, items, opts) {
     onCheckboxChange = null;
@@ -35,9 +49,9 @@ export function createTvMenu() {
     inner.className = "tv-menu-popover__inner";
     inner.innerHTML = items
       .map(
-        (item) => `<button type="button" class="tv-menu-popover__item${opts.activeId === item.id ? " is-active" : ""}" data-menu-id="${item.id}" role="menuitem">
+        (item) => `<button type="button" class="tv-menu-popover__item${opts.activeId === item.id ? " is-active" : ""}" data-menu-id="${escapeAttr(item.id)}" role="menuitem">
         ${item.icon ? `<span class="tv-menu-popover__icon">${item.icon}</span>` : ""}
-        <span class="tv-menu-popover__label-row"><span class="tv-menu-popover__label">${item.label}</span></span>
+        <span class="tv-menu-popover__label-row"><span class="tv-menu-popover__label">${escapeHtml(item.label)}</span></span>
       </button>`,
       )
       .join("");
@@ -105,8 +119,8 @@ export function createTvMenu() {
     if (!(btn instanceof HTMLElement)) return;
     const id = btn.dataset.menuId;
     if (!id) return;
-    onSelect?.(id);
-    close();
+    const keepOpen = onSelect?.(id) === false;
+    if (!keepOpen) close();
   });
 
   document.addEventListener(

@@ -1,35 +1,22 @@
-import { barIndex } from "../view/index.js";
-import { buildCandleSeriesData } from "../bar/data.js";
 import {
   CHART_FUTURE_WHITESPACE_CHUNK,
   CHART_FUTURE_WHITESPACE_MARGIN,
   CHART_FUTURE_WHITESPACE_MAX,
   CHART_FUTURE_WHITESPACE_MIN,
   appendFutureWhitespaceTail,
-  withFutureWhitespace,
+  isFutureWhitespaceEnabled,
 } from "../future/whitespace.js";
-import { isElectronicSession } from "../../primitives/session/background.js";
-import { resolveTimezone } from "../timezone/list.js";
-import { chartTimeZoneForPane, shiftBarsToChartTime, utcToChartTime } from "../timezone/chartTime.js";
 import { BAR_SEC } from "../constants.js";
 import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
+import {
+  getPaneChartView,
+  invalidatePaneChartView,
+  patchFormingBarInView,
+  rebuildPaneChartView,
+  utcBarsForPane,
+} from "./viewCache.js";
 
-/**
- * Bars shown on chart + whitespace extension — must match series.setData for X mapping.
- * @param {object} pane
- * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
- * @param {object | null} symbolInfo
- * @param {{ id: string, sec?: number }[]} resolutions
- */
-export function chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions) {
-  const bars = barsForPane(pane, settingsStore, symbolInfo);
-  const barSec = barSecForPane(pane, resolutions);
-  return {
-    bars,
-    mapBars: pane.mapBars ?? [],
-    barSec,
-  };
-}
+export { invalidatePaneChartView, utcBarsForPane } from "./viewCache.js";
 
 /**
  * @param {object} pane
@@ -40,56 +27,42 @@ export function barSecForPane(pane, resolutions) {
   return fromCfg ?? BAR_SEC[pane.resolution] ?? 60;
 }
 
+/** @deprecated use utcBarsForPane */
+export function barsForPane(pane, settingsStore, symbolInfo) {
+  return utcBarsForPane(pane, settingsStore, symbolInfo);
+}
+
 /**
  * @param {object} pane
  * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
  * @param {object | null} symbolInfo
+ * @param {{ id: string, sec?: number }[]} resolutions
  */
-export function barsForPane(pane, settingsStore, symbolInfo) {
-  const sym = settingsStore.get().symbol ?? {};
-  const tz = resolveTimezone(sym.timezone, pane.symbolInfo ?? symbolInfo);
-  if (sym.session === "regular") {
-    return pane.bars.filter((b) => !isElectronicSession(b.time, tz, pane.symbolInfo?.type ?? symbolInfo?.type));
-  }
-  return pane.bars;
-}
-
-/** @param {object} pane @param {object[]} visible @param {string} tz */
-function ensureShiftedBars(pane, visible, tz) {
-  const utc0 = visible[0]?.time;
-  const utcN = visible.at(-1)?.time;
-  const key = `${visible.length}|${utc0}|${utcN}|${tz}`;
-  if (pane._shiftedKey === key && pane.shiftedBars?.length === visible.length) {
-    return pane.shiftedBars;
-  }
-  const shifted = shiftBarsToChartTime(visible, tz);
-  pane.shiftedBars = shifted;
-  pane._shiftedKey = key;
-  return shifted;
+export function chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions) {
+  const view = getPaneChartView(pane, settingsStore, symbolInfo, resolutions);
+  return {
+    timeAdapter: view.timeAdapter,
+    bars: view.utcBars,
+    mapBars: view.mapBars,
+    barSec: view.barSec,
+  };
 }
 
 /**
  * @param {object} pane
- * @param {object[]} visible
+ * @param {object[]} _visible
  * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
  * @param {{ id: string, sec?: number }[]} resolutions
  */
-export function buildChartSeriesForPane(pane, visible, settingsStore, resolutions) {
-  const sym = settingsStore.get().symbol ?? {};
-  const tz = chartTimeZoneForPane(pane, settingsStore, pane.symbolInfo ?? null);
-  const shifted = ensureShiftedBars(pane, visible, tz);
-  const candles = buildCandleSeriesData(shifted, sym);
-  const barSec = barSecForPane(pane, resolutions);
-  const ws = pane.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
-  const seriesData = withFutureWhitespace(candles, barSec, ws);
-  pane.mapBars = withFutureWhitespace(shifted, barSec, ws);
-  return seriesData;
+export function buildChartSeriesForPane(pane, _visible, settingsStore, resolutions) {
+  return getPaneChartView(pane, settingsStore, pane.symbolInfo ?? null, resolutions).seriesData;
 }
 
 /**
  * @param {object} opts
  */
 export function ensureFutureWhitespace(opts) {
+  if (opts.futureWhitespaceEnabled === false) return;
   const {
     chart,
     series,
@@ -117,24 +90,34 @@ export function ensureFutureWhitespace(opts) {
   setFutureWhitespaceBars(nextHave);
   const add = nextHave - have;
 
-  if (opts.pane && opts.barSec != null && opts.pane.mapBars?.length && add > 0) {
+  if (opts.pane) {
+    opts.pane.futureWhitespaceBars = nextHave;
+  }
+
+  if (opts.pane && opts.barSec != null && opts.pane._chartView?.mapBars?.length && add > 0) {
+    const view = opts.pane._chartView;
     const appended = chartDebugTime("data", `append whitespace +${add}`, () => {
-      const tailStart = opts.pane.mapBars.length;
-      appendFutureWhitespaceTail(opts.pane.mapBars, opts.barSec, add);
-      for (let i = tailStart; i < opts.pane.mapBars.length; i += 1) {
+      const tailStart = view.mapBars.length;
+      appendFutureWhitespaceTail(view.mapBars, opts.barSec, add);
+      appendFutureWhitespaceTail(view.seriesData, opts.barSec, add);
+      for (let i = tailStart; i < view.mapBars.length; i += 1) {
         try {
-          series.update(opts.pane.mapBars[i], true);
+          series.update(view.seriesData[i], true);
         } catch {
-          opts.pane.mapBars.length = tailStart;
+          view.mapBars.length = tailStart;
+          view.seriesData.length = tailStart;
           return false;
         }
       }
+      view.futureWhitespace = nextHave;
+      opts.pane.mapBars = view.mapBars;
       return true;
     });
     if (appended) return;
   }
 
   chartDebugTime("data", `setData whitespace ${visible.length}+${nextHave}`, () => {
+    if (opts.pane) invalidatePaneChartView(opts.pane);
     series.setData(buildChartSeriesForDisplay(visible));
   });
   requestAllSessionBgRefresh();
@@ -149,6 +132,7 @@ export function ensureFutureWhitespace(opts) {
  */
 export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutions, onPrimaryPane) {
   chartDebugTime("data", `refreshPaneCandleData pane ${pane.index}`, () => {
+    invalidatePaneChartView(pane);
     applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions);
     pane.sessionBg?.requestRefresh();
     onPrimaryPane?.(pane);
@@ -156,41 +140,43 @@ export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutio
 }
 
 /**
- * Push latest pane.bars to the series (includes future whitespace).
- * Used when a new bar is added or a fast-path update is not possible.
+ * Push latest UTC bars to the series via cached chart view.
  */
 export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions) {
   return chartDebugTime("data", `setData live pane ${pane.index}`, () => {
     if (!pane.bars?.length) return;
-    const visible = barsForPane(pane, settingsStore, symbolInfo);
-    if (!visible.length) return;
-    const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
-    const shifted = ensureShiftedBars(pane, visible, tz);
-    pane.timeToIdx = barIndex(shifted);
-    if (pane.futureWhitespaceBars == null) pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
-    const ws = pane.futureWhitespaceBars;
-    pane.series.setData(buildChartSeriesForPane(pane, visible, settingsStore, resolutions));
+    const view = rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions);
+    if (!view.utcBars.length) return;
+
+    pane.timeAdapter = view.timeAdapter;
+    delete pane.utcTimeToIdx;
+    delete pane.chartTimeToIdx;
+    delete pane.timeToIdx;
+    const sc = settingsStore.get().scales ?? {};
+    if (!isFutureWhitespaceEnabled(sc)) {
+      pane.futureWhitespaceBars = 0;
+    } else if (!pane.futureWhitespaceBars) {
+      pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
+    }
+
+    pane.series.setData(view.seriesData);
     chartDebugCount("data", "setData");
-    chartDebug("data", "setData live", { pane: pane.index, bars: visible.length, ws });
+    chartDebug("data", "setData live", {
+      pane: pane.index,
+      bars: view.utcBars.length,
+      ws: view.futureWhitespace,
+    });
   });
 }
 
 /**
- * Patch the forming candle in-place (O(1)) while future whitespace trails the series.
- * @returns {boolean} false when caller should fall back to applyLiveBarToPaneSeries
+ * Patch the forming candle in-place (O(1)) using cached chart view.
+ * @returns {boolean}
  */
-export function updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInfo) {
+export function updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInfo, resolutions) {
   return chartDebugTime("data", `update forming pane ${pane.index}`, () => {
-    const sym = settingsStore.get().symbol ?? {};
-    const visible = barsForPane(pane, settingsStore, symbolInfo);
-    const idx = visible.findIndex((b) => b.time === bar.time);
-    if (idx < 0) return false;
-
-    const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
-    const context = visible.slice(Math.max(0, idx - 1), idx + 1);
-    const candle = buildCandleSeriesData(context, sym).at(-1);
+    const candle = patchFormingBarInView(pane, bar, settingsStore, symbolInfo, resolutions);
     if (!candle) return false;
-    candle.time = utcToChartTime(bar.time, tz);
 
     try {
       pane.series.update(candle, true);

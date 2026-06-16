@@ -4,7 +4,7 @@ import { TOOL_LABELS } from "../catalog/tools.js";
 const COARSE_POINTER_MQ = window.matchMedia("(pointer: coarse)");
 
 /**
- * TradingView-style bottom bar while placing drawings on touch devices.
+ * Bottom bar while placing drawings on touch devices.
  * @param {object} controller
  * @param {HTMLElement} mountEl
  */

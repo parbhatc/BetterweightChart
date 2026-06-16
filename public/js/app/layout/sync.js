@@ -1,15 +1,4 @@
 /**
- * @param {{ time: number, close: number }[]} bars
- * @param {number} time
- */
-function barCloseAtTime(bars, time) {
-  if (!bars?.length) return undefined;
-  const exact = bars.find((b) => b.time === time);
-  if (exact) return exact.close;
-  return bars.filter((b) => b.time <= time).at(-1)?.close;
-}
-
-/**
  * Layout sync helpers for multi-pane charts.
  * @param {object} deps
  */
@@ -93,21 +82,12 @@ export function createLayoutSync(deps) {
   function syncLayoutCrosshairFrom(sourceChart, sourceSeries, param) {
     const layoutManager = deps.getLayoutManager?.() ?? deps.layoutManager;
     if (suppressLayoutSync || !layoutManager?.getSync().crosshair) return;
-    const sourcePane = layoutPanes().find((p) => p.chart === sourceChart);
     suppressLayoutSync = true;
     try {
       for (const pane of layoutPanes()) {
         if (pane.chart === sourceChart) continue;
         if (param?.time != null && param.point) {
-          let price = sourceSeries.coordinateToPrice(param.point.y);
-          if (
-            sourcePane?.symbol &&
-            pane.symbol &&
-            pane.symbol !== sourcePane.symbol &&
-            pane.bars?.length
-          ) {
-            price = barCloseAtTime(pane.bars, param.time) ?? price;
-          }
+          const price = sourceSeries.coordinateToPrice(param.point.y);
           if (price != null) pane.chart.setCrosshairPosition(price, param.time, pane.series);
         } else {
           pane.chart.clearCrosshairPosition();

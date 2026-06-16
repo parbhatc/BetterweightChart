@@ -1,5 +1,5 @@
 /**
- * TradingView ~m~ frame codec (from TradingViewWS messageUtils).
+ * Remote chart ~m~ frame codec (from TradingViewWS messageUtils).
  * @see https://github.com/parbhatc/TradingViewWS
  */
 

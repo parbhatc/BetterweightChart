@@ -2,7 +2,7 @@ import { fmtDrawingPrice } from "../line/info.js";
 
 export const FORECAST_TOOL_TYPE = "position-forecast";
 
-/** TradingView-style Forecast defaults. */
+/** Default Forecast tool settings. */
 export const FORECAST_STYLE_DEFAULTS = {
   color: "#2962FF",
   colorOpacity: 100,

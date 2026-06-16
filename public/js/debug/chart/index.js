@@ -116,6 +116,27 @@ export function chartDebug(category, message, detail) {
  * @param {string} category
  * @param {string} [label]
  */
+/** @type {Map<string, number>} */
+const throttleAt = new Map();
+
+/**
+ * Log at most once per `intervalMs` per key (avoids mousemove spam).
+ * @param {string} category
+ * @param {string} key
+ * @param {string} message
+ * @param {unknown} [detail]
+ * @param {number} [intervalMs]
+ */
+export function chartDebugThrottle(category, key, message, detail, intervalMs = 400) {
+  if (!tagAllowed(category)) return;
+  const now = performance.now();
+  const throttleKey = `${category}:${key}`;
+  const last = throttleAt.get(throttleKey) ?? 0;
+  if (now - last < intervalMs) return;
+  throttleAt.set(throttleKey, now);
+  chartDebug(category, message, detail);
+}
+
 export function chartDebugCount(category, label = "tick") {
   if (!enabled) return;
   const key = `${category}:${label}`;

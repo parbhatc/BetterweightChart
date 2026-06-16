@@ -98,7 +98,7 @@ function nearestBarIndex(bars, time) {
 }
 
 /**
- * Inclusive bar window for regression (TradingView snaps both anchors to nearest bars).
+ * Inclusive bar window for regression (snaps both anchors to nearest bars).
  * @param {{ time: number }[]} bars
  * @param {number} t0
  * @param {number} t1

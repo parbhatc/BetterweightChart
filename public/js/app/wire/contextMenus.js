@@ -66,8 +66,11 @@ export function wirePaneContextMenus(opts) {
           const n = parseFloat(text.replace(/,/g, ""));
           if (!Number.isFinite(n)) return;
           ui.crosshairPrice = n;
-          const time = ui.lockedCrosshairTime ?? pane.hoverBar?.time ?? pane.bars.at(-1)?.time;
-          if (time != null) chart.setCrosshairPosition(n, time, series);
+          const utcTime = ui.lockedCrosshairTime ?? pane.hoverBar?.time ?? pane.bars.at(-1)?.time;
+          if (utcTime != null) {
+            const chartTime = pane.timeAdapter?.time.toChart(utcTime) ?? utcTime;
+            chart.setCrosshairPosition(n, chartTime, series);
+          }
         } catch {
           /* ignore */
         }

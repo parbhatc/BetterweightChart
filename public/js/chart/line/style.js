@@ -17,5 +17,5 @@ export function lineStyleDashPattern(style, lineWidth) {
   }
 }
 
-/** Default style for TradingView / LWC symbol price lines. */
+/** Default style for symbol price lines (lightweight-charts). */
 export const SYMBOL_PRICE_LINE_STYLE = LineStyle.Dashed;

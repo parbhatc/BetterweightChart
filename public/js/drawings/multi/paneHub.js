@@ -8,48 +8,6 @@ import { mountEditToolbar } from "../toolbars/edit/index.js";
 
 const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "editText", "placementChange"];
 
-/**
- * @param {{ time: number, close: number }[]} bars
- * @param {number} time
- */
-function barCloseAtTime(bars, time) {
-  if (!bars?.length) return undefined;
-  const exact = bars.find((b) => b.time === time);
-  if (exact) return exact.close;
-  return bars.filter((b) => b.time <= time).at(-1)?.close;
-}
-
-/**
- * @param {object} sourceCtx
- * @param {object} targetCtx
- * @param {{ time?: number, price?: number, drawDot?: boolean } | null} snapshot
- */
-function remapCrosshairSnapshot(sourceCtx, targetCtx, snapshot) {
-  if (snapshot?.time == null || snapshot.price == null) return snapshot;
-  if ((sourceCtx.paneSymbol ?? "") === (targetCtx.paneSymbol ?? "")) return snapshot;
-  const price = barCloseAtTime(targetCtx.utcBars, snapshot.time);
-  return price != null ? { ...snapshot, price } : snapshot;
-}
-
-/**
- * @param {import("../types.js").UserDrawing[]} drawings
- * @param {object} sourceCtx
- * @param {object} targetCtx
- */
-function remapDrawingsForPane(drawings, sourceCtx, targetCtx) {
-  if ((sourceCtx.paneSymbol ?? "") === (targetCtx.paneSymbol ?? "")) {
-    return structuredClone(drawings);
-  }
-  const bars = targetCtx.utcBars ?? [];
-  return structuredClone(drawings).map((d) => ({
-    ...d,
-    points: d.points.map((pt) => ({
-      ...pt,
-      price: barCloseAtTime(bars, pt.time) ?? pt.price,
-    })),
-  }));
-}
-
 
 
 /**
@@ -96,7 +54,7 @@ export function createMultiPaneDrawingHub(opts) {
   let pendingDragSyncIndex = null;
   /** @type {number} */
   let dragSyncRaf = 0;
-  /** @type {{ sourceIndex: number, snapshot: { time?: number, price?: number, drawDot?: boolean } | null } | null} */
+  /** @type {{ sourceIndex: number, snapshot: { time?: number, price?: number } | null } | null} */
   let pendingGlobalCrosshair = null;
   /** @type {number} */
   let globalCrosshairRaf = 0;
@@ -170,7 +128,6 @@ export function createMultiPaneDrawingHub(opts) {
 
     const clone = structuredClone(source.getDrawings());
     const selectedId = source.getSelectedId();
-    const sourceCtx = getContextForPane(sourceIndex);
 
     syncingDrawings = true;
 
@@ -180,12 +137,10 @@ export function createMultiPaneDrawingHub(opts) {
 
         if (idx === sourceIndex) continue;
 
-        const mapped = remapDrawingsForPane(clone, sourceCtx, getContextForPane(idx));
-
         if (opts.dragFrame) {
-          ctrl.applyDrawingsSync(mapped, selectedId);
+          ctrl.applyDrawingsSync(clone, selectedId);
         } else {
-          ctrl.replaceDrawings(mapped, { silent: true });
+          ctrl.replaceDrawings(clone, { silent: true });
           ctrl.selectDrawing(selectedId, { silent: true });
         }
 
@@ -211,7 +166,7 @@ export function createMultiPaneDrawingHub(opts) {
 
   /**
    * @param {number} sourceIndex
-   * @param {{ time?: number, price?: number, drawDot?: boolean } | null} snapshot
+   * @param {{ time?: number, price?: number } | null} snapshot
    */
   function publishGlobalCrosshair(sourceIndex, snapshot) {
     if (!shouldUseGlobalCrosshair()) return;
@@ -230,20 +185,17 @@ export function createMultiPaneDrawingHub(opts) {
     if (!pending || !shouldUseGlobalCrosshair()) return;
 
     const { sourceIndex, snapshot } = pending;
-    const key =
-      snapshot == null ? "clear" : `${snapshot.time}:${snapshot.price}:${snapshot.drawDot ? 1 : 0}`;
+    const key = snapshot == null ? "clear" : `${snapshot.time}:${snapshot.price}`;
     if (key === lastGlobalCrosshairKey) return;
     lastGlobalCrosshairKey = key;
 
-    const sourceCtx = getContextForPane(sourceIndex);
     syncingDrawings = true;
     try {
       for (const [idx, ctrl] of controllers) {
         if (idx === sourceIndex) continue;
         const chart = charts.get(idx);
         if (chart) crosshairEchoCharts.add(chart);
-        const mapped = remapCrosshairSnapshot(sourceCtx, getContextForPane(idx), snapshot);
-        ctrl.applyCrosshairSyncSnapshot?.(mapped);
+        ctrl.applyCrosshairSyncSnapshot?.(snapshot);
       }
     } finally {
       syncingDrawings = false;

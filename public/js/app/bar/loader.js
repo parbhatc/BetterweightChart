@@ -1,4 +1,5 @@
 import { FUTURE_RIGHT_OFFSET } from "../../chart/view/index.js";
+import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
 import { normalizeBar } from "../../datafeed/custom.js";
 import {
   chartDebug,
@@ -22,7 +23,7 @@ import {
 
 /** Load more when the visible range is within this many bars of the left edge. */
 export const HISTORY_EDGE_BARS = 80;
-/** Max burst loads per pan (TradingView-style prefetch). */
+/** Max burst loads per pan when prefetching history. */
 const HISTORY_BURST_MAX = 2;
 /** Cooldown after a failed history request (ms). */
 const HISTORY_ERROR_COOLDOWN_MS = 45_000;
@@ -212,9 +213,7 @@ export function createBarLoader(opts) {
     const added = pane.bars.length - beforeLen;
     if (added <= 0) return 0;
 
-    pane.mapBars = null;
-    pane.shiftedBars = null;
-    pane._shiftedKey = null;
+    invalidatePaneChartView(pane);
     pane._historyExhausted = false;
     refreshPaneCandleData(pane);
     if (pane.index === 0) setPrimaryBars(pane);
@@ -387,12 +386,10 @@ export function createBarLoader(opts) {
     pane._firstDataRequest = true;
     pane.bars = [];
     pane.futureWhitespaceBars = null;
-    pane.mapBars = null;
-    pane.shiftedBars = null;
-    pane._shiftedKey = null;
+    invalidatePaneChartView(pane);
   }
 
-  /** TradingView-style burst load when panning near the left edge or into a gap. */
+  /** Burst load when panning near the left edge or into a gap. */
   async function ensureHistoryNearEdge(pane) {
     if (!needsMoreHistory(pane)) return false;
     chartDebug("data", "history edge prefetch", {
@@ -456,9 +453,7 @@ export function createBarLoader(opts) {
       pane._firstDataRequest = false;
       pane.bars = result.bars.slice();
       pane.futureWhitespaceBars = null;
-      pane.mapBars = null;
-      pane.shiftedBars = null;
-      pane._shiftedKey = null;
+      invalidatePaneChartView(pane);
       pane._historyExhausted = Boolean(result.noData);
       pane._historyErrorUntil = null;
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });

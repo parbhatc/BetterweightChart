@@ -4,7 +4,7 @@ import { positionGeometry } from "./geometry.js";
 import { tickSizeForPrecision } from "./placement.js";
 import { computePositionQty, formatPositionQty } from "./quantity.js";
 
-/** TradingView-style default stats visibility for long/short position. */
+/** Default stats visibility for long/short position. */
 export function defaultPositionStatsFields() {
   return {
     tpPriceOffset: true,

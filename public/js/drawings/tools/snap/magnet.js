@@ -20,6 +20,8 @@ function nearestBar(time, bars) {
  */
 export function applyMagnetSnap(point, mode, bars) {
   if (mode === "off" || !bars.length) return point;
+  const last = bars[bars.length - 1];
+  if (last && point.time > last.time) return point;
   const bar = nearestBar(point.time, bars);
   if (!bar) return point;
 

@@ -59,6 +59,22 @@
   transform: scale(0.96);
 }
 
+.floating-toolbar-react-widgets__button.has-template {
+  position: relative;
+}
+
+.floating-toolbar-react-widgets__button.has-template::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--tv-accent);
+  pointer-events: none;
+}
+
 .floating-toolbar-react-widgets__button.is-pressed,
 .floating-toolbar-react-widgets__button[aria-pressed="true"] {
   color: var(--tv-accent);

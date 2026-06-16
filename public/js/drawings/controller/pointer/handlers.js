@@ -15,6 +15,7 @@ import {
   pointCountForTool,
 } from "../../registry/tools.js";
 import { positionGeometry } from "../../tools/position/barrel.js";
+import { debugPlacement } from "../../../debug/chart/drawings.js";
 import {
   parallelChannelPointerDown,
   parallelChannelPointerMove,
@@ -89,6 +90,17 @@ export function createPointerHandlers(api) {
     placeDrawPointAt(rect.left + media.x, rect.top + media.y);
   }
 
+  function resolvePlacementPreviewPoint(clientX, clientY) {
+    if (api.useMobileDragPlacement?.()) {
+      const media = api.getDrawCrosshairMedia?.();
+      if (media) {
+        const rect = api.container.getBoundingClientRect();
+        return api.resolvePoint(rect.left + media.x, rect.top + media.y);
+      }
+    }
+    return api.resolvePoint(clientX, clientY);
+  }
+
   function shouldSwallowDrawMove(ev) {
     if (!api.isPrimaryButtonDown(ev)) return false;
     if (api.getMeasureDragActive() || api.getFreehandDrawing()) return true;
@@ -105,6 +117,7 @@ export function createPointerHandlers(api) {
 
     const activeTool = api.getActiveTool();
     const placementStaged = api.getPlacementStaged();
+    debugPlacement("click", point, activeTool, { staged: placementStaged.length });
 
     if (isRegressionTrendTool(activeTool)) {
       const regPoint = api.resolveRegressionPoint(clientX, clientY);
@@ -127,6 +140,7 @@ export function createPointerHandlers(api) {
     if (isTrendAngleTool(activeTool)) {
       if (placementStaged.length === 0) {
         placementStaged.push(point);
+        debugPlacement("staged", point, activeTool, { step: 1, need: 2 });
         api.setPreview({ ...newDrawing(activeTool, [point]), angle: 0 });
         api.syncChartPointerHandling();
         return;
@@ -199,12 +213,14 @@ export function createPointerHandlers(api) {
     const need = pointCountForTool(activeTool);
     placementStaged.push(point);
     if (placementStaged.length < need) {
+      debugPlacement("staged", point, activeTool, { step: placementStaged.length, need });
       const pts = [...placementStaged];
       while (pts.length < need) pts.push(point);
       api.setPreview(newDrawing(activeTool, pts));
       return;
     }
 
+    debugPlacement("commit", point, activeTool, { points: placementStaged.length });
     api.commitDrawing(newDrawing(activeTool, [...placementStaged]));
   }
 
@@ -257,19 +273,15 @@ export function createPointerHandlers(api) {
       if (statsHit) {
         api.swallowChartPointer(ev);
         api.selectDrawing(statsHit.id);
-        const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
-        if (originPoint) {
-          api.beginPointerSession(ev);
-          api.queuePendingDrag({
-            mode: "move",
-            drawingId: statsHit.id,
-            startPoints: statsHit.points.map((p) => ({ ...p })),
-            originPoint,
-            startClientX: ev.clientX,
-            startClientY: ev.clientY,
-            ...positionMoveDragExtras(statsHit),
-          });
-        }
+        api.beginPointerSession(ev);
+        api.queuePendingDrag({
+          mode: "move",
+          drawingId: statsHit.id,
+          startPoints: statsHit.points.map((p) => ({ ...p })),
+          startClientX: ev.clientX,
+          startClientY: ev.clientY,
+          ...positionMoveDragExtras(statsHit),
+        });
         return;
       }
 
@@ -279,30 +291,26 @@ export function createPointerHandlers(api) {
         const drawing = api.getDrawings()[idx];
         api.selectDrawing(drawing.id);
         if (!drawing.locked && drawing.type !== "regression-trend") {
-          const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
-          if (originPoint) {
-            const p0 = drawing.points[0];
-            const p1 = drawing.points[1];
-            api.beginPointerSession(ev);
-            api.queuePendingDrag({
-              mode: "move",
-              drawingId: drawing.id,
-              startPoints:
-                drawing.type === "parallel-channel" && p0 && p1
+          const p0 = drawing.points[0];
+          const p1 = drawing.points[1];
+          api.beginPointerSession(ev);
+          api.queuePendingDrag({
+            mode: "move",
+            drawingId: drawing.id,
+            startPoints:
+              drawing.type === "parallel-channel" && p0 && p1
+                ? [p0, p1].map((p) => ({ ...p }))
+                : drawing.type === "flat-top-bottom" && p0 && p1
                   ? [p0, p1].map((p) => ({ ...p }))
-                  : drawing.type === "flat-top-bottom" && p0 && p1
-                    ? [p0, p1].map((p) => ({ ...p }))
-                    : drawing.points.map((p) => ({ ...p })),
-              originPoint,
-              startPriceOffset:
-                drawing.type === "parallel-channel" ? api.resolvePriceOffset(drawing) : undefined,
-              startFlatPrice:
-                drawing.type === "flat-top-bottom" ? api.resolveFlatPrice(drawing) : undefined,
-              startClientX: ev.clientX,
-              startClientY: ev.clientY,
-              ...positionMoveDragExtras(drawing),
-            });
-          }
+                  : drawing.points.map((p) => ({ ...p })),
+            startPriceOffset:
+              drawing.type === "parallel-channel" ? api.resolvePriceOffset(drawing) : undefined,
+            startFlatPrice:
+              drawing.type === "flat-top-bottom" ? api.resolveFlatPrice(drawing) : undefined,
+            startClientX: ev.clientX,
+            startClientY: ev.clientY,
+            ...positionMoveDragExtras(drawing),
+          });
         }
         return;
       }
@@ -429,7 +437,7 @@ export function createPointerHandlers(api) {
       return;
     }
 
-    if (api.isCursorTool() && api.isDragging() && api.isPrimaryButtonDown(ev)) {
+    if (api.isCursorTool() && api.isDragging() && api.isPrimaryButtonDown(ev) && !api.hasActiveDrag()) {
       api.syncNativeCrosshairAt?.(ev.clientX, ev.clientY);
     }
 
@@ -437,17 +445,13 @@ export function createPointerHandlers(api) {
     if (api.hasActiveDrag()) {
       if (api.isPrimaryButtonDown(ev)) {
         api.applyDrawingDrag(ev.clientX, ev.clientY);
-        if (api.isCursorTool()) api.syncNativeCrosshairAt?.(ev.clientX, ev.clientY);
       }
       return;
     }
 
     const placementStaged = api.getPlacementStaged();
     if (!placementStaged.length) return;
-    const point =
-      api.useMobileDragPlacement?.() && api.resolveDrawCrosshairPoint?.()
-        ? api.resolveDrawCrosshairPoint()
-        : api.resolvePoint(ev.clientX, ev.clientY);
+    const point = resolvePlacementPreviewPoint(ev.clientX, ev.clientY);
     if (!point) return;
 
     const activeTool = api.getActiveTool();

@@ -66,7 +66,7 @@ function normalizeConfig(cfg) {
 }
 
 /**
- * Build a datafeed from your own handlers (same shape as TradingView UDF).
+ * Build a datafeed from your own handlers (same shape as the UDF protocol).
  *
  * @param {object} handlers
  * @param {() => DatafeedConfig | Promise<DatafeedConfig>} handlers.onReady

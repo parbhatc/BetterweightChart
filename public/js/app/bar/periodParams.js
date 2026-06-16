@@ -39,7 +39,7 @@ export function estimateHistoryCountBack(chart, maxChunk = DEFAULT_HISTORY_CHUNK
 }
 
 /**
- * Build TradingView Advanced Charts-style getBars period params.
+ * Build getBars period params for history requests.
  * TV sends from + to (Unix seconds) and countBack together on every request.
  *
  * @param {object} opts

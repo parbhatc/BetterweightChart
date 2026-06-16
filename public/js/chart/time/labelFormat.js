@@ -149,7 +149,7 @@ export function formatAxisMonthTick(t, _scales, timeZone) {
 }
 
 /**
- * Time-axis tick labels — TradingView 12h: 03:30 PM; respects 24-hours setting.
+ * Time-axis tick labels — 12-hour format (e.g. 03:30 PM); respects 24-hours setting.
  * @param {Date} d
  * @param {string} timeZone
  * @param {object} [scales]

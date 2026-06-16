@@ -1,7 +1,7 @@
 import { precisionFromSettings } from "../../../chart/timezone/list.js";
-import { chartMapBarsForPane } from "../../../chart/pane/data.js";
+import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { measureVisiblePriceRange, snapTimeToNearestBar } from "../../../chart/coords/timeScale.js";
-import { dateTime12h, toDate } from "../../../chart/format.js";
+import { formatChartTimeLabel } from "../../../chart/time/labelFormat.js";
 import { createMultiPaneDrawingHub } from "../../../drawings/multi/paneHub.js";
 import { applyCursorMode, resolveThemeCrosshair } from "../../cursor/mode.js";
 
@@ -28,25 +28,25 @@ export function attachDrawingBoot(ctx) {
     }
   }
 
-  function formatChartLabel(chartSec) {
-    return dateTime12h(toDate(chartSec));
+  function formatUtcPointTime(utcSec) {
+    const sc = ctx.settingsStore.get().scales ?? {};
+    return formatChartTimeLabel(utcSec, sc, "Etc/UTC", { includeTime: true });
   }
 
   function buildDrawingContext(pane) {
     const sym = ctx.settingsStore.get().symbol ?? {};
-    const { bars: utcBars, mapBars, barSec } = chartMapBarsForPane(
+    const view = getPaneChartView(
       pane,
       ctx.settingsStore,
-      ctx.symbolInfo,
+      ctx.symbolInfo ?? pane.symbolInfo,
       ctx.resolutions,
     );
-    const bars = mapBars.slice(0, utcBars.length);
     const visiblePriceRange = measureVisiblePriceRange(pane.chart, pane.series);
     return {
-      bars,
-      mapBars,
-      barSec,
-      utcBars: pane.bars,
+      timeAdapter: view.timeAdapter,
+      bars: view.utcBars,
+      mapBars: view.mapBars,
+      barSec: view.barSec,
       paneSymbol: pane.symbol,
       precision: precisionFromSettings(ctx.settingsStore.get(), pane.symbolInfo ?? ctx.symbolInfo),
       visiblePriceRange,
@@ -54,7 +54,7 @@ export function attachDrawingBoot(ctx) {
       series: pane.series,
       colorBarsOnPrevClose: sym.colorBarsOnPrevClose ?? false,
       symbol: sym,
-      formatPointTime: (chartSec) => formatChartLabel(chartSec),
+      formatPointTime: formatUtcPointTime,
     };
   }
 
@@ -62,18 +62,17 @@ export function attachDrawingBoot(ctx) {
     if (!ctx.drawing) return;
     const pane = ctx.getActivePane();
     if (!pane) return;
-    const { bars: utcBars, mapBars, barSec } = chartMapBarsForPane(
+    const view = getPaneChartView(
       pane,
       ctx.settingsStore,
-      ctx.symbolInfo,
+      ctx.symbolInfo ?? pane.symbolInfo,
       ctx.resolutions,
     );
-    const bars = mapBars.slice(0, utcBars.length);
-    if (!bars.length) return;
+    if (!view.utcBars.length) return;
     for (const d of ctx.drawing.getDrawings()) {
       const points = d.points.map((p) => ({
         ...p,
-        time: snapTimeToNearestBar(p.time, bars, barSec),
+        time: snapTimeToNearestBar(p.time, view.utcBars, view.barSec),
       }));
       ctx.drawing.updateDrawing(d.id, { points }, { silent: true });
     }
@@ -96,7 +95,7 @@ export function attachDrawingBoot(ctx) {
       toolbarEl: ctx.drawToolbar,
       getContextForPane: (idx) => {
         const pane = ctx.chartPanes.get(idx) ?? ctx.getActivePane();
-        return pane ? buildDrawingContext(pane) : { bars: [], barSec: 60 };
+        return pane ? buildDrawingContext(pane) : { bars: [], barSec: 60, timeAdapter: null };
       },
       getSyncDrawings: () => ctx.layoutManager?.getSync().drawings ?? false,
       getSyncCrosshair: () => ctx.layoutManager?.getSync().crosshair ?? false,

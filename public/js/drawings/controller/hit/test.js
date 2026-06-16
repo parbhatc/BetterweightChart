@@ -8,6 +8,8 @@ import { getDrawingTypeHandler } from "../../types/handlers.js";
 import { hitPositionDrawing, isPositionTool, positionAnchorPoints } from "../../tools/position/barrel.js";
 import { hitMeasureDrawing, isMeasureDrawingType } from "../../tools/measure/index.js";
 import { hitAnnotationDrawing, isAnnotationDrawingType } from "../../tools/annotation/index.js";
+import { hitRectArea, hitRectBorder } from "../../tools/annotation/hitTest.js";
+import { isRectangleTool, rectangleAnchorPoints } from "../../tools/shape/index.js";
 import { hitDisjointChannelDrawing, disjointChannelAnchorPoints, isDisjointChannelTool } from "../../tools/channel/disjoint.js";
 import { hitFibStyleDrawing } from "../../tools/fib/retracement.js";
 import { clipLineThroughPoints, parallelLineThrough } from "../../tools/line/math.js";
@@ -68,16 +70,7 @@ export function hitDrawing(drawing, px, py, getCoords) {
       return Math.abs(px - a.x) <= threshold && py >= 0 && py <= bottom;
     case "rectangle": {
       if (!b) return false;
-      const x1 = Math.min(a.x, b.x) - threshold;
-      const x2 = Math.max(a.x, b.x) + threshold;
-      const y1 = Math.min(a.y, b.y) - threshold;
-      const y2 = Math.max(a.y, b.y) + threshold;
-      return (
-        distToSegment(px, py, x1, y1, x2, y1) <= threshold ||
-        distToSegment(px, py, x2, y1, x2, y2) <= threshold ||
-        distToSegment(px, py, x2, y2, x1, y2) <= threshold ||
-        distToSegment(px, py, x1, y2, x1, y1) <= threshold
-      );
+      return hitRectArea(a, b, px, py, 2) || hitRectBorder(a, b, px, py, threshold);
     }
     case "ray":
     case "trend-line":
@@ -271,6 +264,19 @@ export function hitDrawingAnchor(drawing, px, py, getCoords) {
     for (const i of [midLeft, midRight]) {
       const ap = anchors[i];
       if (!ap) continue;
+      const x = timeToX(ap.time);
+      const y = priceToY(ap.price);
+      if (x != null && y != null && Math.hypot(px - x, py - y) <= radius) return i;
+    }
+    return -1;
+  }
+
+  if (isRectangleTool(drawing.type)) {
+    const { timeToX, priceToY } = getCoords(drawing);
+    if (!timeToX || !priceToY) return -1;
+    const anchors = rectangleAnchorPoints(drawing);
+    for (let i = 0; i < anchors.length; i += 1) {
+      const ap = anchors[i];
       const x = timeToX(ap.time);
       const y = priceToY(ap.price);
       if (x != null && y != null && Math.hypot(px - x, py - y) <= radius) return i;

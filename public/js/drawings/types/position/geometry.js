@@ -63,7 +63,7 @@ export function positionStatsCenterPrice(geom) {
 }
 
 /**
- * Keep TP/SL on the correct side of entry (TradingView-style limits).
+ * Keep TP/SL on the correct side of entry.
  * Long: TP above entry, SL below. Short: TP below entry, SL above.
  * @param {number} price
  * @param {number} entryPrice

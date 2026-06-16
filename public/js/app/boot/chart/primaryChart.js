@@ -75,7 +75,7 @@ export function initPrimaryChart(ctx) {
     bars: ctx.bars,
     futureWhitespaceBars: null,
     statusEl: ctx.statusEl ?? null,
-    timeToIdx: new Map(),
+    timeAdapter: null,
   });
 
   ctx.resetChartView = () => {

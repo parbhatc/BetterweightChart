@@ -1,4 +1,3 @@
-import { chartVisibleRightX, chartXAt, safePriceToY, coordMapBars } from "../../../chart/coords/timeScale.js";
 import { finalizeMeasureDrawing } from "../../tools/measure/index.js";
 import { renderDrawing } from "../renderers/index.js";
 import { DrawingPriceLinesSync } from "../priceLines/index.js";
@@ -130,9 +129,11 @@ export class UserDrawingsPrimitive {
     const chart = this._chart;
     const series = this._series;
     const ctx = this._getContext();
-    const { bars, barSec, precision, formatPointTime } = ctx;
-    const mapBars = coordMapBars(ctx);
-    if (!chart || !series) {
+    const ta = ctx.timeAdapter;
+    const bars = ctx.bars ?? [];
+    const barSec = ctx.barSec ?? 60;
+    const { precision, formatPointTime } = ctx;
+    if (!chart || !series || !ta) {
       return {
         items: [],
         bars,
@@ -148,7 +149,6 @@ export class UserDrawingsPrimitive {
         hoveredId: null,
       };
     }
-    const ts = chart.timeScale();
     const items = this._drawingsHidden ? [] : [...this._drawings];
     if (this._preview) items.push({ ...this._preview, id: "__preview__" });
 
@@ -161,9 +161,9 @@ export class UserDrawingsPrimitive {
       formatPointTime,
       chart,
       series,
-      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, t),
-      priceToY: (p) => safePriceToY(series, p),
-      rightX: () => chartVisibleRightX(ts) ?? 0,
+      timeToX: (utcT) => ta.coord.xFromUtc(chart, utcT),
+      priceToY: (p) => ta.coord.yFromPrice(series, p),
+      rightX: () => ta.coord.visibleRightX(chart) ?? 0,
       selectedId: this._selectedId,
       hoveredId: this._hoveredId,
       regressionGuideDrawingId: this._regressionGuideDrawingId,

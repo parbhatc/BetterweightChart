@@ -19,7 +19,7 @@ export function attachBarLoader(ctx) {
     applyLiveBarToPane: (pane) =>
       applyLiveBarToPaneSeries(pane, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     updateFormingBarOnPane: (pane, bar) =>
-      updateFormingBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo),
+      updateFormingBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     getBarSecForPane: (pane) => ctx.barSecForPaneLocal(pane),
     setBarsLoading: (v) => {
       ctx.barsLoading = v;

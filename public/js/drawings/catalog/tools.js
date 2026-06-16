@@ -1,4 +1,4 @@
-/** TradingView-style left toolbar catalog (icons in toolIcons.js). */
+/** Left toolbar catalog (icons in toolIcons.js). */
 
 export const SUPPORTED_DRAW_TOOLS = new Set([
   "trend-line",

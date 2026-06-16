@@ -4,10 +4,12 @@ import { loadLastResolution, saveLastResolution } from "../../../ui/timeframe/fa
 import { createChartSettings } from "../../../ui/chart/settings.js";
 import { createAppLoader } from "../../../ui/loader/app.js";
 import { resolveTimezone } from "../../../chart/timezone/list.js";
+import { createFeatureFlags } from "../../../chart/features.js";
 
 /**
  * @typedef {object} BootContext
  * @property {ReturnType<typeof readPageOptions>} opts
+ * @property {import("../../../chart/features.js").FeatureFlags} featureFlags
  * @property {boolean} debugOn
  * @property {"dark" | "light"} currentTheme
  * @property {object} cfg
@@ -26,7 +28,7 @@ import { resolveTimezone } from "../../../chart/timezone/list.js";
  * @property {object[]} bars
  * @property {object} ui
  * @property {boolean} barsLoading
- * @property {Map<number, number>} timeToIdx
+ * @property {ReturnType<import("../../../chart/time/timeAdapter.js").createTimeAdapter> | null} timeAdapter
  * @property {number | null} futureWhitespaceBars
  * @property {HTMLElement | null} watermarkText
  * @property {HTMLElement} chartWrap
@@ -79,6 +81,7 @@ import { resolveTimezone } from "../../../chart/timezone/list.js";
  * @property {(s: object) => void} applyLayoutChartSettings
  * @property {() => void} restoreLayoutChartSettings
  * @property {() => void} restoreLayoutToolDefaults
+ * @property {() => void} restoreLayoutDrawingTemplates
  * @property {() => void} restoreLayoutDrawings
  * @property {(initial: string, title: string, confirmLabel: string) => Promise<string | null>} uniqueLayoutName
  * @property {() => ReturnType<typeof import("../../../ui/chart/settings.js").mountChartSettings>} mountChartSettingsUi
@@ -141,12 +144,13 @@ export function createBootContext(overrides) {
   let resolution = "";
   let symbolInfo = null;
   let bars = [];
-  let timeToIdx = new Map();
+  let timeAdapter = null;
   let futureWhitespaceBars = null;
 
   /** @type {BootContext} */
   const ctx = {
     opts,
+    featureFlags: createFeatureFlags({}),
     debugOn: false,
     currentTheme,
     cfg: {},
@@ -170,7 +174,7 @@ export function createBootContext(overrides) {
     set barsLoading(v) {
       barsLoading = v;
     },
-    timeToIdx,
+    timeAdapter,
     futureWhitespaceBars,
     watermarkText: document.getElementById("watermark"),
     chartWrap: el.closest(".tv-chart-wrap") ?? el,
@@ -223,6 +227,7 @@ export function createBootContext(overrides) {
     applyLayoutChartSettings: () => {},
     restoreLayoutChartSettings: () => {},
     restoreLayoutToolDefaults: () => {},
+    restoreLayoutDrawingTemplates: () => {},
     restoreLayoutDrawings: () => {},
     uniqueLayoutName: async () => null,
     mountChartSettingsUi: () => /** @type {ReturnType<import("../../../ui/chart/settings.js").mountChartSettings>} */ (/** @type {unknown} */ (null)),
@@ -275,10 +280,10 @@ export function createBootContext(overrides) {
         bars = v;
       },
     },
-    timeToIdx: {
-      get: () => timeToIdx,
+    timeAdapter: {
+      get: () => timeAdapter,
       set: (v) => {
-        timeToIdx = v;
+        timeAdapter = v;
       },
     },
     futureWhitespaceBars: {

@@ -59,7 +59,7 @@ function trendLineStyleDefaults(overrides = {}) {
 }
 
 /** @type {Record<string, Record<string, unknown>>} */
-const TREND_LINE_FAMILY_DEFAULTS = {
+export const TREND_LINE_FAMILY_DEFAULTS = {
   "trend-line": trendLineStyleDefaults({ extendLeft: false, extendRight: false }),
   ray: trendLineStyleDefaults({ extendLeft: false, extendRight: true }),
   "info-line": trendLineStyleDefaults({
@@ -106,19 +106,19 @@ const TREND_LINE_FAMILY_DEFAULTS = {
   "double-curve": { ...DOUBLE_CURVE_DEFAULTS },
 };
 
+/** @param {string} type */
+export function getDrawingExtendDefaults(type) {
+  if (TREND_LINE_FAMILY_DEFAULTS[type]) return { ...TREND_LINE_FAMILY_DEFAULTS[type] };
+  if (AXIS_LINE_DEFAULTS[type]) return { ...AXIS_LINE_DEFAULTS[type] };
+  if (type === "text" || type === "text-annotation") return { label: "Text" };
+  if (type === "note") return { label: "Note" };
+  if (type === "callout" || type === "comment") return { label: "Comment" };
+  return {};
+}
+
 /** @param {string} type @param {import("../types.js").DrawPoint[]} points */
 export function newDrawing(type, points) {
-  /** @type {Record<string, unknown>} */
-  const extendDefaults =
-    TREND_LINE_FAMILY_DEFAULTS[type] ??
-    AXIS_LINE_DEFAULTS[type] ??
-    (type === "text" || type === "text-annotation"
-      ? { label: "Text" }
-      : type === "note"
-        ? { label: "Note" }
-        : type === "callout" || type === "comment"
-          ? { label: "Comment" }
-          : {});
+  const extendDefaults = getDrawingExtendDefaults(type);
   const drawing = {
     id: `d${idSeq++}`,
     type,

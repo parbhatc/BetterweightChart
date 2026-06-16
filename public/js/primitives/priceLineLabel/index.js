@@ -121,12 +121,17 @@ export class PriceLineLabelPrimitive {
     const scaleW = chart.priceScale(scaleId).width();
     if (scaleW <= 0) return { visible: false };
 
+    const showCountdown = Boolean(state.marketOpen);
+
     return {
       visible: true,
       y,
       color: state.color,
       priceText: state.priceText,
-      countdownText: formatBarCloseCountdown(secondsUntilBarClose(state.barSec)),
+      showCountdown,
+      countdownText: showCountdown
+        ? formatBarCloseCountdown(secondsUntilBarClose(state.barSec))
+        : "",
       lineVisible: Boolean(state.lineVisible),
       lineWidth: Math.max(1, Number(state.lineWidth) || 1),
       scaleId,
@@ -214,8 +219,9 @@ class PriceLineAxisPaneRenderer {
 
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const width = mediaSize.width;
-      const top = Math.round(data.y - PRICE_ROW_H / 2);
-      const totalH = PRICE_ROW_H + COUNTDOWN_ROW_H;
+      const showCountdown = Boolean(data.showCountdown);
+      const totalH = PRICE_ROW_H + (showCountdown ? COUNTDOWN_ROW_H : 0);
+      const top = Math.round(data.y - totalH / 2);
       const onRight = data.scaleId !== "left";
       const rtl = onRight ? 2 : 0;
       const rtr = onRight ? 0 : 2;
@@ -234,15 +240,17 @@ class PriceLineAxisPaneRenderer {
       ctx.font = `600 12px ${FONT}`;
       ctx.fillText(data.priceText, width / 2, top + PRICE_ROW_H / 2);
 
-      ctx.font = `600 11px ${FONT}`;
-      ctx.fillText(data.countdownText, width / 2, top + PRICE_ROW_H + COUNTDOWN_ROW_H / 2);
+      if (showCountdown) {
+        ctx.font = `600 11px ${FONT}`;
+        ctx.fillText(data.countdownText, width / 2, top + PRICE_ROW_H + COUNTDOWN_ROW_H / 2);
+      }
       ctx.restore();
     });
   }
 }
 
 /**
- * Attach TradingView-style price line + countdown primitive to a series.
+ * Attach price line + countdown primitive to a series.
  * @param {object} opts
  * @param {import("lightweight-charts").ISeriesApi} opts.series
  * @param {() => object} opts.getState

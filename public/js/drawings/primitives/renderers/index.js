@@ -30,6 +30,7 @@ import { renderPatternDrawing, isPatternDrawingType } from "../../tools/pattern/
 import { renderForecastDrawing, isForecastDrawingType } from "../../tools/forecast/index.js";
 import { getDrawingTypeHandler } from "../../types/handlers.js";
 import { renderPositionDrawing, positionAnchorPoints } from "../../tools/position/barrel.js";
+import { isRectangleTool, rectangleAnchorPoints } from "../../tools/shape/index.js";
 import { renderMeasureDrawing, isMeasureDrawingType } from "../../tools/measure/index.js";
 import { renderAnnotationDrawing, isAnnotationDrawingType } from "../../tools/annotation/index.js";
 import { strokeSegment } from "../../tools/line/math.js";
@@ -464,6 +465,30 @@ function drawEndpointAnchors(ctx, drawing, timeToX, priceToY, color, lw, isPrevi
       } else {
         ctx.rect(x - side / 2, y - side / 2, side, side);
       }
+      ctx.fillStyle = ANCHOR_FILL_COLOR;
+      ctx.fill();
+      ctx.strokeStyle = ANCHOR_BORDER_COLOR;
+      ctx.lineWidth = ANCHOR_BORDER_WIDTH;
+      ctx.stroke();
+      ctx.restore();
+    }
+    return;
+  }
+
+  if (isRectangleTool(drawing.type)) {
+    const anchors =
+      isPreview && drawing.points.length < 2
+        ? drawing.points
+        : rectangleAnchorPoints(drawing);
+    for (const ap of anchors) {
+      if (!ap) continue;
+      const x = timeToX(ap.time);
+      const y = priceToY(ap.price);
+      if (x == null || y == null) continue;
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = ANCHOR_FILL_COLOR;
       ctx.fill();
       ctx.strokeStyle = ANCHOR_BORDER_COLOR;

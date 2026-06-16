@@ -5,7 +5,7 @@ export const DRAWING_UI_SELECTOR =
 export const DEFAULT_DRAWING_COLOR = "#2962FF";
 export const ANCHOR_BORDER_COLOR = "#2962FF";
 export const ANCHOR_FILL_COLOR = "#000000";
-/** Visual radius of endpoint anchor circles (TradingView-style). */
+/** Visual radius of endpoint anchor circles. */
 export const ANCHOR_RADIUS = 6;
 export const ANCHOR_BORDER_WIDTH = 2;
 export const DRAWING_HIT_THRESHOLD = 10;

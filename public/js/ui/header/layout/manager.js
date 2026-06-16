@@ -5,7 +5,7 @@ const STORAGE_KEY = "tv-chart-layout-state";
 
 /** @typedef {{ symbol: boolean, interval: boolean, crosshair: boolean, time: boolean, dateRange: boolean, drawings: boolean }} SyncSettings */
 
-/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>> }} SavedLayout */
+/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>>, drawingTemplates?: import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates }} SavedLayout */
 
 /** @typedef {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, wrapEl: HTMLElement, chartEl: HTMLElement, destroy: () => void, symbol: string, resolution: string, symbolInfo: object | null, bars: object[] }} SecondaryPane */
 
@@ -54,6 +54,8 @@ export function createLayoutManager(opts) {
   let chartSettingsSnapshot = null;
   /** @type {Record<string, Record<string, unknown>> | null} */
   let toolDefaultsSnapshot = null;
+  /** @type {import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates | null} */
+  let drawingTemplatesSnapshot = null;
 
   function applyPlacements() {
     const def = getLayoutDef(layoutId);
@@ -173,6 +175,17 @@ export function createLayoutManager(opts) {
     return toolDefaultsSnapshot;
   }
 
+  /** @param {import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates | null | undefined} templates */
+  function setDrawingTemplatesSnapshot(templates) {
+    drawingTemplatesSnapshot =
+      templates && typeof templates === "object" ? structuredClone(templates) : null;
+    persist();
+  }
+
+  function getDrawingTemplatesSnapshot() {
+    return drawingTemplatesSnapshot;
+  }
+
   function markSaved() {
     dirty = false;
     persist();
@@ -199,6 +212,7 @@ export function createLayoutManager(opts) {
         drawings: drawingsSnapshot,
         chartSettings: chartSettingsSnapshot,
         toolDefaults: toolDefaultsSnapshot,
+        drawingTemplates: drawingTemplatesSnapshot,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
@@ -217,6 +231,9 @@ export function createLayoutManager(opts) {
       if (data.drawings && typeof data.drawings === "object") drawingsSnapshot = data.drawings;
       if (data.chartSettings && typeof data.chartSettings === "object") chartSettingsSnapshot = data.chartSettings;
       if (data.toolDefaults && typeof data.toolDefaults === "object") toolDefaultsSnapshot = data.toolDefaults;
+      if (data.drawingTemplates && typeof data.drawingTemplates === "object") {
+        drawingTemplatesSnapshot = data.drawingTemplates;
+      }
       dirty = Boolean(data.dirty);
       if (typeof data.autoSave === "boolean") autoSave = data.autoSave;
     } catch {
@@ -254,6 +271,8 @@ export function createLayoutManager(opts) {
     getChartSettingsSnapshot,
     setToolDefaultsSnapshot,
     getToolDefaultsSnapshot,
+    setDrawingTemplatesSnapshot,
+    getDrawingTemplatesSnapshot,
     setActivePane,
     getActivePaneIndex: () => activePaneIndex,
     getSecondaryPanes,

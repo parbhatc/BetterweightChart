@@ -82,7 +82,7 @@ export function widthAnchorPoint(p0, p1, priceOffset, time) {
 }
 
 /**
- * Six TradingView-style handles: bottom L/R, top L/R, bottom mid, top mid.
+ * Six handles: bottom L/R, top L/R, bottom mid, top mid.
  * @param {import("../../types.js").UserDrawing} drawing
  * @returns {import("../../types.js").DrawPoint[]}
  */
@@ -105,7 +105,7 @@ export function parallelChannelAnchorPoints(drawing) {
 }
 
 /**
- * Channel width from cursor price only — top rail stays aligned with A/B bars (TradingView-style).
+ * Channel width from cursor price only — top rail stays aligned with A/B bars.
  * @param {{ time: number, price: number }} p0 point A
  * @param {{ time: number, price: number }} p1 point B
  * @param {{ price: number }} cursor

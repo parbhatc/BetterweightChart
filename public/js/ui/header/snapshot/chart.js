@@ -1,8 +1,9 @@
 /**
  * @param {() => import("lightweight-charts").IChartApi | null} getChart
  * @param {() => HTMLElement | null} [getOverlayEl]
+ * @param {() => string} [getShareUrl]
  */
-export function createChartSnapshot(getChart, getOverlayEl) {
+export function createChartSnapshot(getChart, getOverlayEl, getShareUrl) {
   function captureCanvas() {
     const chart = getChart();
     if (!chart) return null;
@@ -66,7 +67,8 @@ export function createChartSnapshot(getChart, getOverlayEl) {
 
   async function copyLink() {
     if (!navigator.clipboard?.writeText) return;
-    await navigator.clipboard.writeText(window.location.href);
+    const link = getShareUrl?.() ?? window.location.href;
+    await navigator.clipboard.writeText(link);
   }
 
   async function openInNewTab() {
@@ -77,10 +79,5 @@ export function createChartSnapshot(getChart, getOverlayEl) {
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   }
 
-  function tweetImage() {
-    const text = encodeURIComponent("Check out my chart");
-    window.open(`https://twitter.com/intent/tweet?text=${text}`, "_blank", "noopener,noreferrer");
-  }
-
-  return { downloadImage, copyImage, copyLink, openInNewTab, tweetImage };
+  return { downloadImage, copyImage, copyLink, openInNewTab };
 }

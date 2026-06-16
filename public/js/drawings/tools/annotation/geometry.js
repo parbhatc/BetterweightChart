@@ -115,7 +115,7 @@ export function drawDirectionArrow(ctx, p, up, size = 14) {
   ctx.stroke();
 }
 
-/** Large two-point arrow marker (TradingView-style). */
+/** Large two-point arrow marker. */
 export function drawMarkerArrowBetween(ctx, tail, head) {
   const dx = head.x - tail.x;
   const dy = head.y - tail.y;

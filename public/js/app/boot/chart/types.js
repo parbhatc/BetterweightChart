@@ -14,7 +14,7 @@
  *   priceLineLabel?: object,
  *   hoverBar?: object,
  *   hoverPrev?: object,
- *   timeToIdx?: Map<number, number>,
+ *   timeAdapter?: ReturnType<import("../../../chart/time/timeAdapter.js").createTimeAdapter> | null,
  * }} ChartPane
  */
 

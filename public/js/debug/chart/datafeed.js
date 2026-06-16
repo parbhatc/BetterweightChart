@@ -1,7 +1,7 @@
 import { chartDebug } from "./index.js";
 
 /**
- * Log TradingView-style datafeed.getBars() requests when debug is on.
+ * Log datafeed.getBars() requests when debug is on.
  * @param {import("../../datafeed/types.js").Datafeed} datafeed
  */
 export function wrapDatafeedDebug(datafeed) {

@@ -1,6 +1,7 @@
 import { chartDebug } from "../../debug/chart/index.js";
+import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
 
-/** Keep bars warm after switching resolution or for another pane (TradingView-style). */
+/** Keep bars warm after switching resolution or for another pane. */
 export const RESOLUTION_CACHE_TTL_MS = 10_000;
 
 /**
@@ -54,9 +55,7 @@ function applySnapshotToPane(pane, snapshot) {
   pane._historyExhausted = snapshot._historyExhausted;
   pane._firstDataRequest = snapshot._firstDataRequest;
   pane.futureWhitespaceBars = snapshot.futureWhitespaceBars;
-  pane.mapBars = null;
-  pane.shiftedBars = null;
-  pane._shiftedKey = null;
+  invalidatePaneChartView(pane);
 }
 
 /**

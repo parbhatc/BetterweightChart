@@ -10,6 +10,7 @@ export {
   normalizeBars,
   resolveDatafeed,
   readPageOptions,
+  CHART_FEATURES,
   mountDrawings,
   createDrawingController,
   createMultiPaneDrawingHub,
