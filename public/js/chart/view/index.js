@@ -7,7 +7,6 @@ import {
   TickMarkType,
 } from "lightweight-charts";
 import { dateTime12h, toDate } from "../format.js";
-import { formatTimeInZone } from "../timezone/list.js";
 
 const DEFAULT_VISIBLE_BARS = 96;
 /** Empty bars of whitespace on the right for future time (TradingView-style). */
@@ -180,42 +179,6 @@ export function createTvChart(el, themeColors) {
       const width = range.to - range.from;
       const offset = ts.options().rightOffset ?? FUTURE_RIGHT_OFFSET;
       ts.setVisibleLogicalRange({ from: count - width + offset * 0.35, to: count + offset });
-    },
-    /** @param {string} timeZone @param {{ timeFormatter?: (t: number) => string, tickMarkFormatter?: (time: number, tickMarkType: import('lightweight-charts').TickMarkType) => string }} [formatters] */
-    applyTimezone(timeZone, formatters) {
-      chart.applyOptions({
-        localization: {
-          locale: navigator.language,
-          timeFormatter:
-            formatters?.timeFormatter ??
-            ((t) => formatTimeInZone(Math.floor(toDate(t).getTime() / 1000), timeZone)),
-        },
-        timeScale: {
-          tickMarkFormatter:
-            formatters?.tickMarkFormatter ??
-            ((time, tickMarkType) => {
-              const d = toDate(time);
-              const fmt = (opts) => new Intl.DateTimeFormat("en-US", { timeZone, ...opts }).format(d);
-              switch (tickMarkType) {
-                case TickMarkType.Year:
-                  return fmt({ year: "numeric" });
-                case TickMarkType.Month:
-                  return fmt({ month: "short" });
-                case TickMarkType.DayOfMonth:
-                  return fmt({ day: "numeric" });
-                case TickMarkType.Time:
-                  return new Intl.DateTimeFormat("en-US", {
-                    timeZone,
-                    hour: "numeric",
-                    minute: "2-digit",
-                    hour12: true,
-                  }).format(d);
-                default:
-                  return "";
-              }
-            }),
-        },
-      });
     },
   };
 }

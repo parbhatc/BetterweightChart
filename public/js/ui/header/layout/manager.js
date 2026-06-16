@@ -6,7 +6,7 @@ const STORAGE_KEY = "tv-chart-layout-state";
 
 /** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>> }} SavedLayout */
 
-/** @typedef {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, wrapEl: HTMLElement, chartEl: HTMLElement, destroy: () => void, applyTimezone?: (tz: string, formatters?: object) => void, symbol: string, resolution: string, symbolInfo: object | null, bars: object[] }} SecondaryPane */
+/** @typedef {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, wrapEl: HTMLElement, chartEl: HTMLElement, destroy: () => void, symbol: string, resolution: string, symbolInfo: object | null, bars: object[] }} SecondaryPane */
 
 /**
  * @param {object} opts

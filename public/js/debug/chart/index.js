@@ -11,6 +11,8 @@
  * window.__BWC_DEBUG__.clear()
  */
 
+import { destroyDebugHud, ensureDebugHud } from "./hud.js";
+
 const LS_KEY = "bwc-debug";
 
 /** @type {Set<string>} */
@@ -172,22 +174,41 @@ function recordSlow(category, label, ms, detail) {
 }
 
 /** FPS sample while panning. */
-export function createPanFpsMonitor() {
+export function createPanFpsMonitor(opts = {}) {
+  const onSample = typeof opts.onSample === "function" ? opts.onSample : null;
   let rafId = 0;
   let frames = 0;
   let windowStart = 0;
+  let lastHudAt = 0;
   /** @type {number[]} */
   const samples = [];
+
+  function panFpsNow(now) {
+    const elapsed = now - windowStart;
+    if (elapsed <= 0 || frames <= 0) return 0;
+    return Math.round((frames / elapsed) * 1000);
+  }
+
+  function emitHud(now, panning) {
+    if (!onSample) return;
+    const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : panFpsNow(now);
+    onSample({ fps: panFpsNow(now), avgFps: avg, panning });
+  }
 
   function tick() {
     frames += 1;
     const now = performance.now();
+    if (onSample && now - lastHudAt >= 100) {
+      lastHudAt = now;
+      emitHud(now, true);
+    }
     if (now - windowStart >= 1000) {
       samples.push(frames);
       if (samples.length > 12) samples.shift();
       chartDebug("pan", `fps ${frames}`, { avg: Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) });
       frames = 0;
       windowStart = now;
+      lastHudAt = 0;
     }
     rafId = requestAnimationFrame(tick);
   }
@@ -197,15 +218,21 @@ export function createPanFpsMonitor() {
       if (!enabled || rafId) return;
       frames = 0;
       windowStart = performance.now();
+      lastHudAt = 0;
+      samples.length = 0;
       rafId = requestAnimationFrame(tick);
+      onSample?.({ fps: 0, avgFps: 0, panning: true });
       chartDebug("pan", "pan start");
     },
     stop() {
       if (!rafId) return;
       cancelAnimationFrame(rafId);
       rafId = 0;
-      const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : frames;
-      chartDebug("pan", "pan end", { lastFps: frames, avgFps: avg, samples: [...samples] });
+      const now = performance.now();
+      const finalFps = panFpsNow(now);
+      const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : finalFps;
+      chartDebug("pan", "pan end", { lastFps: finalFps, avgFps: avg, samples: [...samples] });
+      if (onSample) onSample({ fps: finalFps, avgFps: avg, panning: false });
     },
   };
 }
@@ -233,11 +260,13 @@ export function enableChartDebug(tagList = "1") {
     //
   }
   configureChartDebug({ force: true, tags: tagList });
+  ensureDebugHud();
   chartDebug("boot", "debug enabled", { tags: [...tags], slowMs });
 }
 
 export function disableChartDebug() {
   enabled = false;
+  destroyDebugHud();
   try {
     localStorage.removeItem(LS_KEY);
   } catch {
@@ -246,7 +275,7 @@ export function disableChartDebug() {
   console.info("[BWC] debug disabled (reload to fully detach)");
 }
 
-/** Attach window.__BWC_DEBUG__ once. */
+export { destroyDebugHud, ensureDebugHud, mountDebugHud } from "./hud.js";
 export function installChartDebugGlobal() {
   if (typeof window === "undefined") return;
   if (window.__BWC_DEBUG__) return;

@@ -6,21 +6,46 @@ import { resolveTimezone } from "./list.js";
  * in the target zone (see lightweight-charts time-zones docs).
  */
 
+/** @type {Map<string, { fmt: Intl.DateTimeFormat, cache: Map<number, number> }>} */
+const tzCaches = new Map();
+
+/** @param {string} timeZone */
+function tzState(timeZone) {
+  let state = tzCaches.get(timeZone);
+  if (!state) {
+    state = {
+      fmt: new Intl.DateTimeFormat("en-US", {
+        timeZone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }),
+      cache: new Map(),
+    };
+    tzCaches.set(timeZone, state);
+  }
+  return state;
+}
+
+/** @param {string} [timeZone] */
+export function invalidateChartTimeCache(timeZone) {
+  if (timeZone) tzCaches.delete(timeZone);
+  else tzCaches.clear();
+}
+
 /** @param {number} unixSec @param {string} timeZone */
 export function utcToChartTime(unixSec, timeZone) {
   if (!Number.isFinite(unixSec)) return unixSec;
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date(unixSec * 1000));
+  const { fmt, cache } = tzState(timeZone);
+  const hit = cache.get(unixSec);
+  if (hit !== undefined) return hit;
+  const parts = fmt.formatToParts(new Date(unixSec * 1000));
   const get = (type) => parts.find((p) => p.type === type)?.value ?? "0";
-  return (
+  const chartSec =
     Date.UTC(
       Number(get("year")),
       Number(get("month")) - 1,
@@ -28,23 +53,14 @@ export function utcToChartTime(unixSec, timeZone) {
       Number(get("hour")),
       Number(get("minute")),
       Number(get("second")),
-    ) / 1000
-  );
+    ) / 1000;
+  cache.set(unixSec, chartSec);
+  return chartSec;
 }
 
-/** @param {number} chartSec @param {string} timeZone */
-export function chartTimeToUtc(chartSec, timeZone) {
-  if (!Number.isFinite(chartSec)) return chartSec;
-  let lo = chartSec - 93600;
-  let hi = chartSec + 93600;
-  for (let i = 0; i < 32; i += 1) {
-    const mid = (lo + hi) >> 1;
-    const ct = utcToChartTime(mid, timeZone);
-    if (ct === chartSec) return mid;
-    if (ct < chartSec) lo = mid + 1;
-    else hi = mid - 1;
-  }
-  return chartSec;
+/** @param {object[]} bars @param {string} timeZone */
+export function shiftBarsToChartTime(bars, timeZone) {
+  return bars.map((b) => ({ ...b, time: utcToChartTime(b.time, timeZone) }));
 }
 
 /** @param {object} pane @param {object} settingsStore @param {object | null} symbolInfo */

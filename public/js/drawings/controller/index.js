@@ -621,11 +621,7 @@ export function createDrawingController(opts) {
   }
 
   function resolvePoint(clientX, clientY) {
-    const ctx = getContext();
-    const point = resolveChartPoint(clientX, clientY);
-    if (!point) return null;
-    const toUtc = ctx.chartTimeToUtc ?? ((t) => t);
-    return { ...point, time: toUtc(point.time) };
+    return resolveChartPoint(clientX, clientY);
   }
 
   function shouldSyncDrawCrosshair(tool = activeTool) {
@@ -866,8 +862,7 @@ export function createDrawingController(opts) {
     const { barSec } = ctx;
     const mapBars = coordMapBars(ctx);
     const ts = chart.timeScale();
-    const toChart = ctx.utcToChartTime ?? ((t) => t);
-    const timeToX = (t) => chartXAt(ts, mapBars, barSec, undefined, toChart(t));
+    const timeToX = (t) => chartXAt(ts, mapBars, barSec, undefined, t);
     const priceToY = (p) => safePriceToY(series, p);
     const right = chartVisibleRightX(ts) ?? 0;
     const bottom = container.clientHeight || 400;

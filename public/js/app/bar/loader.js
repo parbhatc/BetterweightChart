@@ -234,12 +234,18 @@ export function createBarLoader(opts) {
     return loaded;
   }
 
-  async function loadPaneBars(pane) {
+  async function loadPaneBars(pane, opts = {}) {
+    if (!opts.force && pane.bars?.length) {
+      return pane.bars.at(-1);
+    }
     return chartDebugTimeAsync("data", `loadPaneBars pane ${pane.index}`, async () => {
       if (!pane.symbolInfo) pane.symbolInfo = await datafeed.resolveSymbol(pane.symbol);
       const result = await datafeed.getBars(pane.symbolInfo, pane.resolution, { countBack });
       pane.bars = result.bars;
       pane.futureWhitespaceBars = null;
+      pane.mapBars = null;
+      pane.shiftedBars = null;
+      pane._shiftedKey = null;
       pane._historyExhausted = Boolean(result.noData);
       pane._historyErrorUntil = null;
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });

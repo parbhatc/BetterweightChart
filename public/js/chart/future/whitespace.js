@@ -22,10 +22,24 @@ export function withFutureWhitespace(chartBars, barSec, count) {
   if (!chartBars.length || count <= 0) return chartBars;
   const sec = barSec > 0 ? barSec : 60;
   const out = [...chartBars];
-  let t = chartBars[chartBars.length - 1].time;
+  appendFutureWhitespaceTail(out, sec, count);
+  return out;
+}
+
+/**
+ * Append whitespace time points in place (no copy of existing rows).
+ * @param {{ time: number }[]} rows
+ * @param {number} barSec
+ * @param {number} count
+ * @returns {number} bars appended
+ */
+export function appendFutureWhitespaceTail(rows, barSec, count) {
+  if (!rows.length || count <= 0) return 0;
+  const sec = barSec > 0 ? barSec : 60;
+  let t = rows[rows.length - 1].time;
   for (let i = 0; i < count; i++) {
     t += sec;
-    out.push({ time: t });
+    rows.push({ time: t });
   }
-  return out;
+  return count;
 }

@@ -94,6 +94,7 @@ export function createPaneExtras(deps) {
     bg.setSymbolProvider(() => pane.symbolInfo ?? symbolInfo);
     bg.setContextProvider(() => ({
       bars: barsForPane(pane),
+      mapBars: pane.mapBars,
       barSec: barSecForPane(pane),
     }));
     pane.series.attachPrimitive(bg);
@@ -208,10 +209,17 @@ export function createPaneExtras(deps) {
         flushPendingStatusLines();
         const active = getActivePane();
         if (active) scheduleStatusLine(active);
-        void viewportDeps?.ensureHistoryNearEdge?.(pane)?.catch(() => {});
+        if (deferWhitespacePane) {
+          const p = deferWhitespacePane;
+          deferWhitespacePane = null;
+          ensurePaneFutureWhitespace(p);
+        }
       },
     });
   }
+
+  /** @type {object | null} */
+  let deferWhitespacePane = null;
 
   /** @param {object} pane */
   function ensurePaneFutureWhitespace(pane) {
@@ -219,6 +227,8 @@ export function createPaneExtras(deps) {
     growFutureWhitespace({
       chart: pane.chart,
       series: pane.series,
+      pane,
+      barSec: barSecForPane(pane, resolutions),
       barsForChart: () => visible,
       buildChartSeriesForDisplay: (vis) =>
         buildChartSeriesForPane(pane, vis, settingsStore, resolutions),
@@ -234,9 +244,17 @@ export function createPaneExtras(deps) {
   }
 
   /** @param {object} pane */
+  function scheduleWhitespaceGrow(pane) {
+    if (ui.chartPanning) {
+      deferWhitespacePane = pane;
+      return;
+    }
+    ensurePaneFutureWhitespace(pane);
+  }
+
+  /** @param {object} pane */
   function wirePaneViewportHandlers(pane) {
     let growScheduled = false;
-    let historyScheduled = false;
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
       chartDebugCount("perf", "visibleRange");
@@ -252,31 +270,6 @@ export function createPaneExtras(deps) {
         if (!r) return;
         const realCount = barsForPane(pane).length;
 
-        if (realCount > 0 && !pane._historyExhausted && !ui.chartPanning) {
-          const nearEdge = r.from < 80;
-          const barSec =
-            resolutions.find((res) => res.id === pane.resolution)?.sec ?? 60;
-          let gapNearStart = false;
-          const bars = barsForPane(pane);
-          if (bars.length > 1) {
-            for (let i = 1; i < Math.min(bars.length, 64); i += 1) {
-              if (bars[i].time - bars[i - 1].time > barSec * 1.5) {
-                gapNearStart = true;
-                break;
-              }
-            }
-          }
-          if (nearEdge || gapNearStart) {
-            if (!historyScheduled) {
-              historyScheduled = true;
-              requestAnimationFrame(() => {
-                historyScheduled = false;
-                void viewportDeps?.ensureHistoryNearEdge?.(pane)?.catch(() => {});
-              });
-            }
-          }
-        }
-
         if (r.to < realCount - 16) return;
 
         if (growScheduled) return;
@@ -284,7 +277,7 @@ export function createPaneExtras(deps) {
         requestAnimationFrame(() => {
           growScheduled = false;
           chartDebugTime("whitespace", `ensureFutureWhitespace pane ${pane.index}`, () =>
-            ensurePaneFutureWhitespace(pane),
+            scheduleWhitespaceGrow(pane),
           );
         });
       });

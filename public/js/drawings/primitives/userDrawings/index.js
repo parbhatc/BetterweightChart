@@ -161,7 +161,7 @@ export class UserDrawingsPrimitive {
       formatPointTime,
       chart,
       series,
-      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, (ctx.utcToChartTime ?? ((x) => x))(t)),
+      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, t),
       priceToY: (p) => safePriceToY(series, p),
       rightX: () => chartVisibleRightX(ts) ?? 0,
       selectedId: this._selectedId,

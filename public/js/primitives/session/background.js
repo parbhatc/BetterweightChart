@@ -119,8 +119,8 @@ export class SessionBackgroundPrimitive {
       const next = bars[i + 1];
       const eth = isElectronicSession(bar.time, tz, symbolType);
       if (eth) {
-        if (runStart == null) runStart = bar.time;
-        runEnd = next?.time ?? bar.time + barSec;
+        if (runStart == null) runStart = utcToChartTime(bar.time, tz);
+        runEnd = utcToChartTime(next?.time ?? bar.time + barSec, tz);
       } else if (runStart != null && runEnd != null) {
         spans.push({ from: runStart, to: runEnd });
         runStart = null;
@@ -151,7 +151,7 @@ export class SessionBackgroundPrimitive {
       return {
         spans: this._spanCache.spans,
         fill: this._spanCache.fill,
-        timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, utcToChartTime(t, tz)),
+        timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, t),
       };
     }
 
@@ -164,7 +164,7 @@ export class SessionBackgroundPrimitive {
     return {
       spans: built.spans,
       fill: built.fill,
-      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, utcToChartTime(t, tz)),
+      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, t),
     };
   }
 }

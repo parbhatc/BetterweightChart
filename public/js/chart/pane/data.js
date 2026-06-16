@@ -5,11 +5,12 @@ import {
   CHART_FUTURE_WHITESPACE_MARGIN,
   CHART_FUTURE_WHITESPACE_MAX,
   CHART_FUTURE_WHITESPACE_MIN,
+  appendFutureWhitespaceTail,
   withFutureWhitespace,
 } from "../future/whitespace.js";
 import { isElectronicSession } from "../../primitives/session/background.js";
 import { resolveTimezone } from "../timezone/list.js";
-import { chartTimeZoneForPane, utcToChartTime } from "../timezone/chartTime.js";
+import { chartTimeZoneForPane, shiftBarsToChartTime, utcToChartTime } from "../timezone/chartTime.js";
 import { BAR_SEC } from "../constants.js";
 import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
 
@@ -23,12 +24,9 @@ import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/i
 export function chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions) {
   const bars = barsForPane(pane, settingsStore, symbolInfo);
   const barSec = barSecForPane(pane, resolutions);
-  const ws = pane.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
-  const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
-  const shifted = bars.map((b) => ({ ...b, time: utcToChartTime(b.time, tz) }));
   return {
     bars,
-    mapBars: withFutureWhitespace(shifted, barSec, ws),
+    mapBars: pane.mapBars ?? [],
     barSec,
   };
 }
@@ -56,6 +54,20 @@ export function barsForPane(pane, settingsStore, symbolInfo) {
   return pane.bars;
 }
 
+/** @param {object} pane @param {object[]} visible @param {string} tz */
+function ensureShiftedBars(pane, visible, tz) {
+  const utc0 = visible[0]?.time;
+  const utcN = visible.at(-1)?.time;
+  const key = `${visible.length}|${utc0}|${utcN}|${tz}`;
+  if (pane._shiftedKey === key && pane.shiftedBars?.length === visible.length) {
+    return pane.shiftedBars;
+  }
+  const shifted = shiftBarsToChartTime(visible, tz);
+  pane.shiftedBars = shifted;
+  pane._shiftedKey = key;
+  return shifted;
+}
+
 /**
  * @param {object} pane
  * @param {object[]} visible
@@ -65,10 +77,13 @@ export function barsForPane(pane, settingsStore, symbolInfo) {
 export function buildChartSeriesForPane(pane, visible, settingsStore, resolutions) {
   const sym = settingsStore.get().symbol ?? {};
   const tz = chartTimeZoneForPane(pane, settingsStore, pane.symbolInfo ?? null);
-  const shifted = visible.map((b) => ({ ...b, time: utcToChartTime(b.time, tz) }));
+  const shifted = ensureShiftedBars(pane, visible, tz);
   const candles = buildCandleSeriesData(shifted, sym);
+  const barSec = barSecForPane(pane, resolutions);
   const ws = pane.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
-  return withFutureWhitespace(candles, barSecForPane(pane, resolutions), ws);
+  const seriesData = withFutureWhitespace(candles, barSec, ws);
+  pane.mapBars = withFutureWhitespace(shifted, barSec, ws);
+  return seriesData;
 }
 
 /**
@@ -100,6 +115,25 @@ export function ensureFutureWhitespace(opts) {
   );
   chartDebug("whitespace", "grow", { have, nextHave, neededAhead, realCount, rangeTo: r.to });
   setFutureWhitespaceBars(nextHave);
+  const add = nextHave - have;
+
+  if (opts.pane && opts.barSec != null && opts.pane.mapBars?.length && add > 0) {
+    const appended = chartDebugTime("data", `append whitespace +${add}`, () => {
+      const tailStart = opts.pane.mapBars.length;
+      appendFutureWhitespaceTail(opts.pane.mapBars, opts.barSec, add);
+      for (let i = tailStart; i < opts.pane.mapBars.length; i += 1) {
+        try {
+          series.update(opts.pane.mapBars[i], true);
+        } catch {
+          opts.pane.mapBars.length = tailStart;
+          return false;
+        }
+      }
+      return true;
+    });
+    if (appended) return;
+  }
+
   chartDebugTime("data", `setData whitespace ${visible.length}+${nextHave}`, () => {
     series.setData(buildChartSeriesForDisplay(visible));
   });
@@ -128,7 +162,9 @@ export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutio
 export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions) {
   return chartDebugTime("data", `setData live pane ${pane.index}`, () => {
     const visible = barsForPane(pane, settingsStore, symbolInfo);
-    pane.timeToIdx = barIndex(visible);
+    const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
+    const shifted = ensureShiftedBars(pane, visible, tz);
+    pane.timeToIdx = barIndex(shifted);
     if (pane.futureWhitespaceBars == null) pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
     const ws = pane.futureWhitespaceBars;
     pane.series.setData(buildChartSeriesForPane(pane, visible, settingsStore, resolutions));

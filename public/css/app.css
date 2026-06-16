@@ -18,3 +18,4 @@
 @import "./color/picker.css";
 @import "./timezone/clock.css";
 @import "./responsive.css";
+@import "./debug/hud.css";

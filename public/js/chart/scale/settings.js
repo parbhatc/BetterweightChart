@@ -1,11 +1,4 @@
-import { TickMarkType, PriceScaleMode } from "lightweight-charts";
-import {
-  formatAxisDateTick,
-  formatAxisMonthTick,
-  formatAxisTimeTick,
-  formatChartTimeLabel,
-} from "../time/labelFormat.js";
-import { toDate } from "../format.js";
+import { PriceScaleMode } from "lightweight-charts";
 
 /** @param {string | undefined} mode */
 export function isScaleVisible(mode) {
@@ -22,42 +15,6 @@ export function resolvePriceScalePlacement(placement) {
     default:
       return { left: false, right: true };
   }
-}
-
-/**
- * @param {object} scales
- * @param {{ timeZone?: string, chartTimeToUtc?: (chartSec: number) => number }} [opts]
- */
-export function buildTimeScaleFormatters(scales, opts = {}) {
-  const axisZone = "UTC";
-  const labelZone = opts.timeZone ?? axisZone;
-  const toUtc = opts.chartTimeToUtc;
-
-  const timeFormatter = (t) => {
-    const unix = typeof t === "number" && toUtc ? toUtc(t) : t;
-    return formatChartTimeLabel(unix, scales, labelZone, { includeTime: true });
-  };
-
-  const tickMarkFormatter = (time, tickMarkType) => {
-    const d = toDate(time);
-
-    switch (tickMarkType) {
-      case TickMarkType.Year:
-        return new Intl.DateTimeFormat("en-US", { timeZone: axisZone, year: "numeric" }).format(d);
-      case TickMarkType.Month:
-        return formatAxisMonthTick(time, scales, axisZone);
-      case TickMarkType.DayOfMonth:
-        return formatAxisDateTick(time, scales, axisZone);
-      case TickMarkType.Time:
-        return formatAxisTimeTick(d, axisZone, scales);
-      case TickMarkType.TimeWithSeconds:
-        return formatAxisTimeTick(d, axisZone, scales, true);
-      default:
-        return formatAxisDateTick(time, scales, axisZone);
-    }
-  };
-
-  return { timeFormatter, tickMarkFormatter };
 }
 
 /**

@@ -6,7 +6,6 @@ import {
   enforcePriceBarRatioOnPriceZoom,
 } from "../../chart/price/barRatio.js";
 import { mountMarketStatusPopup } from "../../chart/market/status.js";
-import { chartTimeToUtc, utcToChartTime } from "../../chart/timezone/chartTime.js";
 import { precisionFromSettings, priceFormatFromPrecisionSetting, resolveTimezone } from "../../chart/timezone/list.js";
 import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes } from "../../chart/settings/applier.js";
 import {
@@ -62,8 +61,8 @@ import {
   createPanFpsMonitor,
   installChartDebugGlobal,
 } from "../../debug/chart/index.js";
-import { barTimeLabel } from "../../chart/format.js";
-import { formatChartTimeLabel } from "../../chart/time/labelFormat.js";
+import { ensureDebugHud } from "../../debug/chart/hud.js";
+import { barTimeLabel, dateTime12h, toDate } from "../../chart/format.js";
 import { chartThemeFallback, applyCanvasPresetForTheme } from "./themes.js";
 import { saveThemePreference } from "../../ui/theme/store.js";
 import { createPaneExtras } from "./paneExtras.js";
@@ -322,7 +321,7 @@ export async function bootChart(overrides = {}) {
    *   resolution: string,
    *   symbolInfo: object | null,
    *   bars: object[],
-   *   applyTimezone?: (tz: string, formatters?: object) => void,
+   *   destroy: () => void,
    *   futureWhitespaceBars?: number | null,
    *   statusEl?: HTMLElement | null,
    *   sessionBg?: import("../primitives/sessionBackgroundPrimitive.js").SessionBackgroundPrimitive,
@@ -348,7 +347,7 @@ export async function bootChart(overrides = {}) {
     return getAllChartPanes().map((p) => ({ chart: p.chart, series: p.series }));
   }
 
-  const { chart, series, applyTheme, scrollToLatest, applyTimezone } = createTvChart(el, themeColors);
+  const { chart, series, applyTheme, scrollToLatest } = createTvChart(el, themeColors);
 
   let ratioLockBusy = false;
 
@@ -375,7 +374,15 @@ export async function bootChart(overrides = {}) {
     }
   }
 
-  const panFps = createPanFpsMonitor();
+  const debugHud = debugOn ? ensureDebugHud() : null;
+  const panFps = createPanFpsMonitor({
+    onSample: (stats) => {
+      debugHud?.setPanStats({
+        fps: stats.fps,
+        panning: stats.panning !== false,
+      });
+    },
+  });
 
   el.addEventListener(
     "wheel",
@@ -401,7 +408,6 @@ export async function bootChart(overrides = {}) {
     chart,
     series,
     el,
-    applyTimezone,
     symbol,
     resolution,
     symbolInfo,
@@ -528,10 +534,9 @@ export async function bootChart(overrides = {}) {
     applyChartTimezoneToPanes({
       settingsStore,
       symbolInfo,
-      getAllChartPanes,
       tzClock,
+      refreshCandleData,
       resolveTimezone,
-      refreshCandleData: refreshCandleData,
     });
   }
 
@@ -612,21 +617,15 @@ export async function bootChart(overrides = {}) {
     applyDrawingCursorAll();
   }
 
-  function chartTimeZone() {
-    const sym = settingsStore.get().symbol ?? {};
-    return resolveTimezone(sym.timezone, symbolInfo);
-  }
-
-  function formatChartLabel(unixSec, { includeTime = true } = {}) {
-    const scales = settingsStore.get().scales ?? {};
-    return formatChartTimeLabel(unixSec, scales, chartTimeZone(), { includeTime });
+  function formatChartLabel(chartSec) {
+    return dateTime12h(toDate(chartSec));
   }
 
   /** @param {ChartPane} pane */
   function buildDrawingContext(pane) {
     const sym = settingsStore.get().symbol ?? {};
-    const tz = resolveTimezone(sym.timezone, pane.symbolInfo ?? symbolInfo);
-    const { bars, mapBars, barSec } = chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions);
+    const { bars: utcBars, mapBars, barSec } = chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions);
+    const bars = mapBars.slice(0, utcBars.length);
     const visiblePriceRange = measureVisiblePriceRange(pane.chart, pane.series);
     return {
       bars,
@@ -638,9 +637,7 @@ export async function bootChart(overrides = {}) {
       series: pane.series,
       colorBarsOnPrevClose: sym.colorBarsOnPrevClose ?? false,
       symbol: sym,
-      utcToChartTime: (t) => utcToChartTime(t, tz),
-      chartTimeToUtc: (t) => chartTimeToUtc(t, tz),
-      formatPointTime: (unixSec) => formatChartLabel(unixSec, { includeTime: true }),
+      formatPointTime: (chartSec) => formatChartLabel(chartSec),
     };
   }
 
@@ -648,7 +645,8 @@ export async function bootChart(overrides = {}) {
     if (!drawing) return;
     const pane = getActivePane();
     if (!pane) return;
-    const { bars, barSec } = chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions);
+    const { bars: utcBars, mapBars, barSec } = chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions);
+    const bars = mapBars.slice(0, utcBars.length);
     if (!bars.length) return;
     for (const d of drawing.getDrawings()) {
       const points = d.points.map((p) => ({
@@ -778,7 +776,6 @@ export async function bootChart(overrides = {}) {
           chart: paneChart.chart,
           series: paneChart.series,
           el: chartEl,
-          applyTimezone: paneChart.applyTimezone,
           symbol: paneSymbol,
           resolution,
           symbolInfo: null,
@@ -800,7 +797,6 @@ export async function bootChart(overrides = {}) {
           series: paneChart.series,
           chartEl,
           wrapEl: wrap,
-          applyTimezone: paneChart.applyTimezone,
           symbol: paneSymbol,
           resolution,
           symbolInfo: null,
@@ -1089,7 +1085,7 @@ export async function bootChart(overrides = {}) {
       applySymbolFormat,
       refreshWatermark,
       refreshStatusLine,
-      barTimeLabel: (bar) => barTimeLabel(bar, settingsStore.get().scales ?? {}, chartTimeZone()),
+      barTimeLabel: (bar) => barTimeLabel(bar),
       mountChartSettingsUi,
       layoutManager,
       lastBar: last,

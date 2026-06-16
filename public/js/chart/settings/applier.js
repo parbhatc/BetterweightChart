@@ -2,12 +2,11 @@ import { ColorType, CrosshairMode, LineStyle } from "lightweight-charts";
 import { FUTURE_RIGHT_OFFSET } from "../view/index.js";
 import { gridAxisVisible } from "../canvas/settings.js";
 import {
-  buildTimeScaleFormatters,
   isScaleVisible,
   priceScaleModeFromSettings,
   resolvePriceScalePlacement,
 } from "../scale/settings.js";
-import { chartTimeToUtc } from "../timezone/chartTime.js";
+import { invalidateChartTimeCache } from "../timezone/chartTime.js";
 import { priceFormatFromPrecisionSetting } from "../timezone/list.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 
@@ -117,17 +116,9 @@ export function applySettingsToChart(opts) {
  * @param {object} opts.symbolInfo
  */
 export function applyChartTimezone(opts) {
-  const { settingsStore, symbolInfo, getAllChartPanes, tzClock, resolveTimezone, refreshCandleData } = opts;
+  const { settingsStore, symbolInfo, tzClock, refreshCandleData, resolveTimezone } = opts;
   const sym = settingsStore.get().symbol ?? {};
-  const scales = settingsStore.get().scales ?? {};
-  const tz = resolveTimezone(sym.timezone, symbolInfo);
-  const formatters = buildTimeScaleFormatters(scales, {
-    timeZone: tz,
-    chartTimeToUtc: (chartSec) => chartTimeToUtc(chartSec, tz),
-  });
+  invalidateChartTimeCache(resolveTimezone(sym.timezone, symbolInfo));
   refreshCandleData?.();
-  for (const pane of getAllChartPanes()) {
-    if (pane.applyTimezone) pane.applyTimezone(tz, formatters);
-  }
   tzClock?.update();
 }
