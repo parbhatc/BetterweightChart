@@ -191,7 +191,10 @@ export function mountPriceScaleContextMenu(opts) {
   });
 
   window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  window.addEventListener("scroll", () => {
+    if (root.hidden) return;
+    close();
+  }, true);
 
   registerContextMenu({
     close,

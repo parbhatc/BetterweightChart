@@ -13,26 +13,28 @@
   align-items: stretch;
   background: var(--tv-surface);
   border: 1px solid var(--tv-border);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px color-mix(in srgb, #000 45%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
 .tv-floating-toolbar.is-dragging .tv-floating-toolbar__widget-wrapper {
   cursor: grabbing;
+  box-shadow: var(--shadow-xl);
 }
 
 .tv-floating-toolbar__drag {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 14px;
+  width: 0.875rem;
   flex-shrink: 0;
   color: var(--tv-muted);
   cursor: grab;
   touch-action: none;
-  background: color-mix(in srgb, var(--tv-bg) 40%, var(--tv-surface));
-  border-right: 1px solid var(--tv-border);
+  background: color-mix(in srgb, var(--tv-bg) 35%, var(--tv-surface));
+  border-right: 1px solid var(--tv-border-subtle);
+  transition: var(--transition-colors);
 }
 
 .tv-floating-toolbar__drag:hover {
@@ -42,9 +44,9 @@
 .tv-floating-toolbar__content {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 2px 4px;
-  min-height: 36px;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  min-height: 2.25rem;
 }
 
 .tv-floating-toolbar__widget {
@@ -57,31 +59,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 4px;
+  width: 2.125rem;
+  height: 2.125rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
   padding: 0;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition: var(--transition-colors), var(--transition-transform);
 }
 
 .tv-favorited-drawings-toolbar__widget:hover {
   color: var(--tv-text);
-  background: color-mix(in srgb, var(--tv-text) 6%, transparent);
+  background: var(--tv-surface-hover);
+  border-color: var(--tv-border-subtle);
 }
 
 .tv-favorited-drawings-toolbar__widget.is-active {
-  color: var(--tv-accent);
-  background: color-mix(in srgb, var(--tv-accent) 16%, transparent);
-  box-shadow: inset 0 0 0 2px var(--tv-accent);
+  color: var(--tv-text);
+  background: var(--tv-surface-active);
+  border-color: var(--tv-border-strong);
+  box-shadow: none;
 }
 
 .tv-favorited-drawings-toolbar__widget .draw-tools__icon svg {
-  width: 22px;
-  height: 22px;
+  width: 1.375rem;
+  height: 1.375rem;
 }
 
 .draw-tools__fav-btn {
@@ -91,13 +95,13 @@
   width: 1.5rem;
   height: 1.5rem;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
   padding: 0;
   opacity: 0;
-  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+  transition: opacity var(--duration-fast) var(--ease-out), var(--transition-colors);
 }
 
 .draw-tools__flyout-item:hover .draw-tools__fav-btn,
@@ -107,9 +111,9 @@
 
 .draw-tools__fav-btn:hover {
   color: var(--tv-text);
-  background: color-mix(in srgb, var(--tv-text) 8%, transparent);
+  background: var(--tv-surface-hover);
 }
 
 .draw-tools__fav-btn.is-fav {
-  color: #f2b01e;
+  color: var(--tv-favorite);
 }

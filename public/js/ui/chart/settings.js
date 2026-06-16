@@ -17,11 +17,18 @@ import {
   GRID_LINES_MODE_OPTIONS,
   FONT_SIZE_OPTIONS,
   SETTINGS_UI_STORAGE_KEY,
+  THEME_OPTIONS,
   resolveSettingsSection,
 } from "../settings/defaults.js";
 
 export { createChartSettings } from "../settings/store.js";
 import { createChartSettings } from "../settings/store.js";
+
+const COARSE_POINTER_MQ = window.matchMedia("(pointer: coarse)");
+
+function visibleSettingsSections() {
+  return SECTIONS.filter((section) => section.id !== "drawings" || COARSE_POINTER_MQ.matches);
+}
 
 /** @returns {{ lastSection?: string, dialogPos?: { x: number, y: number } }} */
 function loadSettingsUiState() {
@@ -51,9 +58,13 @@ function saveSettingsUiState(patch) {
  * @param {ReturnType<typeof createChartSettings>} opts.store
  * @param {HTMLElement} [opts.triggerEl]
  * @param {() => void} [opts.onLiveChange]
+ * @param {() => "dark" | "light"} [opts.getTheme]
+ * @param {(mode: "dark" | "light") => void} [opts.onThemeChange]
+ * @param {() => { showMobilePlacementBar?: boolean }} [opts.getDrawingSettings]
+ * @param {(key: string, value: boolean) => void} [opts.setDrawingSetting]
  */
 export function mountChartSettings(opts) {
-  const { store, triggerEl, onLiveChange } = opts;
+  const { store, triggerEl, onLiveChange, getTheme, onThemeChange, getDrawingSettings, setDrawingSetting } = opts;
   const colorPicker = createColorPicker();
   const savedUi = loadSettingsUiState();
   let activeSection = resolveSettingsSection(savedUi.lastSection);
@@ -85,6 +96,12 @@ export function mountChartSettings(opts) {
   function positionSettingsDialog() {
     const dialogBox = dialogEl?.querySelector(".tv-settings__dialog");
     if (!dialogBox) return;
+    if (window.matchMedia("(max-width: 840px)").matches) {
+      dialogBox.style.left = "";
+      dialogBox.style.top = "";
+      dialogBox.style.transform = "";
+      return;
+    }
     if (dialogPos) {
       applyDialogPos(dialogBox, dialogPos.x, dialogPos.y);
       return;
@@ -96,6 +113,7 @@ export function mountChartSettings(opts) {
 
   function mountDialogDrag() {
     if (!dialogEl || dialogDragBound) return;
+    if (window.matchMedia("(max-width: 840px)").matches) return;
     const dialogBox = dialogEl.querySelector(".tv-settings__dialog");
     const head = dialogEl.querySelector(".tv-settings__head");
     if (!dialogBox || !head) return;
@@ -385,6 +403,20 @@ export function mountChartSettings(opts) {
     </div>`;
   }
 
+  function drawingCheckBox(key) {
+    const checked = Boolean(getDrawingSettings?.()?.[key]);
+    return `<button type="button" class="tv-set__check ${checked ? "tv-set__check--on" : ""}" data-drawing-key="${key}" role="checkbox" aria-checked="${checked}" aria-label="Toggle ${key}">
+      <span class="tv-set__check-box">${checked ? ICONS.check : ""}</span>
+    </button>`;
+  }
+
+  function drawingCheckRow(label, key) {
+    return `<div class="tv-set__check-row" data-drawing-check data-key="${key}">
+      ${drawingCheckBox(key)}
+      <span class="tv-set__check-label">${label}</span>
+    </div>`;
+  }
+
   function sectionBlock(title, bodyHtml, { fields = false } = {}) {
     const bodyClass = fields
       ? "tv-set__section-body tv-set__section-body--fields"
@@ -610,8 +642,35 @@ export function mountChartSettings(opts) {
     )}`;
   }
 
+  function appearanceSection() {
+    const theme = getTheme?.() ?? "dark";
+    const opts = THEME_OPTIONS.map(
+      (o) => `<option value="${o.value}" ${o.value === theme ? "selected" : ""}>${o.label}</option>`,
+    ).join("");
+    return `${sectionBlock(
+      "Theme",
+      `<div class="tv-set__field-row">
+        <span class="tv-set__field-label">Color theme</span>
+        <div class="tv-set__select-wrap">
+          <select class="tv-set__select" data-theme-select aria-label="Color theme">${opts}</select>
+          <span class="tv-set__select-chev">${ICONS.chevron}</span>
+        </div>
+      </div>`,
+      { fields: true },
+    )}`;
+  }
+
+  function drawingsSection() {
+    return `${sectionBlock(
+      "Mobile drawing",
+      `${drawingCheckRow("Show placement hint bar while drawing", "showMobilePlacementBar")}`,
+    )}`;
+  }
+
   function sectionHtml(id) {
     switch (id) {
+      case "appearance":
+        return appearanceSection();
       case "symbol":
         return symbolSection();
       case "statusLine":
@@ -620,6 +679,8 @@ export function mountChartSettings(opts) {
         return scalesSection();
       case "canvas":
         return canvasSection();
+      case "drawings":
+        return drawingsSection();
       default:
         return "";
     }
@@ -631,13 +692,20 @@ export function mountChartSettings(opts) {
     const body = dialogEl.querySelector(".tv-settings__pane");
     if (!tabs || !body) return;
 
-    tabs.innerHTML = SECTIONS.map(
-      (s) =>
-        `<button type="button" role="tab" class="tv-settings__tab ${s.id === activeSection ? "is-active" : ""}" data-section="${s.id}" aria-selected="${s.id === activeSection}" title="${s.label}">
+    const sections = visibleSettingsSections();
+    if (!sections.some((section) => section.id === activeSection)) {
+      activeSection = resolveSettingsSection(activeSection);
+    }
+
+    tabs.innerHTML = sections
+      .map(
+        (s) =>
+          `<button type="button" role="tab" class="tv-settings__tab ${s.id === activeSection ? "is-active" : ""}" data-section="${s.id}" aria-selected="${s.id === activeSection}" title="${s.label}">
           <span class="tv-settings__tab-icon">${s.icon}</span>
           <span class="tv-settings__tab-label">${s.label}</span>
         </button>`,
-    ).join("");
+      )
+      .join("");
 
     body.innerHTML = `<div class="tv-set__content">${sectionHtml(activeSection)}</div>`;
   }
@@ -657,6 +725,7 @@ export function mountChartSettings(opts) {
   }
 
   function handleUndoRedo(ev) {
+    if (!dialogEl || dialogEl.hidden) return;
     if (!(ev.ctrlKey || ev.metaKey)) return;
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;
     const key = ev.key.toLowerCase();
@@ -864,11 +933,31 @@ export function mountChartSettings(opts) {
           const section = checkRowEl.dataset.section;
           const key = checkRowEl.dataset.key;
           if (section && key) setDraft(section, key, !getDraft()[section]?.[key]);
+          return;
+        }
+
+        const drawingCheckRowEl = ev.target.closest("[data-drawing-check]");
+        if (drawingCheckRowEl && !ev.target.closest("[data-color-pick]")) {
+          const key = drawingCheckRowEl.dataset.key;
+          if (key) {
+            const current = Boolean(getDrawingSettings?.()?.[key]);
+            setDrawingSetting?.(key, !current);
+            renderPanel();
+          }
         }
       });
 
       dialogEl.addEventListener("change", (ev) => {
         const t = ev.target;
+        if (t instanceof HTMLSelectElement && t.dataset.themeSelect !== undefined) {
+          const mode = t.value === "light" ? "light" : "dark";
+          onThemeChange?.(mode);
+          if (draft) {
+            snapshot = structuredClone(store.get());
+            draft = structuredClone(store.get());
+          }
+          return;
+        }
         if (t instanceof HTMLSelectElement) {
           const section = t.dataset.section;
           const key = t.dataset.key;

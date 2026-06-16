@@ -1,4 +1,4 @@
-import { DRAWING_HIT_THRESHOLD, ANCHOR_RADIUS, ANCHOR_HIT_PADDING } from "../../constants.js";
+import { DRAWING_HIT_THRESHOLD, ANCHOR_RADIUS, ANCHOR_HIT_PADDING, ANCHOR_HIT_PADDING_COARSE } from "../../constants.js";
 import { extendedSegmentEndpoints, resolveExtendFlags } from "../../tools/line/extend.js";
 import { trendAngleSegmentForDrawing } from "../../tools/line/trendAngle.js";
 import { hitGannStyleDrawing } from "../../tools/gann/index.js";
@@ -21,6 +21,13 @@ import { hitRegressionTrendDrawing, isRegressionTrendTool, regressionTrendAnchor
 import { isOnePointTool } from "../../registry/tools.js";
 
 /** @typedef {import("../../types.js").UserDrawing} UserDrawing */
+
+const COARSE_POINTER_MQ = window.matchMedia("(pointer: coarse)");
+
+function anchorHitRadius(drawing) {
+  const pad = COARSE_POINTER_MQ.matches ? ANCHOR_HIT_PADDING_COARSE : ANCHOR_HIT_PADDING;
+  return ANCHOR_RADIUS + pad + (isParallelChannelTool(drawing.type) ? 6 : 0);
+}
 
 function distToSegment(px, py, x1, y1, x2, y2) {
   const dx = x2 - x1;
@@ -218,10 +225,7 @@ export function findDrawingAt(drawings, px, py, getCoords) {
  * @returns {number} point index or -1
  */
 export function hitDrawingAnchor(drawing, px, py, getCoords) {
-  const radius =
-    ANCHOR_RADIUS +
-    ANCHOR_HIT_PADDING +
-    (isParallelChannelTool(drawing.type) ? 6 : 0);
+  const radius = anchorHitRadius(drawing);
 
   if (isParallelChannelTool(drawing.type)) {
     const { timeToX, priceToY } = getCoords(drawing);

@@ -9,14 +9,22 @@ import { FULLSCREEN, FULLSCREEN_EXIT } from "../icons.js";
 export function mountFullscreenMode(opts) {
   const { appEl, toggleBtn, iconEl } = opts;
   let active = false;
+  /** @type {Set<(active: boolean) => void>} */
+  const listeners = new Set();
+
+  function notify() {
+    listeners.forEach((fn) => fn(active));
+  }
 
   function setActive(next) {
+    if (active === next) return;
     active = next;
     appEl.classList.toggle("tv-app--chart-fullscreen", active);
     toggleBtn.setAttribute("aria-pressed", active ? "true" : "false");
     toggleBtn.setAttribute("aria-label", active ? "Exit fullscreen mode" : "Fullscreen mode");
     toggleBtn.dataset.tooltip = active ? "Exit fullscreen mode" : "Fullscreen mode";
     if (iconEl) iconEl.innerHTML = active ? FULLSCREEN_EXIT : FULLSCREEN;
+    notify();
   }
 
   function toggle() {
@@ -42,7 +50,40 @@ export function mountFullscreenMode(opts) {
     enter: () => setActive(true),
     exit: () => setActive(false),
     toggle,
+    subscribe: (fn) => {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    },
   };
+}
+
+/**
+ * Mobile exit control for chart fullscreen (no Escape key on touch devices).
+ * @param {object} opts
+ * @param {HTMLElement} opts.mountEl
+ * @param {{ exit: () => void, subscribe: (fn: (active: boolean) => void) => () => void }} opts.fullscreen
+ */
+export function mountBottomFullscreenExit(opts) {
+  const { mountEl, fullscreen } = opts;
+
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "tv-fullscreen-exit";
+  btn.hidden = true;
+  btn.setAttribute("aria-label", "Exit fullscreen");
+  btn.title = "Exit fullscreen";
+  btn.innerHTML = `<span class="tv-fullscreen-exit__icon" aria-hidden="true">${FULLSCREEN_EXIT}</span><span class="tv-fullscreen-exit__label">Exit</span>`;
+  btn.addEventListener("click", () => fullscreen.exit());
+  mountEl.prepend(btn);
+
+  function sync(active) {
+    btn.hidden = !active;
+  }
+
+  sync(fullscreen.isActive?.() ?? false);
+  fullscreen.subscribe(sync);
+
+  return { button: btn };
 }
 
 /** @param {EventTarget | null} target */

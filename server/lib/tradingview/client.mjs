@@ -60,26 +60,53 @@ function symbolInfoFromResolved(tvSymbol, meta) {
   };
 }
 
+const RES_SEC = { "1": 60, "5": 300, "15": 900, "60": 3600, D: 86400 };
+
+function resolutionSec(resolution) {
+  return RES_SEC[resolution] ?? 60;
+}
+
+/** @param {object[]} series @param {{ time: number }[]} bars */
+function mergeSeriesRows(series, bars) {
+  for (const row of series) {
+    if (!row?.v) continue;
+    const bar = barFromTv(row.v);
+    const idx = bars.findIndex((b) => b.time === bar.time);
+    if (idx >= 0) bars[idx] = bar;
+    else bars.push(bar);
+  }
+  bars.sort((a, b) => a.time - b.time);
+}
+
 /**
  * Fetch OHLCV history via TradingView widget websocket (protocol from parbhatc/tradingview).
+ * When range.to is set, uses request_more_data to walk backward (range create_series is unreliable).
  * @param {string} tvSymbol e.g. CME_MINI:NQ1!
  * @param {string} resolution e.g. 1, 5, D
  * @param {number} countBack
+ * @param {{ from?: number, to?: number } | null} [range]
  */
-export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300) {
+export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, range = null) {
   return new Promise((resolve, reject) => {
     const chartSession = randId("cs_");
     const symbolId = "sds_sym_1";
     const symbolNumber = "s1";
     const symbolMainId = "sds_1";
+    const beforeTime = range?.to != null ? Math.floor(range.to) : null;
+    const maxMore = beforeTime != null ? 8 : 0;
+
     let settled = false;
     let initialized = false;
+    let seriesCreated = false;
+    let morePending = false;
+    let moreAttempts = 0;
+    let lastOldest = null;
     /** @type {object | null} */
     let symbolMeta = null;
     /** @type {{ time: number, open: number, high: number, low: number, close: number, volume?: number }[]} */
     const bars = [];
 
-    const timer = setTimeout(() => finish(new Error("TradingView history timeout")), 25000);
+    const timer = setTimeout(() => finish(new Error("TradingView history timeout")), 30000);
 
     const ws = new WebSocket(wsUrl(), { headers: { Origin: WS_ORIGIN } });
 
@@ -100,9 +127,78 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300) {
       ws.send(packTvMessage({ m: type, p: params }));
     }
 
-    ws.addEventListener("open", () => {
-      // session_create arrives from server first
-    });
+    function sortedBars() {
+      return [...bars].sort((a, b) => a.time - b.time);
+    }
+
+    function completeFetch() {
+      let out = sortedBars();
+      if (beforeTime != null) {
+        out = out.filter((b) => b.time <= beforeTime);
+      }
+      if (range?.from != null) {
+        out = out.filter((b) => b.time >= range.from);
+      }
+      finish(null, {
+        bars: out,
+        symbolInfo: symbolInfoFromResolved(tvSymbol, symbolMeta ?? {}),
+        noData: out.length === 0,
+      });
+    }
+
+    function createInitialSeries() {
+      if (seriesCreated) return;
+      seriesCreated = true;
+      send("create_series", [
+        chartSession,
+        symbolMainId,
+        symbolNumber,
+        symbolId,
+        resolution,
+        countBack,
+        "",
+      ]);
+    }
+
+    function maybeRequestMore() {
+      if (beforeTime == null) {
+        if (bars.length) completeFetch();
+        return;
+      }
+      const sorted = sortedBars();
+      if (!sorted.length) {
+        finish(new Error("TradingView returned no bars"));
+        return;
+      }
+      const oldest = sorted[0].time;
+      if (oldest <= beforeTime) {
+        completeFetch();
+        return;
+      }
+      if (morePending || moreAttempts >= maxMore) {
+        completeFetch();
+        return;
+      }
+      if (lastOldest != null && oldest >= lastOldest) {
+        completeFetch();
+        return;
+      }
+      lastOldest = oldest;
+      morePending = true;
+      moreAttempts += 1;
+      send("request_more_data", [chartSession, symbolNumber, countBack]);
+    }
+
+    function onSeriesPayload(series) {
+      if (!series.length) return;
+      mergeSeriesRows(series, bars);
+      morePending = false;
+      if (beforeTime != null) {
+        maybeRequestMore();
+      } else if (series.length > 1 || bars.length >= countBack * 0.5) {
+        completeFetch();
+      }
+    }
 
     ws.addEventListener("message", (ev) => {
       for (const frame of unpackTvFrames(String(ev.data))) {
@@ -118,61 +214,35 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300) {
           send("chart_create_session", [chartSession, ""]);
           const symJson = `=${JSON.stringify({ adjustment: "splits", symbol: tvSymbol })}`;
           send("resolve_symbol", [chartSession, symbolId, symJson]);
-          send("create_series", [
-            chartSession,
-            symbolMainId,
-            symbolNumber,
-            symbolId,
-            resolution,
-            countBack,
-            "",
-          ]);
           continue;
         }
 
         switch (msg.m) {
           case "symbol_resolved":
             symbolMeta = msg.p?.[2] ?? null;
+            createInitialSeries();
             break;
           case "timescale_update": {
             const payload = msg.p?.[1] ?? {};
-            const series = payload[symbolMainId]?.s ?? [];
-            if (series.length > 1) {
-              bars.length = 0;
-              for (const row of series) {
-                if (row?.v) bars.push(barFromTv(row.v));
-              }
-              finish(null, {
-                bars: bars.sort((a, b) => a.time - b.time),
-                symbolInfo: symbolInfoFromResolved(tvSymbol, symbolMeta ?? {}),
-              });
-            }
+            onSeriesPayload(payload[symbolMainId]?.s ?? []);
             break;
           }
           case "du": {
             const payload = msg.p?.[1] ?? {};
-            const series = payload[symbolMainId]?.s ?? [];
-            if (series[0]?.v) {
-              const bar = barFromTv(series[0].v);
-              const idx = bars.findIndex((b) => b.time === bar.time);
-              if (idx >= 0) bars[idx] = bar;
-              else bars.push(bar);
-            }
+            onSeriesPayload(payload[symbolMainId]?.s ?? []);
             break;
           }
           case "series_completed":
-            if (bars.length) {
-              finish(null, {
-                bars: bars.sort((a, b) => a.time - b.time),
-                symbolInfo: symbolInfoFromResolved(tvSymbol, symbolMeta ?? {}),
-              });
-            }
+            morePending = false;
+            if (beforeTime != null) maybeRequestMore();
+            else if (bars.length) completeFetch();
             break;
           case "symbol_error":
             finish(new Error(msg.p?.[2] ?? "Unknown symbol"));
             break;
           case "critical_error":
-            finish(new Error("TradingView critical error"));
+            if (bars.length) completeFetch();
+            else finish(new Error("TradingView critical error"));
             break;
           default:
             break;
@@ -227,6 +297,9 @@ export function subscribeTradingViewBars(tvSymbol, resolution, onBar) {
           send("chart_create_session", [chartSession, ""]);
           const symJson = `=${JSON.stringify({ adjustment: "splits", symbol: tvSymbol })}`;
           send("resolve_symbol", [chartSession, symbolId, symJson]);
+          continue;
+        }
+        if (msg.m === "symbol_resolved") {
           send("create_series", [
             chartSession,
             symbolMainId,

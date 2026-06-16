@@ -5,91 +5,147 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, #000 35%, transparent);
+  background: rgb(0 0 0 / 0.45);
 }
 
 .tv-confirm-dialog {
   position: relative;
-  width: min(420px, calc(100vw - 2rem));
-  border-radius: 8px;
+  width: min(420px, calc(100vw - var(--space-8)));
+  border-radius: var(--radius-xl);
   background: var(--tv-surface);
   border: 1px solid var(--tv-border);
-  box-shadow: 0 8px 32px color-mix(in srgb, #000 30%, transparent);
+  box-shadow: var(--shadow-xl);
   color: var(--tv-text);
 }
 
 .tv-confirm-dialog__main {
-  padding: 1.25rem 1.25rem 1rem;
+  padding: var(--space-5) var(--space-5) var(--space-4);
 }
 
 .tv-confirm-dialog__title {
-  font-size: 1rem;
-  font-weight: 600;
-  margin-bottom: 0.75rem;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  margin-bottom: var(--space-3);
+  letter-spacing: var(--tracking-tight);
 }
 
 .tv-confirm-dialog__description {
-  margin: 0 0 1rem;
-  font-size: 0.875rem;
-  line-height: 1.45;
-  color: color-mix(in srgb, var(--tv-text) 85%, transparent);
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-md);
+  line-height: var(--leading-normal);
+  color: var(--tv-text-secondary);
 }
 
 .tv-confirm-dialog__checkbox {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
+  gap: var(--space-2);
+  font-size: var(--text-sm);
   cursor: pointer;
   user-select: none;
+}
+
+.tv-confirm-dialog__checkbox input {
+  accent-color: var(--tv-accent);
 }
 
 .tv-confirm-dialog__footer {
   display: flex;
   justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0 1.25rem 1.25rem;
+  gap: var(--space-2);
+  padding: 0 var(--space-5) var(--space-5);
 }
 
 .tv-confirm-dialog__btn {
   border: none;
-  border-radius: 6px;
-  padding: 0.45rem 0.85rem;
-  font-size: 0.8125rem;
-  font-weight: 500;
+  border-radius: var(--radius-md);
+  padding: var(--space-2) var(--space-4);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   cursor: pointer;
+  transition: var(--transition-colors), var(--transition-transform);
+}
+
+.tv-confirm-dialog__btn:active {
+  transform: scale(0.98);
 }
 
 .tv-confirm-dialog__btn--yes {
-  background: #f23645;
+  background: var(--tv-down);
   color: #fff;
 }
 
 .tv-confirm-dialog__btn--yes:hover {
-  filter: brightness(1.05);
+  filter: brightness(1.06);
 }
 
 .tv-confirm-dialog__btn--no {
-  background: color-mix(in srgb, var(--tv-text) 10%, var(--tv-surface));
+  background: var(--tv-surface-hover);
   color: var(--tv-text);
+  border: 1px solid var(--tv-border);
+}
+
+.tv-confirm-dialog__btn--no:hover {
+  background: color-mix(in srgb, var(--tv-text) 8%, var(--tv-surface));
 }
 
 .tv-confirm-dialog__close {
   position: absolute;
-  top: 0.5rem;
-  right: 0.5rem;
-  width: 2rem;
-  height: 2rem;
-  border: none;
-  border-radius: 4px;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: var(--control-size-md);
+  height: var(--control-size-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
-  color: var(--tv-text);
+  color: var(--tv-muted);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: var(--transition-colors);
+}
+
+.tv-confirm-dialog__btn--primary {
+  background: var(--tv-settings-primary-bg);
+  color: var(--tv-settings-primary-text);
+  border: 1px solid var(--tv-settings-primary-border);
+}
+
+.tv-confirm-dialog__btn--primary:hover {
+  background: var(--tv-settings-primary-hover-bg);
+  color: var(--tv-settings-primary-hover-text);
+}
+
+.tv-layout-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.tv-layout-dialog__label {
+  font-size: var(--text-sm);
+  color: var(--tv-text-secondary);
+}
+
+.tv-layout-dialog__input {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--radius-md);
+  background: var(--tv-surface-hover);
+  color: var(--tv-text);
+  font-size: var(--text-md);
+  padding: var(--space-2) var(--space-3);
+}
+
+.tv-layout-dialog__input:focus {
+  outline: none;
+  border-color: var(--tv-accent);
 }
 
 .tv-confirm-dialog__close:hover {
-  background: color-mix(in srgb, var(--tv-text) 8%, transparent);
+  background: var(--tv-surface-hover);
+  color: var(--tv-text);
+  border-color: var(--tv-border-subtle);
 }

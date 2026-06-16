@@ -208,6 +208,7 @@ export function createPaneExtras(deps) {
         flushPendingStatusLines();
         const active = getActivePane();
         if (active) scheduleStatusLine(active);
+        void viewportDeps?.ensureHistoryNearEdge?.(pane)?.catch(() => {});
       },
     });
   }
@@ -251,13 +252,28 @@ export function createPaneExtras(deps) {
         if (!r) return;
         const realCount = barsForPane(pane).length;
 
-        if (r.from < 24 && realCount > 0 && !pane._historyExhausted) {
-          if (!historyScheduled) {
-            historyScheduled = true;
-            requestAnimationFrame(async () => {
-              historyScheduled = false;
-              await viewportDeps?.prependHistory?.(pane);
-            });
+        if (realCount > 0 && !pane._historyExhausted && !ui.chartPanning) {
+          const nearEdge = r.from < 80;
+          const barSec =
+            resolutions.find((res) => res.id === pane.resolution)?.sec ?? 60;
+          let gapNearStart = false;
+          const bars = barsForPane(pane);
+          if (bars.length > 1) {
+            for (let i = 1; i < Math.min(bars.length, 64); i += 1) {
+              if (bars[i].time - bars[i - 1].time > barSec * 1.5) {
+                gapNearStart = true;
+                break;
+              }
+            }
+          }
+          if (nearEdge || gapNearStart) {
+            if (!historyScheduled) {
+              historyScheduled = true;
+              requestAnimationFrame(() => {
+                historyScheduled = false;
+                void viewportDeps?.ensureHistoryNearEdge?.(pane)?.catch(() => {});
+              });
+            }
           }
         }
 

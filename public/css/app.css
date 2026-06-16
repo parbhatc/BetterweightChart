@@ -4,6 +4,7 @@
 @import "./header/toolbar.css";
 @import "./symbol/search.css";
 @import "./timeframe.css";
+@import "./drawings/placement.css";
 @import "./drawings/toolbars/main.css";
 @import "./drawings/toolbars/favorite.css";
 @import "./drawings/toolbars/edit.css";
@@ -16,3 +17,4 @@
 @import "./settings.css";
 @import "./color/picker.css";
 @import "./timezone/clock.css";
+@import "./responsive.css";

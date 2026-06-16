@@ -1,4 +1,6 @@
 import { DRAWING_DRAG_ACTIVATION_PX } from "../../constants.js";
+
+const COARSE_POINTER_MQ = window.matchMedia("(pointer: coarse)");
 import {
   chartAngleFromPoints,
   translateTrendAnglePoints,
@@ -39,7 +41,9 @@ import { isPositionTool, positionDragUpdate, positionAnchorPoints, positionGeome
  * @param {(ev: Event) => void} api.swallowChartPointer
  * @param {(px: number, py: number) => { drawing: UserDrawing, pointIndex: number } | null} api.findAnchorHit
  * @param {(id: string | null) => void} api.setRegressionGuideDrawingId
+ * @param {() => HTMLElement} api.getContainer
  * @param {() => { bars?: { time: number }[] }} [api.getContext]
+ * @param {() => void} [api.recordHistorySnapshot]
  */
 export function createDrawingDrag(api) {
   /** @type {import("./index.js").DragState | null} */
@@ -47,11 +51,51 @@ export function createDrawingDrag(api) {
   /** @type {import("./index.js").PendingDrag | null} */
   let pendingDrag = null;
   let documentDragListenersBound = false;
+  let pointerSessionActive = false;
+  /** @type {number | null} */
+  let activePointerId = null;
+
+  function dragActivationPx() {
+    return COARSE_POINTER_MQ.matches ? 8 : DRAWING_DRAG_ACTIVATION_PX;
+  }
+
+  /** @param {MouseEvent | PointerEvent} ev */
+  function beginPointerSession(ev) {
+    pointerSessionActive = true;
+    activePointerId = ev.pointerId ?? null;
+    const el = api.getContainer?.();
+    if (el && ev.pointerId != null && typeof el.setPointerCapture === "function") {
+      try {
+        el.setPointerCapture(ev.pointerId);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+
+  /** @param {MouseEvent | PointerEvent | undefined} [ev] */
+  function endPointerSession(ev) {
+    if (ev?.pointerId != null && activePointerId != null && ev.pointerId !== activePointerId) return;
+    const releaseId = ev?.pointerId ?? activePointerId;
+    pointerSessionActive = false;
+    activePointerId = null;
+    const el = api.getContainer?.();
+    if (el && releaseId != null && typeof el.releasePointerCapture === "function") {
+      try {
+        el.releasePointerCapture(releaseId);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 
   /** @param {MouseEvent | PointerEvent} ev */
   function onDocumentPointerMove(ev) {
+    if (dragState || pendingDrag) {
+      if (COARSE_POINTER_MQ.matches) ev.preventDefault();
+    }
     if ((pendingDrag || dragState) && !isPrimaryButtonDown(ev)) {
-      finishPointerDrag();
+      finishPointerDrag(ev);
       return;
     }
     tryActivateDrag(ev.clientX, ev.clientY);
@@ -60,8 +104,9 @@ export function createDrawingDrag(api) {
     }
   }
 
-  function onDocumentPointerUp() {
-    finishPointerDrag();
+  /** @param {MouseEvent | PointerEvent} ev */
+  function onDocumentPointerUp(ev) {
+    finishPointerDrag(ev);
     api.clearLongPress();
     api.hideValuesTooltip();
   }
@@ -88,16 +133,24 @@ export function createDrawingDrag(api) {
 
   /** @param {MouseEvent | PointerEvent} ev */
   function isPrimaryButtonDown(ev) {
+    if (pointerSessionActive) {
+      if (activePointerId == null || ev.pointerId == null || ev.pointerId === activePointerId) {
+        return true;
+      }
+      return false;
+    }
     if (typeof ev.buttons === "number") return (ev.buttons & 1) !== 0;
     return true;
   }
 
-  function finishPointerDrag() {
+  /** @param {MouseEvent | PointerEvent | undefined} [ev] */
+  function finishPointerDrag(ev) {
     if (dragState) {
       endDrawingDrag();
       api.emitChange();
     }
     clearPendingDrag();
+    endPointerSession(ev);
   }
 
   function endDrawingDrag() {
@@ -117,6 +170,7 @@ export function createDrawingDrag(api) {
   }
 
   function startDrawingDrag(state) {
+    api.recordHistorySnapshot?.();
     dragState = state;
     api.setDraggingDrawing(true);
     bindDocumentDragListeners();
@@ -128,7 +182,7 @@ export function createDrawingDrag(api) {
   function tryActivateDrag(clientX, clientY) {
     if (!pendingDrag || dragState) return;
     const moved = Math.hypot(clientX - pendingDrag.startClientX, clientY - pendingDrag.startClientY);
-    if (moved < DRAWING_DRAG_ACTIVATION_PX) return;
+    if (moved < dragActivationPx()) return;
     const { startClientX: _x, startClientY: _y, ...state } = pendingDrag;
     pendingDrag = null;
     startDrawingDrag(state);
@@ -311,6 +365,7 @@ export function createDrawingDrag(api) {
   function beginAnchorPointDrag(ev, anchorHit) {
     const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
     if (!originPoint) return false;
+    beginPointerSession(ev);
     api.selectDrawing(anchorHit.drawing.id);
     const drawing = anchorHit.drawing;
     const regressionGuide = isRegressionTrendTool(drawing.type);
@@ -376,6 +431,7 @@ export function createDrawingDrag(api) {
   function forceEnd() {
     endDrawingDrag();
     clearPendingDrag();
+    endPointerSession();
   }
 
   return {
@@ -387,6 +443,8 @@ export function createDrawingDrag(api) {
     endDrawingDrag,
     clearPendingDrag,
     tryAnchorDrag,
+    beginPointerSession,
+    endPointerSession,
     isPrimaryButtonDown,
     isDragging,
     hasActiveDrag,

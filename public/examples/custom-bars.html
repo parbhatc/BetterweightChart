@@ -16,21 +16,31 @@
       body { margin: 0; }
       .demo-bar {
         display: flex;
-        gap: 8px;
-        padding: 8px 12px;
-        background: var(--tv-color-pane-background, #131722);
-        border-bottom: 1px solid #2a2e39;
+        align-items: center;
+        gap: var(--space-2);
+        min-height: var(--toolbar-height);
+        padding: 0 var(--space-3);
+        background: var(--tv-bg-elevated);
+        border-bottom: 1px solid var(--tv-border-subtle);
       }
       .demo-bar button {
-        padding: 6px 12px;
+        padding: var(--space-2) var(--space-3);
         cursor: pointer;
-        background: #2962ff;
+        background: var(--tv-accent);
         color: #fff;
-        border: none;
-        border-radius: 4px;
-        font-size: 13px;
+        border: 1px solid transparent;
+        border-radius: var(--radius-md);
+        font-size: var(--text-sm);
+        font-weight: var(--weight-medium);
+        transition: var(--transition-colors), var(--transition-transform);
       }
-      .tv-workspace { height: calc(100vh - 42px); }
+      .demo-bar button:hover {
+        background: var(--tv-accent-hover);
+      }
+      .demo-bar button:active {
+        transform: scale(0.98);
+      }
+      .tv-workspace { height: calc(100vh - var(--toolbar-height)); }
     </style>
   </head>
   <body class="tv-app--embed">

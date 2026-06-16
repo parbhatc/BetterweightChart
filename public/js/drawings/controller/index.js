@@ -1,5 +1,5 @@
 import { UserDrawingsPrimitive } from "../primitives/userDrawings/index.js";
-import { chartXAt, chartVisibleRightX, pixelToPoint, safePriceToY, coordMapBars } from "../../chart/coords/timeScale.js";
+import { chartXAt, chartVisibleRightX, pixelToPoint, safePriceToY, coordMapBars, timeToLogical, logicalToChartTime } from "../../chart/coords/timeScale.js";
 import { TOOL_LABELS } from "../catalog/tools.js";
 import { DRAWING_UI_SELECTOR } from "../constants.js";
 import { findDrawingAt, hitDrawingAnchor } from "./hit/test.js";
@@ -34,12 +34,24 @@ import {
 import { CURSOR_TOOLS, isCursorTool as isCursorToolType, isMultiPointTool } from "../registry/tools.js";
 import { keepsToolAfterCommit } from "../tools/shape/index.js";
 import { applyMagnetSnap } from "../tools/snap/magnet.js";
-import { loadAlwaysRemoveLocked, saveAlwaysRemoveLocked } from "../toolbars/utility/settings/store.js";
+import {
+  loadAlwaysRemoveLocked,
+  loadDrawingsVisibility,
+  loadShowMobilePlacementBar,
+  loadStayInDrawingMode,
+  saveAlwaysRemoveLocked,
+  saveDrawingsVisibility,
+  saveShowMobilePlacementBar,
+  saveStayInDrawingMode,
+} from "../toolbars/utility/settings/store.js";
 import { shouldShowLockedRemoveConfirm, showRemoveLockedConfirmDialog } from "../settings/confirm/remove.js";
 import { newDrawing, cloneDrawing, CLIPBOARD_PREFIX } from "./factory/index.js";
 import { createTooltipOverlay } from "./tooltip/overlay.js";
 import { createDrawingDrag } from "./drag/index.js";
 import { createPointerHandlers } from "./pointer/handlers.js";
+import { createDrawingHistory } from "../history/index.js";
+
+const COARSE_POINTER_MQ = window.matchMedia("(pointer: coarse)");
 
 /**
  * @param {object} opts
@@ -59,13 +71,16 @@ export function createDrawingController(opts) {
 
   /** @type {import("../types.js").UserDrawing[]} */
   let drawings = [];
+  const history = createDrawingHistory();
   let activeTool = "cursor";
-  let valuesTooltipOnLongPress = true;
+  let valuesTooltipOnLongPress = !COARSE_POINTER_MQ.matches;
   /** @type {"off" | "weak" | "strong"} */
   let magnetMode = "off";
   let measureMode = false;
   let drawingsHidden = false;
   let hideAll = false;
+  let stayInDrawingMode = false;
+  let showMobilePlacementBar = true;
   let lockAllActive = false;
   /** @type {import("../types.js").DrawPoint[]} */
   let placementStaged = [];
@@ -86,6 +101,16 @@ export function createDrawingController(opts) {
   /** @type {string | null} */
   let hoveredId = null;
   let isDraggingDrawing = false;
+  let suppressChartPlacementUntil = 0;
+  let lastTouchEndAt = 0;
+
+  window.addEventListener(
+    "touchend",
+    () => {
+      lastTouchEndAt = performance.now();
+    },
+    { capture: true, passive: true },
+  );
 
   const listeners = {
     change: new Set(),
@@ -95,6 +120,7 @@ export function createDrawingController(opts) {
     selectionChange: new Set(),
     dragChange: new Set(),
     editText: new Set(),
+    placementChange: new Set(),
   };
 
   let overlayRoot =
@@ -105,6 +131,14 @@ export function createDrawingController(opts) {
   cursorMark.hidden = true;
   cursorMark.setAttribute("aria-hidden", "true");
   overlayRoot.appendChild(cursorMark);
+
+  const drawCrosshairDot = document.createElement("div");
+  drawCrosshairDot.className = "chart-draw-crosshair-dot";
+  drawCrosshairDot.hidden = true;
+  drawCrosshairDot.setAttribute("aria-hidden", "true");
+  overlayRoot.appendChild(drawCrosshairDot);
+
+  let unsubDrawCrosshairDotSync = () => {};
 
   const valuesTooltip = document.createElement("div");
   valuesTooltip.className = "chart-values-tooltip";
@@ -126,6 +160,7 @@ export function createDrawingController(opts) {
   let drag = /** @type {ReturnType<typeof createDrawingDrag>} */ (null);
   let bindChartListeners = () => {};
   let unbindChartListeners = () => {};
+  let resetMobilePlacementGestureFn = () => {};
 
   function emit(type) {
     listeners[type].forEach((fn) => fn());
@@ -138,24 +173,36 @@ export function createDrawingController(opts) {
   }
 
   function shouldBlockChartPan() {
-    return (
-      measureDragActive ||
-      freehandDrawing ||
-      (!isCursorTool(activeTool) && activeTool !== "eraser") ||
-      placementStaged.length > 0 ||
-      preview != null ||
-      drag.isDragging()
-    );
+    if (measureDragActive || freehandDrawing || drag.isDragging()) return true;
+    if (placementStaged.length > 0 || preview != null) return true;
+    if (!isCursorTool(activeTool) && activeTool !== "eraser") return true;
+    return false;
+  }
+
+  function emitPlacementChange() {
+    emit("placementChange");
   }
 
   function syncChartPointerHandling() {
     const block = shouldBlockChartPan();
+    container.style.touchAction = block ? "none" : "";
+    const stage = container.closest(".tv-chart-wrap__stage");
+    if (stage instanceof HTMLElement) stage.style.touchAction = block ? "none" : "";
     chart.applyOptions({
       handleScroll: {
-        mouseWheel: true,
+        mouseWheel: !block,
         pressedMouseMove: !block,
         horzTouchDrag: !block,
         vertTouchDrag: !block,
+      },
+      kineticScroll: {
+        mouse: true,
+        touch: !block,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: !block,
+        axisPressedMouseMove: { time: !block, price: !block },
       },
     });
   }
@@ -174,6 +221,7 @@ export function createDrawingController(opts) {
     preview = p;
     primitive.setPreview(p);
     syncChartPointerHandling();
+    emitPlacementChange();
   }
 
   function setMeasureOverlay(overlay) {
@@ -222,7 +270,38 @@ export function createDrawingController(opts) {
     setHoveredDrawing(id);
   }
 
+  function snapshotState() {
+    return { drawings: structuredClone(drawings), selectedId };
+  }
+
+  /** @param {{ drawings: import("../types.js").UserDrawing[], selectedId: string | null }} snap */
+  function restoreSnapshot(snap) {
+    drawings = structuredClone(snap.drawings);
+    selectedId = snap.selectedId;
+    primitive.setSelectedId(selectedId);
+    syncDrawingsToPrimitive();
+    emit("change");
+    emit("selectionChange");
+  }
+
+  function recordHistory() {
+    history.record(snapshotState());
+  }
+
+  function undoDrawing() {
+    const snap = history.undo(snapshotState());
+    if (snap) restoreSnapshot(snap);
+    return Boolean(snap);
+  }
+
+  function redoDrawing() {
+    const snap = history.redo(snapshotState());
+    if (snap) restoreSnapshot(snap);
+    return Boolean(snap);
+  }
+
   function commitDrawing(drawing) {
+    recordHistory();
     let committed = drawing;
     if (isRegressionTrendTool(drawing.type)) {
       const { bars, barSec } = getContext();
@@ -232,9 +311,23 @@ export function createDrawingController(opts) {
     drawings = [...drawings, committed];
     syncDrawingsToPrimitive();
     resetPlacement();
-    if (!keepsToolAfterCommit(committed.type)) setActiveTool("cursor");
-    selectDrawing(committed.id);
+    if (stayInDrawingMode) {
+      selectDrawing(null);
+    } else {
+      selectDrawing(committed.id);
+      if (!keepsToolAfterCommit(committed.type)) setActiveTool("cursor");
+    }
     emit("change");
+    if (
+      shouldSyncDrawCrosshair() &&
+      isCursorTool(activeTool) === false &&
+      !COARSE_POINTER_MQ.matches
+    ) {
+      requestAnimationFrame(() => {
+        repinDrawCrosshair();
+        requestAnimationFrame(repinDrawCrosshair);
+      });
+    }
   }
 
   function copySelectedDrawing() {
@@ -286,6 +379,15 @@ export function createDrawingController(opts) {
     freehandDrawing = false;
     freehandLastClient = null;
     setPreview(null);
+    resetMobilePlacementGestureFn();
+  }
+
+  function cancelPlacement() {
+    resetPlacement();
+    setMeasureOverlay(null);
+    measureDragActive = false;
+    drag.forceEnd();
+    syncChartPointerHandling();
   }
 
   function finishMultiPointPlacement() {
@@ -298,6 +400,7 @@ export function createDrawingController(opts) {
   }
 
   function clearAll() {
+    if (drawings.length) recordHistory();
     drawings = [];
     resetPlacement();
     setMeasureOverlay(null);
@@ -315,6 +418,7 @@ export function createDrawingController(opts) {
     const unlockedCount = drawings.length - lockedCount;
 
     const doRemoveAll = () => {
+      recordHistory();
       drawings = [];
       setMeasureOverlay(null);
       measureDragActive = false;
@@ -325,6 +429,7 @@ export function createDrawingController(opts) {
 
     const doRemoveUnlocked = () => {
       if (!unlockedCount) return;
+      recordHistory();
       drawings = drawings.filter((d) => !d.locked);
       selectDrawing(null);
       syncDrawingsToPrimitive();
@@ -393,6 +498,7 @@ export function createDrawingController(opts) {
     drawingsHidden = Boolean(hidden);
     hideAll = false;
     syncDrawingsToPrimitive();
+    saveDrawingsVisibility({ drawingsHidden, hideAll });
     emit("utilityChange");
   }
 
@@ -404,11 +510,32 @@ export function createDrawingController(opts) {
     hideAll = Boolean(hidden);
     if (hideAll) drawingsHidden = true;
     syncDrawingsToPrimitive();
+    saveDrawingsVisibility({ drawingsHidden, hideAll });
     emit("utilityChange");
   }
 
   function getHideAll() {
     return hideAll;
+  }
+
+  function setStayInDrawingMode(on) {
+    stayInDrawingMode = Boolean(on);
+    saveStayInDrawingMode(stayInDrawingMode);
+    emit("utilityChange");
+  }
+
+  function getStayInDrawingMode() {
+    return stayInDrawingMode;
+  }
+
+  function setShowMobilePlacementBar(on) {
+    showMobilePlacementBar = Boolean(on);
+    saveShowMobilePlacementBar(showMobilePlacementBar);
+    emit("utilityChange");
+  }
+
+  function getShowMobilePlacementBar() {
+    return showMobilePlacementBar;
   }
 
   function setLockAllDrawings(locked) {
@@ -438,13 +565,40 @@ export function createDrawingController(opts) {
 
   function setActiveTool(tool) {
     activeTool = tool || "cursor";
+    drag.forceEnd();
     resetPlacement();
     hideValuesTooltip();
     updateCursorMarkVisibility();
-    if (!isCursorTool(activeTool)) selectDrawing(null);
+    if (!isCursorTool(activeTool)) {
+      selectDrawing(null);
+      suppressChartPlacementUntil = performance.now() + 450;
+      requestAnimationFrame(() => {
+        initDrawCrosshairAtCenter();
+        requestAnimationFrame(initDrawCrosshairAtCenter);
+      });
+    } else {
+      pinnedDrawCrosshair = null;
+      chart.clearCrosshairPosition();
+      drawCrosshairDot.hidden = true;
+    }
     syncChartPointerHandling();
     emit("toolChange");
     emit("cursorOverlay");
+    if (!isCursorTool(activeTool)) {
+      requestAnimationFrame(() => syncChartPointerHandling());
+    }
+  }
+
+  function armChartPlacementSuppress(ms = 450) {
+    suppressChartPlacementUntil = performance.now() + ms;
+  }
+
+  function isChartPlacementSuppressed() {
+    return performance.now() < suppressChartPlacementUntil;
+  }
+
+  function recentTouchInteraction() {
+    return performance.now() - lastTouchEndAt < 700;
   }
 
   function setValuesTooltipOnLongPress(on) {
@@ -455,15 +609,241 @@ export function createDrawingController(opts) {
     return valuesTooltipOnLongPress;
   }
 
-  function resolvePoint(clientX, clientY) {
+  function resolveChartPoint(clientX, clientY) {
     const rect = container.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    const { bars, barSec } = getContext();
+    const { barSec } = getContext();
     const mapBars = coordMapBars(getContext());
     const point = pixelToPoint(chart, series, mapBars, barSec, x, y);
     if (!point) return null;
-    return applyMagnetSnap(point, magnetMode, bars);
+    return applyMagnetSnap(point, magnetMode, mapBars);
+  }
+
+  function resolvePoint(clientX, clientY) {
+    const ctx = getContext();
+    const point = resolveChartPoint(clientX, clientY);
+    if (!point) return null;
+    const toUtc = ctx.chartTimeToUtc ?? ((t) => t);
+    return { ...point, time: toUtc(point.time) };
+  }
+
+  function shouldSyncDrawCrosshair(tool = activeTool) {
+    if (isCursorTool(tool)) return false;
+    if (tool === "eraser" || tool === "arrow") return false;
+    return true;
+  }
+
+  /** @type {{ price: number, time: number } | null} */
+  let pinnedDrawCrosshair = null;
+  /** @type {{ price: number, time: number } | null} */
+  let lastNativeDrawCrosshair = null;
+  /** @type {{ x: number, y: number } | null} */
+  let drawCrosshairMedia = null;
+  let anchoringDrawCrosshair = false;
+  /** @type {import("lightweight-charts").MouseEventParams | null} */
+  let lastDrawCrosshairParam = null;
+
+  function rememberNativeDrawCrosshairFromParam(param) {
+    if (!param?.point || param.time == null) return;
+    const price = series.coordinateToPrice(param.point.y);
+    if (price == null || !Number.isFinite(price)) return;
+    lastNativeDrawCrosshair = { price, time: param.time };
+  }
+
+  function getDrawCrosshairMedia() {
+    return drawCrosshairMedia;
+  }
+
+  function resolveDrawCrosshairPoint() {
+    if (!drawCrosshairMedia) return null;
+    const { barSec } = getContext();
+    const mapBars = coordMapBars(getContext());
+    return pixelToPoint(
+      chart,
+      series,
+      mapBars,
+      barSec,
+      drawCrosshairMedia.x,
+      drawCrosshairMedia.y,
+    );
+  }
+
+  function syncDrawCrosshairAtMediaAnchor() {
+    if (anchoringDrawCrosshair || !shouldSyncDrawCrosshair() || !drawCrosshairMedia) return;
+    const { barSec } = getContext();
+    const mapBars = coordMapBars(getContext());
+    const point = pixelToPoint(
+      chart,
+      series,
+      mapBars,
+      barSec,
+      drawCrosshairMedia.x,
+      drawCrosshairMedia.y,
+    );
+    if (!point) return;
+    lastNativeDrawCrosshair = { price: point.price, time: point.time };
+    anchoringDrawCrosshair = true;
+    try {
+      chart.setCrosshairPosition(point.price, point.time, series);
+    } finally {
+      anchoringDrawCrosshair = false;
+    }
+    if (COARSE_POINTER_MQ.matches) {
+      syncDrawCrosshairDotFromChart({ point: drawCrosshairMedia, time: point.time });
+    }
+  }
+
+  function setDrawCrosshairAtClient(clientX, clientY) {
+    if (!shouldSyncDrawCrosshair()) return;
+    const rect = container.getBoundingClientRect();
+    drawCrosshairMedia = { x: clientX - rect.left, y: clientY - rect.top };
+    syncDrawCrosshairAtMediaAnchor();
+  }
+
+  function applyCrosshairScrollDelta(dx, dy, anchorX, anchorY) {
+    if (!shouldSyncDrawCrosshair()) return;
+    const rect = container.getBoundingClientRect();
+    const pad = 2;
+    const paneW = rect.width;
+    const paneH = rect.height;
+    const { barSec } = getContext();
+    const mapBars = coordMapBars(getContext());
+    const ts = chart.timeScale();
+    const barSpacing = ts.options().barSpacing ?? 8;
+
+    const anchorPoint = pixelToPoint(chart, series, mapBars, barSec, anchorX, anchorY);
+    if (!anchorPoint) return;
+
+    const barDelta = Math.round(dx / barSpacing);
+    const logical = timeToLogical(mapBars, barSec, anchorPoint.time);
+    if (logical == null || !Number.isFinite(logical)) return;
+    const newTime = logicalToChartTime(mapBars, barSec, logical + barDelta);
+
+    const newMediaY = Math.max(pad, Math.min(paneH - pad, anchorY + dy));
+    const newPrice = series.coordinateToPrice(newMediaY);
+    if (newTime == null || newPrice == null || !Number.isFinite(newPrice)) return;
+
+    const newMediaX = chartXAt(ts, mapBars, barSec, undefined, newTime);
+    const newMediaYFromPrice = safePriceToY(series, newPrice);
+    if (newMediaX == null || newMediaYFromPrice == null) return;
+
+    drawCrosshairMedia = {
+      x: Math.max(pad, Math.min(paneW - pad, newMediaX)),
+      y: Math.max(pad, Math.min(paneH - pad, newMediaYFromPrice)),
+    };
+    syncDrawCrosshairAtMediaAnchor();
+  }
+
+  function syncDrawCrosshairDotFromChart(param = lastDrawCrosshairParam) {
+    if (!COARSE_POINTER_MQ.matches || !shouldSyncDrawCrosshair()) {
+      drawCrosshairDot.hidden = true;
+      return;
+    }
+    const dotPoint = drawCrosshairMedia ?? param?.point;
+    if (dotPoint) {
+      lastDrawCrosshairParam = { ...(param ?? {}), point: dotPoint };
+    }
+    if (!dotPoint) {
+      drawCrosshairDot.hidden = true;
+      return;
+    }
+    drawCrosshairDot.style.left = `${dotPoint.x}px`;
+    drawCrosshairDot.style.top = `${dotPoint.y}px`;
+    drawCrosshairDot.hidden = false;
+  }
+
+  function syncDrawCrosshairDot() {
+    if (COARSE_POINTER_MQ.matches) {
+      syncDrawCrosshairDotFromChart();
+      return;
+    }
+    if (!shouldSyncDrawCrosshair() || !pinnedDrawCrosshair) {
+      drawCrosshairDot.hidden = true;
+      return;
+    }
+    const { barSec } = getContext();
+    const mapBars = coordMapBars(getContext());
+    const x = chartXAt(chart.timeScale(), mapBars, barSec, undefined, pinnedDrawCrosshair.time);
+    const y = safePriceToY(series, pinnedDrawCrosshair.price);
+    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      drawCrosshairDot.hidden = true;
+      return;
+    }
+    drawCrosshairDot.style.left = `${x}px`;
+    drawCrosshairDot.style.top = `${y}px`;
+    drawCrosshairDot.hidden = false;
+  }
+
+  function bindDrawCrosshairDotSync() {
+    unsubDrawCrosshairDotSync();
+    const onMove = (param) => {
+      if (!COARSE_POINTER_MQ.matches || !shouldSyncDrawCrosshair()) return;
+      if (drawCrosshairMedia) {
+        syncDrawCrosshairDotFromChart({
+          point: drawCrosshairMedia,
+          time: lastNativeDrawCrosshair?.time ?? param?.time,
+        });
+        return;
+      }
+      if (param?.point && param.time != null) {
+        rememberNativeDrawCrosshairFromParam(param);
+        syncDrawCrosshairDotFromChart(param);
+      }
+    };
+    const onRange = () => {
+      if (drawCrosshairMedia && shouldSyncDrawCrosshair()) syncDrawCrosshairAtMediaAnchor();
+    };
+    chart.subscribeCrosshairMove(onMove);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
+    unsubDrawCrosshairDotSync = () => {
+      chart.unsubscribeCrosshairMove(onMove);
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
+    };
+  }
+
+  function initDrawCrosshairAtCenter() {
+    if (!shouldSyncDrawCrosshair()) return;
+    const rect = container.getBoundingClientRect();
+    setDrawCrosshairAtClient(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    if (!COARSE_POINTER_MQ.matches) {
+      const point = resolveChartPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      if (point) pinnedDrawCrosshair = { price: point.price, time: point.time };
+      syncDrawCrosshairDot();
+    }
+  }
+
+  function syncDrawCrosshair(clientX, clientY) {
+    if (!shouldSyncDrawCrosshair() || COARSE_POINTER_MQ.matches) return;
+    const point = resolveChartPoint(clientX, clientY);
+    if (!point) return;
+    pinnedDrawCrosshair = { price: point.price, time: point.time };
+    chart.setCrosshairPosition(point.price, point.time, series);
+    syncDrawCrosshairDot();
+  }
+
+  function repinDrawCrosshair() {
+    if (!shouldSyncDrawCrosshair() || COARSE_POINTER_MQ.matches || !pinnedDrawCrosshair) return;
+    chart.setCrosshairPosition(pinnedDrawCrosshair.price, pinnedDrawCrosshair.time, series);
+    syncDrawCrosshairDot();
+  }
+
+  function pinDrawCrosshairAt(clientX, clientY) {
+    if (COARSE_POINTER_MQ.matches) return;
+    syncDrawCrosshair(clientX, clientY);
+    requestAnimationFrame(() => {
+      repinDrawCrosshair();
+      requestAnimationFrame(repinDrawCrosshair);
+    });
+  }
+
+  function clearDrawCrosshair() {
+    pinnedDrawCrosshair = null;
+    lastNativeDrawCrosshair = null;
+    drawCrosshairMedia = null;
+    lastDrawCrosshairParam = null;
+    chart.clearCrosshairPosition();
+    drawCrosshairDot.hidden = true;
   }
 
   function resolveRegressionPoint(clientX, clientY) {
@@ -482,10 +862,12 @@ export function createDrawingController(opts) {
     }));
 
   function drawingCoords(drawing) {
-    const { bars, barSec } = getContext();
-    const mapBars = coordMapBars(getContext());
+    const ctx = getContext();
+    const { barSec } = ctx;
+    const mapBars = coordMapBars(ctx);
     const ts = chart.timeScale();
-    const timeToX = (t) => chartXAt(ts, mapBars, barSec, undefined, t);
+    const toChart = ctx.utcToChartTime ?? ((t) => t);
+    const timeToX = (t) => chartXAt(ts, mapBars, barSec, undefined, toChart(t));
     const priceToY = (p) => safePriceToY(series, p);
     const right = chartVisibleRightX(ts) ?? 0;
     const bottom = container.clientHeight || 400;
@@ -497,7 +879,7 @@ export function createDrawingController(opts) {
       return { x, y };
     });
 
-    return { pts, right, bottom, timeToX, priceToY, bars };
+    return { pts, right, bottom, timeToX, priceToY, bars: ctx.bars };
   }
 
   function findStatsHit(px, py) {
@@ -571,6 +953,7 @@ export function createDrawingController(opts) {
   }
 
   function removeDrawingAt(index) {
+    recordHistory();
     const removed = drawings[index];
     drawings = drawings.filter((_, i) => i !== index);
     if (removed?.id === selectedId) selectDrawing(null);
@@ -597,6 +980,7 @@ export function createDrawingController(opts) {
   function updateDrawing(id, patch, opts = {}) {
     const idx = drawings.findIndex((d) => d.id === id);
     if (idx < 0) return;
+    if (!opts.silent) recordHistory();
     drawings = drawings.map((d) => {
       if (d.id !== id) return d;
       const merged = { ...d, ...patch };
@@ -672,17 +1056,21 @@ export function createDrawingController(opts) {
   }
 
   /** @param {import("../types.js").DrawPoint} point */
-  function startFreehand(point, clientX, clientY) {
+  function startFreehand(point, clientX, clientY, ev) {
     freehandDrawing = true;
     freehandPoints = [point];
     freehandLastClient = { x: clientX, y: clientY };
+    if (ev) drag.beginPointerSession(ev);
     setPreview(newDrawing(activeTool, [point]));
     syncChartPointerHandling();
+    bindFreehandDocumentListeners();
   }
 
   function finishFreehand() {
     if (!freehandDrawing) return;
     freehandDrawing = false;
+    unbindFreehandDocumentListeners();
+    drag.endPointerSession();
     if (freehandPoints.length >= 2) {
       commitDrawing(newDrawing(activeTool, [...freehandPoints]));
     }
@@ -690,6 +1078,40 @@ export function createDrawingController(opts) {
     freehandLastClient = null;
     setPreview(null);
     syncChartPointerHandling();
+  }
+
+  /** @param {MouseEvent | PointerEvent} ev */
+  function onFreehandDocumentMove(ev) {
+    if (!freehandDrawing) return;
+    syncDrawCrosshair(ev.clientX, ev.clientY);
+    const point = resolvePoint(ev.clientX, ev.clientY);
+    if (point) appendFreehandPoint(ev.clientX, ev.clientY, point);
+  }
+
+  function onFreehandDocumentUp() {
+    if (freehandDrawing) finishFreehand();
+  }
+
+  let freehandDocumentListenersBound = false;
+
+  function bindFreehandDocumentListeners() {
+    if (freehandDocumentListenersBound) return;
+    freehandDocumentListenersBound = true;
+    document.addEventListener("pointermove", onFreehandDocumentMove);
+    document.addEventListener("mousemove", onFreehandDocumentMove);
+    document.addEventListener("pointerup", onFreehandDocumentUp);
+    document.addEventListener("mouseup", onFreehandDocumentUp);
+    document.addEventListener("pointercancel", onFreehandDocumentUp);
+  }
+
+  function unbindFreehandDocumentListeners() {
+    if (!freehandDocumentListenersBound) return;
+    freehandDocumentListenersBound = false;
+    document.removeEventListener("pointermove", onFreehandDocumentMove);
+    document.removeEventListener("mousemove", onFreehandDocumentMove);
+    document.removeEventListener("pointerup", onFreehandDocumentUp);
+    document.removeEventListener("mouseup", onFreehandDocumentUp);
+    document.removeEventListener("pointercancel", onFreehandDocumentUp);
   }
 
   const pointerApi = {
@@ -709,6 +1131,16 @@ export function createDrawingController(opts) {
     finishMultiPointPlacement,
     getContext,
     resolvePoint,
+    shouldSyncDrawCrosshair,
+    syncDrawCrosshair,
+    setDrawCrosshairAtClient,
+    applyCrosshairScrollDelta,
+    syncDrawCrosshairAtMediaAnchor,
+    getDrawCrosshairMedia,
+    resolveDrawCrosshairPoint,
+    pinDrawCrosshairAt,
+    repinDrawCrosshair,
+    clearDrawCrosshair,
     resolveRegressionPoint,
     resolvePriceOffset,
     resolveFlatPrice,
@@ -744,13 +1176,19 @@ export function createDrawingController(opts) {
     setDraggingDrawing,
     updateDrawing,
     queuePendingDrag: (state) => drag.queuePendingDrag(state),
+    beginPointerSession: (ev) => drag.beginPointerSession(ev),
+    endPointerSession: (ev) => drag.endPointerSession(ev),
     tryActivateDrag: (x, y) => drag.tryActivateDrag(x, y),
     applyDrawingDrag: (x, y) => drag.applyDrawingDrag(x, y),
-    finishPointerDrag: () => drag.finishPointerDrag(),
+    finishPointerDrag: (ev) => drag.finishPointerDrag(ev),
     tryAnchorDrag: (ev, px, py) => drag.tryAnchorDrag(ev, px, py),
     isPrimaryButtonDown: (ev) => drag.isPrimaryButtonDown(ev),
     isDragging: () => drag.isDragging(),
     hasActiveDrag: () => drag.hasActiveDrag(),
+    isChartPlacementSuppressed,
+    recentTouchInteraction,
+    armChartPlacementSuppress,
+    useMobileDragPlacement: () => COARSE_POINTER_MQ.matches,
   };
 
   drag = createDrawingDrag({
@@ -769,9 +1207,16 @@ export function createDrawingController(opts) {
     findAnchorHit,
     setRegressionGuideDrawingId: (id) => primitive.setRegressionGuideDrawingId(id),
     getContext,
+    getContainer: () => container,
+    recordHistorySnapshot: recordHistory,
   });
 
-  ({ bindChartListeners, unbindChartListeners } = createPointerHandlers(pointerApi));
+  function shouldHandleDrawingShortcut(ev) {
+    if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return false;
+    if (document.querySelector(".tv-settings:not([hidden])")) return false;
+    if (document.querySelector(".tv-drawing-settings:not([hidden])")) return false;
+    return true;
+  }
 
   function onKeyDown(ev) {
     if (ev.key === "Escape") {
@@ -808,7 +1253,20 @@ export function createDrawingController(opts) {
       ev.preventDefault();
       if (!pasteDrawing()) void pasteDrawingFromSystemClipboard();
     }
+    if (shouldHandleDrawingShortcut(ev) && (ev.ctrlKey || ev.metaKey)) {
+      const key = ev.key.toLowerCase();
+      const isUndo = key === "z" && !ev.shiftKey;
+      const isRedo = key === "y" || (key === "z" && ev.shiftKey);
+      if (isUndo && undoDrawing()) {
+        ev.preventDefault();
+      } else if (isRedo && redoDrawing()) {
+        ev.preventDefault();
+      }
+    }
   }
+
+  ({ bindChartListeners, unbindChartListeners, resetMobilePlacementGesture: resetMobilePlacementGestureFn } =
+    createPointerHandlers(pointerApi));
 
   /**
    * @param {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, container: HTMLElement, getContext?: () => object }} next
@@ -817,6 +1275,7 @@ export function createDrawingController(opts) {
     if (next.chart === chart && next.container === container) return;
     drag.forceEnd();
     unbindChartListeners();
+    unsubDrawCrosshairDotSync();
     series.detachPrimitive(primitive);
 
     chart = next.chart;
@@ -828,6 +1287,7 @@ export function createDrawingController(opts) {
       container.closest(".tv-chart-wrap__stage") ?? container.closest(".tv-chart-wrap") ?? container;
     if (nextOverlay !== overlayRoot) {
       nextOverlay.appendChild(cursorMark);
+      nextOverlay.appendChild(drawCrosshairDot);
       nextOverlay.appendChild(valuesTooltip);
       overlayRoot = nextOverlay;
     }
@@ -838,17 +1298,26 @@ export function createDrawingController(opts) {
 
     series.attachPrimitive(primitive);
     bindChartListeners();
+    bindDrawCrosshairDotSync();
     syncChartPointerHandling();
     primitive.setDrawings(drawings);
   }
 
   bindChartListeners();
+  bindDrawCrosshairDotSync();
   document.addEventListener("keydown", onKeyDown);
   const onWindowBlur = () => drag.finishPointerDrag();
   window.addEventListener("blur", onWindowBlur);
 
+  const savedVisibility = loadDrawingsVisibility();
+  if (savedVisibility.hideAll) setHideAll(true);
+  else if (savedVisibility.drawingsHidden) setDrawingsHidden(true);
+  if (loadStayInDrawingMode()) setStayInDrawingMode(true);
+  showMobilePlacementBar = loadShowMobilePlacementBar();
+
   return {
     setActiveTool,
+    armChartPlacementSuppress,
     getActiveTool: () => activeTool,
     isCursorTool,
     getToolLabel: () => TOOL_LABELS[activeTool] ?? activeTool,
@@ -866,6 +1335,10 @@ export function createDrawingController(opts) {
     getDrawingsHidden,
     setHideAll,
     getHideAll,
+    setStayInDrawingMode,
+    getStayInDrawingMode,
+    setShowMobilePlacementBar,
+    getShowMobilePlacementBar,
     setLockAllDrawings,
     getLockAllDrawings,
     setAlwaysRemoveLocked,
@@ -878,7 +1351,15 @@ export function createDrawingController(opts) {
     removeDrawingById,
     replaceDrawings,
     getDrawingScreenAnchor,
+    getPlacementStaged: () => [...placementStaged],
+    hasPreview: () => preview != null,
+    cancelPlacement,
+    finishMultiPointPlacement,
     isDraggingDrawing: () => isDraggingDrawing,
+    undoDrawing,
+    redoDrawing,
+    canUndoDrawing: () => history.canUndo(),
+    canRedoDrawing: () => history.canRedo(),
     clearAll,
     copySelectedDrawing,
     hasDrawingClipboard,
@@ -892,6 +1373,10 @@ export function createDrawingController(opts) {
     destroy() {
       drag.forceEnd();
       unbindChartListeners();
+      unsubDrawCrosshairDotSync();
+      container.style.touchAction = "";
+      const stage = container.closest(".tv-chart-wrap__stage");
+      if (stage instanceof HTMLElement) stage.style.touchAction = "";
       chart.applyOptions({
         handleScroll: {
           mouseWheel: true,
@@ -899,11 +1384,16 @@ export function createDrawingController(opts) {
           horzTouchDrag: true,
           vertTouchDrag: true,
         },
+        handleScale: {
+          pinch: true,
+          axisPressedMouseMove: { time: true, price: true },
+        },
       });
       document.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("blur", onWindowBlur);
       series.detachPrimitive(primitive);
       cursorMark.remove();
+      drawCrosshairDot.remove();
       valuesTooltip.remove();
     },
   };

@@ -4,7 +4,7 @@ const STORAGE_KEY = "tv-chart-layout-state";
 
 /** @typedef {{ symbol: boolean, interval: boolean, crosshair: boolean, time: boolean, dateRange: boolean, drawings: boolean }} SyncSettings */
 
-/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]> }} SavedLayout */
+/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>> }} SavedLayout */
 
 /** @typedef {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, wrapEl: HTMLElement, chartEl: HTMLElement, destroy: () => void, applyTimezone?: (tz: string, formatters?: object) => void, symbol: string, resolution: string, symbolInfo: object | null, bars: object[] }} SecondaryPane */
 
@@ -49,6 +49,10 @@ export function createLayoutManager(opts) {
   let autoSave = true;
   /** @type {Record<string, object[]> | null} */
   let drawingsSnapshot = null;
+  /** @type {object | null} */
+  let chartSettingsSnapshot = null;
+  /** @type {Record<string, Record<string, unknown>> | null} */
+  let toolDefaultsSnapshot = null;
 
   function applyPlacements() {
     const def = getLayoutDef(layoutId);
@@ -134,6 +138,27 @@ export function createLayoutManager(opts) {
     return drawingsSnapshot;
   }
 
+  /** @param {object | null | undefined} settings */
+  function setChartSettingsSnapshot(settings) {
+    chartSettingsSnapshot = settings ? structuredClone(settings) : null;
+    persist();
+  }
+
+  function getChartSettingsSnapshot() {
+    return chartSettingsSnapshot;
+  }
+
+  /** @param {Record<string, Record<string, unknown>> | null | undefined} defaults */
+  function setToolDefaultsSnapshot(defaults) {
+    toolDefaultsSnapshot =
+      defaults && typeof defaults === "object" ? structuredClone(defaults) : null;
+    persist();
+  }
+
+  function getToolDefaultsSnapshot() {
+    return toolDefaultsSnapshot;
+  }
+
   function markSaved() {
     dirty = false;
     persist();
@@ -151,7 +176,16 @@ export function createLayoutManager(opts) {
 
   function persist() {
     try {
-      const payload = { layoutId, layoutName, sync, dirty, autoSave, drawings: drawingsSnapshot };
+      const payload = {
+        layoutId,
+        layoutName,
+        sync,
+        dirty,
+        autoSave,
+        drawings: drawingsSnapshot,
+        chartSettings: chartSettingsSnapshot,
+        toolDefaults: toolDefaultsSnapshot,
+      };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
       /* ignore */
@@ -167,6 +201,8 @@ export function createLayoutManager(opts) {
       if (data.layoutName) layoutName = data.layoutName;
       if (data.sync) sync = { ...sync, ...data.sync };
       if (data.drawings && typeof data.drawings === "object") drawingsSnapshot = data.drawings;
+      if (data.chartSettings && typeof data.chartSettings === "object") chartSettingsSnapshot = data.chartSettings;
+      if (data.toolDefaults && typeof data.toolDefaults === "object") toolDefaultsSnapshot = data.toolDefaults;
       dirty = Boolean(data.dirty);
       if (typeof data.autoSave === "boolean") autoSave = data.autoSave;
     } catch {
@@ -195,6 +231,10 @@ export function createLayoutManager(opts) {
     setAutoSave,
     setDrawingsSnapshot,
     getDrawingsSnapshot,
+    setChartSettingsSnapshot,
+    getChartSettingsSnapshot,
+    setToolDefaultsSnapshot,
+    getToolDefaultsSnapshot,
     setActivePane,
     getActivePaneIndex: () => activePaneIndex,
     getSecondaryPanes,
@@ -209,6 +249,16 @@ export function upsertLayoutLibraryEntry(entry) {
   if (idx >= 0) saved[idx] = entry;
   else saved.push(entry);
   saveLayoutLibrary(saved);
+}
+
+/** @param {string} name */
+export function removeLayoutFromLibrary(name) {
+  saveLayoutLibrary(loadSavedLayouts().filter((s) => s.name !== name));
+}
+
+/** @param {string} name @returns {boolean} */
+export function layoutNameExists(name) {
+  return loadSavedLayouts().some((s) => s.name === name.trim());
 }
 
 /** @param {string} name @returns {SavedLayout | undefined} */

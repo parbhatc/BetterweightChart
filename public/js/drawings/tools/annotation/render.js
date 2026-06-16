@@ -49,6 +49,10 @@ export function renderAnnotationDrawing(ctx, drawing, pts, right, bottom) {
     case "brush": {
       if (pts.length < 2) break;
       const lineWidth = drawing.lineWidth ?? 2;
+      const strokeColor = applyColorOpacity(
+        drawing.color ?? "#00BCD4",
+        drawing.colorOpacity ?? 100,
+      );
       ctx.save();
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -62,6 +66,7 @@ export function renderAnnotationDrawing(ctx, drawing, pts, right, bottom) {
         drawPolyline(ctx, pts);
         ctx.restore();
       }
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = lineWidth;
       drawPolyline(ctx, pts);
       const leftEnd = drawing.leftEnd ?? "normal";
@@ -76,6 +81,10 @@ export function renderAnnotationDrawing(ctx, drawing, pts, right, bottom) {
       ctx.save();
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
+      ctx.strokeStyle = applyColorOpacity(
+        drawing.color ?? "#FFEB3B",
+        drawing.colorOpacity ?? 35,
+      );
       ctx.lineWidth = drawing.lineWidth ?? 20;
       drawPolyline(ctx, pts);
       ctx.restore();

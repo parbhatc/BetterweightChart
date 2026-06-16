@@ -1,4 +1,5 @@
 import { DEFAULT_DRAWING_COLOR } from "../../constants.js";
+import { loadLayoutScopedToolDefaults } from "./layoutScope.js";
 import { isAxisLineTool } from "../../tools/axis/lines.js";
 import { isTrendLineFamilyType } from "../../tools/line/trendStats.js";
 import { isParallelChannelTool } from "../../tools/channel/parallel.js";
@@ -324,7 +325,7 @@ export function isStylePatch(patch) {
  * @param {string} toolType
  */
 export function newDrawingDefaults(toolType) {
-  const saved = loadToolDefaults(toolType);
+  const saved = { ...loadToolDefaults(toolType), ...loadLayoutScopedToolDefaults(toolType) };
   const annotationDefaults = annotationDefaultsForType(toolType);
   const shapeDefaults = shapeDefaultsForType(toolType);
   const defaultColor = isFlatTopBottomTool(toolType)

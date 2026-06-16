@@ -343,15 +343,23 @@ export function mountMarketStatusPopup(hostEl, getContext) {
     open(btn, kind);
   });
 
-  document.addEventListener("click", (ev) => {
+  function dismissUnlessInside(ev) {
+    if (popup.hidden) return;
     if (popup.contains(ev.target) || ev.target.closest("[data-mkt-popup]")) return;
     close();
-  });
+  }
+
+  document.addEventListener("click", dismissUnlessInside);
+  document.addEventListener("pointerdown", dismissUnlessInside, true);
+  document.addEventListener("touchstart", dismissUnlessInside, { capture: true, passive: true });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Escape") close();
   });
   window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  window.addEventListener("scroll", () => {
+    if (popup.hidden) return;
+    close();
+  }, true);
 
   return { close };
 }

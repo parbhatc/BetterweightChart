@@ -2,11 +2,12 @@
   position: fixed;
   z-index: 160;
   min-width: 140px;
-  padding: 4px 0;
-  border-radius: 6px;
+  padding: var(--space-1) 0;
+  border-radius: var(--radius-lg);
   background: var(--tv-surface);
   border: 1px solid var(--tv-border);
-  box-shadow: 0 4px 16px color-mix(in srgb, #000 28%, transparent);
+  box-shadow: var(--shadow-popover);
+  overflow: hidden;
 }
 
 .tv-menu-popover[hidden] {
@@ -18,28 +19,40 @@
   flex-direction: column;
   max-height: min(60vh, 320px);
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tv-border) transparent;
+}
+
+.tv-menu-popover__inner::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tv-menu-popover__inner::-webkit-scrollbar-thumb {
+  background: var(--tv-border);
+  border-radius: var(--radius-full);
 }
 
 .tv-menu-popover__item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   width: 100%;
-  padding: 0.35rem 0.65rem;
+  padding: var(--space-2) var(--space-3);
   border: none;
   background: transparent;
   color: var(--tv-text);
-  font-size: 0.8rem;
+  font-size: var(--text-base);
   text-align: left;
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .tv-menu-popover__item:hover {
-  background: color-mix(in srgb, var(--tv-accent) 10%, var(--tv-surface));
+  background: var(--tv-accent-muted);
 }
 
 .tv-menu-popover__item.is-active {
-  background: color-mix(in srgb, var(--tv-accent) 14%, var(--tv-surface));
+  background: color-mix(in srgb, var(--tv-accent) 18%, var(--tv-surface));
   color: var(--tv-accent);
 }
 
@@ -62,23 +75,24 @@
 }
 
 .tv-menu-popover__inner--checks {
-  padding: 0.35rem 0;
-  gap: 0.15rem;
+  padding: var(--space-2) 0;
+  gap: var(--space-1);
 }
 
 .tv-menu-popover__check {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.35rem 0.75rem;
-  font-size: 0.8rem;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-base);
   color: var(--tv-text);
   cursor: pointer;
   user-select: none;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
 .tv-menu-popover__check:hover {
-  background: color-mix(in srgb, var(--tv-accent) 10%, var(--tv-surface));
+  background: var(--tv-accent-muted);
 }
 
 .tv-menu-popover__check input {

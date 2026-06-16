@@ -1,5 +1,6 @@
-import { chartXAt } from "../../chart/coords/timeScale.js";
+import { chartXAt, coordMapBars } from "../../chart/coords/timeScale.js";
 import { resolveTimezone } from "../../chart/timezone/list.js";
+import { utcToChartTime } from "../../chart/timezone/chartTime.js";
 import { chartDebug, chartDebugCount } from "../../debug/chart/index.js";
 
 const RTH_OPEN = 9 * 60 + 30;
@@ -142,6 +143,7 @@ export class SessionBackgroundPrimitive {
 
     const tz = resolveTimezone(settings.timezone, symbolInfo);
     const fill = settings.ethBackground ?? "rgba(41, 98, 255, 0.08)";
+    const mapBars = coordMapBars(this._getContext());
     const cacheKey = `${settings.session}|${tz}|${symbolInfo?.type}|${bars.length}|${bars[0]?.time}|${bars.at(-1)?.time}|${fill}`;
     if (this._spanCache && this._spanCacheKey === cacheKey) {
       chartDebugCount("session", "cacheHit");
@@ -149,7 +151,7 @@ export class SessionBackgroundPrimitive {
       return {
         spans: this._spanCache.spans,
         fill: this._spanCache.fill,
-        timeToX: (t) => chartXAt(ts, bars, barSec, undefined, t),
+        timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, utcToChartTime(t, tz)),
       };
     }
 
@@ -162,7 +164,7 @@ export class SessionBackgroundPrimitive {
     return {
       spans: built.spans,
       fill: built.fill,
-      timeToX: (t) => chartXAt(ts, bars, barSec, undefined, t),
+      timeToX: (t) => chartXAt(ts, mapBars, barSec, undefined, utcToChartTime(t, tz)),
     };
   }
 }
@@ -192,9 +194,9 @@ class SessionBgPaneRenderer {
     const { spans, fill, timeToX } = this._source.drawData();
     if (!spans.length || !timeToX) return;
 
-    target.useBitmapCoordinateSpace(({ context: ctx, bitmapSize }) => {
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       ctx.fillStyle = fill;
-      const h = bitmapSize.height;
+      const h = mediaSize.height;
       for (const span of spans) {
         const x1 = timeToX(span.from);
         const x2 = timeToX(span.to);

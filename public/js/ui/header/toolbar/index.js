@@ -13,7 +13,8 @@ import { mountFullscreenMode } from "../fullscreen/mode.js";
 import { createChartSnapshot } from "../snapshot/chart.js";
 import { getLayoutDef, LAYOUT_GROUPS } from "../layout/definitions.js";
 import { getLayoutIcon } from "../layout/icons.js";
-import { loadSavedLayouts } from "../layout/manager.js";
+import { loadSavedLayouts, removeLayoutFromLibrary } from "../layout/manager.js";
+import { showLayoutConfirmDialog, showLayoutNameDialog } from "../layout/dialogs.js";
 
 /**
  * @param {object} opts
@@ -23,9 +24,22 @@ import { loadSavedLayouts } from "../layout/manager.js";
  * @param {() => void} [opts.onSaveLayout]
  * @param {(entry: import("../layout/manager.js").SavedLayout) => void} [opts.onLoadLayout]
  * @param {() => void} [opts.onLayoutChange]
+ * @param {() => void} [opts.onCreateLayout]
+ * @param {() => void} [opts.onDuplicateLayout]
+ * @param {(name: string) => void} [opts.onDeleteLayout]
  */
 export function mountHeaderToolbar(opts) {
-  const { mountEl, getChart, layoutManager, onSaveLayout, onLoadLayout, onLayoutChange } = opts;
+  const {
+    mountEl,
+    getChart,
+    layoutManager,
+    onSaveLayout,
+    onLoadLayout,
+    onLayoutChange,
+    onCreateLayout,
+    onDuplicateLayout,
+    onDeleteLayout,
+  } = opts;
 
   const root = document.createElement("div");
   root.className = "tv-header-tools";
@@ -50,6 +64,7 @@ export function mountHeaderToolbar(opts) {
     <button type="button" class="tv-header-tools__btn tv-header-tools__btn--menu" id="header-toolbar-screenshot" aria-label="Take a snapshot" data-tooltip="Take a snapshot" title="Take a snapshot" aria-haspopup="menu">
       <span class="tv-header-tools__icon">${SCREENSHOT}</span>
     </button>
+    <div class="tv-header-tools__sep" aria-hidden="true"></div>
     <button type="button" class="tv-header-tools__btn" id="settings-btn" aria-label="Settings" data-tooltip="Settings" title="Settings">
       <span class="tv-header-tools__icon">${SETTINGS}</span>
     </button>
@@ -59,8 +74,10 @@ export function mountHeaderToolbar(opts) {
   const appEl = document.querySelector(".tv-app");
   const fullscreenBtn = root.querySelector("#header-toolbar-fullscreen");
   const fullscreenIcon = root.querySelector("[data-fullscreen-icon]");
+  /** @type {ReturnType<typeof mountFullscreenMode> | null} */
+  let fullscreen = null;
   if (appEl && fullscreenBtn instanceof HTMLButtonElement && fullscreenIcon instanceof HTMLElement) {
-    mountFullscreenMode({ appEl, toggleBtn: fullscreenBtn, iconEl: fullscreenIcon });
+    fullscreen = mountFullscreenMode({ appEl, toggleBtn: fullscreenBtn, iconEl: fullscreenIcon });
   }
 
   const snapshot = createChartSnapshot(getChart);
@@ -253,16 +270,19 @@ export function mountHeaderToolbar(opts) {
     closeMenu();
     if (!(saveMenuBtn instanceof HTMLElement)) return;
     const saved = loadSavedLayouts();
+    const currentName = layoutManager.getLayoutName();
     const menu = document.createElement("div");
-    menu.className = "tv-header-menu";
+    menu.className = "tv-header-menu tv-header-menu--save";
     menu.innerHTML = `
       <label class="tv-header-menu__item tv-header-menu__item--switch">
         <span class="tv-header-menu__label">Auto-save</span>
         <input type="checkbox" role="switch" data-save-action="autosave"${layoutManager.getAutoSave() ? " checked" : ""} />
       </label>
       <div class="tv-header-menu__sep"></div>
+      <button type="button" class="tv-header-menu__item" data-save-action="create">Create new layout…</button>
+      <button type="button" class="tv-header-menu__item" data-save-action="duplicate">Make a copy…</button>
       <button type="button" class="tv-header-menu__item" data-save-action="save">Save layout</button>
-      <button type="button" class="tv-header-menu__item" data-save-action="rename">Rename…</button>
+      <button type="button" class="tv-header-menu__item" data-save-action="rename">Rename layout…</button>
       <div class="tv-header-menu__sep"></div>
       <div class="tv-header-menu__title">Saved layouts</div>
       ${
@@ -270,7 +290,10 @@ export function mountHeaderToolbar(opts) {
           ? saved
               .map(
                 (item) =>
-                  `<button type="button" class="tv-header-menu__item" data-save-action="load" data-save-name="${item.name}">${item.name}</button>`,
+                  `<div class="tv-header-menu__row">
+                    <button type="button" class="tv-header-menu__item tv-header-menu__item--grow${item.name === currentName ? " is-active" : ""}" data-save-action="load" data-save-name="${escapeAttr(item.name)}">${escapeHtml(item.name)}</button>
+                    <button type="button" class="tv-header-menu__item tv-header-menu__item--icon" data-save-action="delete-layout" data-save-name="${escapeAttr(item.name)}" aria-label="Delete layout ${escapeAttr(item.name)}" title="Delete">×</button>
+                  </div>`,
               )
               .join("")
           : `<div class="tv-header-menu__empty">No saved layouts</div>`
@@ -281,18 +304,37 @@ export function mountHeaderToolbar(opts) {
       if (!(btn instanceof HTMLElement)) return;
       const action = btn.dataset.saveAction;
       if (action === "autosave") return;
+      if (action === "create") {
+        closeMenu();
+        onCreateLayout?.();
+        updateSaveState();
+        return;
+      }
+      if (action === "duplicate") {
+        closeMenu();
+        onDuplicateLayout?.();
+        updateSaveState();
+        return;
+      }
       if (action === "save") {
         performSave();
         closeMenu();
+        return;
       }
       if (action === "rename") {
-        const name = window.prompt("Layout name", layoutManager.getLayoutName());
-        if (name) {
+        closeMenu();
+        void (async () => {
+          const name = await showLayoutNameDialog({
+            title: "Rename layout",
+            value: layoutManager.getLayoutName(),
+            confirmLabel: "Rename",
+          });
+          if (!name) return;
           layoutManager.setLayoutName(name);
           updateSaveState();
           onLayoutChange?.();
-        }
-        closeMenu();
+        })();
+        return;
       }
       if (action === "load" && btn.dataset.saveName) {
         const item = saved.find((s) => s.name === btn.dataset.saveName);
@@ -305,6 +347,31 @@ export function mountHeaderToolbar(opts) {
           updateSaveState();
         }
         closeMenu();
+        return;
+      }
+      if (action === "delete-layout" && btn.dataset.saveName) {
+        const name = btn.dataset.saveName;
+        closeMenu();
+        void (async () => {
+          if (name === currentName) {
+            await showLayoutConfirmDialog({
+              title: "Cannot delete layout",
+              message: "Switch to another layout before deleting the active one.",
+              confirmLabel: "OK",
+              cancelLabel: "",
+            });
+            openSaveMenu();
+            return;
+          }
+          const confirmed = await showLayoutConfirmDialog({
+            title: "Delete layout",
+            message: `Delete saved layout "${name}"?`,
+            confirmLabel: "Delete",
+            destructive: true,
+          });
+          if (confirmed) onDeleteLayout?.(name);
+          openSaveMenu();
+        })();
       }
     });
     menu.addEventListener("change", (ev) => {
@@ -364,7 +431,7 @@ export function mountHeaderToolbar(opts) {
   updateSaveState();
   updateLayoutIcon();
 
-  return { updateSaveState, updateLayoutIcon, closeMenu };
+  return { updateSaveState, updateLayoutIcon, closeMenu, fullscreen };
 }
 
 /** @param {string} key @param {string} label @param {string} tip @param {boolean} checked @param {boolean} disabled */
@@ -373,4 +440,14 @@ function syncRow(key, label, tip, checked, disabled) {
     <span class="tv-header-sync__label">${label}</span>
     <input type="checkbox" role="switch" data-sync-key="${key}"${checked ? " checked" : ""}${disabled ? " disabled" : ""} />
   </label>`;
+}
+
+/** @param {string} value */
+function escapeHtml(value) {
+  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/** @param {string} value */
+function escapeAttr(value) {
+  return escapeHtml(value).replace(/"/g, "&quot;");
 }

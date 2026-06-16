@@ -1,0 +1,99 @@
+.tv-draw-placement-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--bottom-bar-height) + var(--safe-bottom));
+  z-index: 25;
+  pointer-events: none;
+  padding: var(--space-2) var(--space-2) var(--space-1);
+}
+
+.tv-draw-placement-bar[hidden] {
+  display: none !important;
+}
+
+.tv-draw-placement-bar__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  max-width: 36rem;
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-xl);
+  background: color-mix(in srgb, var(--tv-surface) 92%, transparent);
+  border: 1px solid var(--tv-border);
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+}
+
+.tv-draw-placement-bar__hint {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--tv-text);
+  line-height: var(--leading-snug);
+}
+
+.tv-draw-placement-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.tv-draw-placement-bar__btn {
+  border: none;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  padding: var(--space-2) var(--space-4);
+  min-height: var(--control-size-sm);
+  cursor: pointer;
+  transition: var(--transition-colors);
+}
+
+.tv-draw-placement-bar__btn--cancel {
+  background: transparent;
+  color: var(--tv-text-secondary);
+  border: 1px solid var(--tv-border-strong);
+}
+
+.tv-draw-placement-bar__btn--done {
+  background: var(--tv-switch-on);
+  color: var(--tv-text);
+  border: 1px solid transparent;
+}
+
+@media (max-width: 840px) {
+  .draw-tools__flyout:not([hidden]) {
+    left: var(--space-2) !important;
+    right: var(--space-2) !important;
+    top: auto !important;
+    bottom: calc(var(--bottom-bar-height) + var(--safe-bottom) + 3.25rem) !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    max-height: min(46dvh, 18rem) !important;
+    height: auto !important;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-sheet);
+  }
+
+  .draw-tools__flyout--mega:not([hidden]) {
+    max-height: min(52dvh, 22rem) !important;
+  }
+
+  .draw-tools__flyout-item {
+    min-height: var(--touch-min);
+    padding: var(--space-2) var(--space-3);
+  }
+}
+
+@media (max-width: 768px) {
+  .tv-app--chart-fullscreen .drawing-toolbar {
+    display: flex !important;
+  }
+}

@@ -6,6 +6,40 @@ import {
   chartDebugTime,
   chartDebugTimeAsync,
 } from "../../debug/chart/index.js";
+
+/** Load more when the visible range is within this many bars of the left edge. */
+const HISTORY_EDGE_BARS = 80;
+/** Max burst loads per pan (TradingView-style prefetch). */
+const HISTORY_BURST_MAX = 2;
+/** Cooldown after a failed history request (ms). */
+const HISTORY_ERROR_COOLDOWN_MS = 45_000;
+
+/**
+ * @param {{ time: number }[]} bars
+ * @param {number} barSec
+ */
+function hasLeadingGap(bars, barSec) {
+  if (bars.length < 2 || barSec <= 0) return false;
+  const limit = Math.min(bars.length, 64);
+  for (let i = 1; i < limit; i += 1) {
+    if (bars[i].time - bars[i - 1].time > barSec * 1.5) return true;
+  }
+  return false;
+}
+
+/**
+ * @param {{ time: number }[]} bars
+ */
+function mergeBarsDeduped(older, existing) {
+  const merged = [...older, ...existing];
+  const seen = new Set();
+  return merged.filter((b) => {
+    if (seen.has(b.time)) return false;
+    seen.add(b.time);
+    return true;
+  });
+}
+
 /**
  * @param {object} opts
  */
@@ -13,6 +47,7 @@ export function createBarLoader(opts) {
   const {
     datafeed,
     countBack,
+    historyChunk = countBack,
     getLayoutManager,
     loader,
     refreshPaneCandleData,
@@ -25,6 +60,7 @@ export function createBarLoader(opts) {
     setHoverState,
     setPrimaryBars,
     onPaneBarUpdate,
+    onHistoryPrepended,
   } = opts;
 
   /** @type {Map<number, string>} */
@@ -110,16 +146,22 @@ export function createBarLoader(opts) {
     });
   }
 
-  async function prependHistory(pane) {
+  /**
+   * @param {object} pane
+   * @param {number} [chunk]
+   */
+  async function prependHistory(pane, chunk = historyChunk) {
     if (pane._loadingHistory || !pane.bars.length || !pane.symbolInfo) return false;
+    if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
     pane._loadingHistory = true;
     try {
       const first = pane.bars[0];
       const barSec = getBarSecForPane?.(pane) ?? 60;
+      const requestTo = first.time - barSec;
       const result = await chartDebugTimeAsync("data", `prependHistory pane ${pane.index}`, () =>
         datafeed.getBars(pane.symbolInfo, pane.resolution, {
-          to: first.time - barSec,
-          countBack,
+          to: requestTo,
+          countBack: chunk,
         }),
       );
       if (!result.bars?.length || result.noData) {
@@ -137,28 +179,59 @@ export function createBarLoader(opts) {
       const range = ts.getVisibleLogicalRange();
       const beforeLen = pane.bars.length;
 
-      const merged = [...older, ...pane.bars];
-      const seen = new Set();
-      pane.bars = merged.filter((b) => {
-        if (seen.has(b.time)) return false;
-        seen.add(b.time);
-        return true;
-      });
+      pane.bars = mergeBarsDeduped(older, pane.bars);
 
       const added = pane.bars.length - beforeLen;
-      if (added <= 0) return false;
+      if (added <= 0) {
+        pane._historyExhausted = true;
+        return false;
+      }
+
+      if (result.noData || older.length < chunk * 0.2) {
+        pane._historyExhausted = true;
+      }
 
       chartDebug("data", "history prepended", { pane: pane.index, added, total: pane.bars.length });
       refreshPaneCandleData(pane);
       if (pane.index === 0) setPrimaryBars(pane);
+      onHistoryPrepended?.(pane, added);
 
       if (range) {
         ts.setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
       }
       return true;
+    } catch (err) {
+      chartDebug("data", "prependHistory failed", { pane: pane.index, err: String(err) });
+      pane._historyErrorUntil = Date.now() + HISTORY_ERROR_COOLDOWN_MS;
+      return false;
     } finally {
       pane._loadingHistory = false;
     }
+  }
+
+  function needsMoreHistory(pane) {
+    if (pane._historyExhausted || pane._loadingHistory || !pane.bars.length) return false;
+    if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
+    const ts = pane.chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    if (!range) return false;
+    const barSec = getBarSecForPane?.(pane) ?? 60;
+    if (range.from < HISTORY_EDGE_BARS) return true;
+    return hasLeadingGap(pane.bars, barSec);
+  }
+
+  /** TradingView-style burst load when panning near the left edge or into a gap. */
+  async function ensureHistoryNearEdge(pane) {
+    if (!needsMoreHistory(pane)) return false;
+    let loaded = false;
+    let bursts = 0;
+    while (needsMoreHistory(pane) && bursts < HISTORY_BURST_MAX) {
+      const got = await prependHistory(pane);
+      if (!got) break;
+      loaded = true;
+      bursts += 1;
+    }
+    return loaded;
   }
 
   async function loadPaneBars(pane) {
@@ -167,7 +240,8 @@ export function createBarLoader(opts) {
       const result = await datafeed.getBars(pane.symbolInfo, pane.resolution, { countBack });
       pane.bars = result.bars;
       pane.futureWhitespaceBars = null;
-      pane._historyExhausted = false;
+      pane._historyExhausted = Boolean(result.noData);
+      pane._historyErrorUntil = null;
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });
       refreshPaneCandleData(pane);
       subscribePane(pane);
@@ -201,10 +275,17 @@ export function createBarLoader(opts) {
     const layoutManager = getLayoutManager();
     const panes = getAllChartPanes();
     const sync = layoutManager?.getSync();
-    const loadAll =
-      sync?.symbol || sync?.interval || panes.length > 1;
+    const loadAll = sync?.symbol || sync?.interval || panes.length > 1;
     return loadBarsForPanes(loadAll ? panes : [getActivePane()].filter(Boolean));
   }
 
-  return { loadPaneBars, loadBarsForPanes, loadBars, pushLiveBar: applyIncomingBar, prependHistory };
+  return {
+    loadPaneBars,
+    loadBarsForPanes,
+    loadBars,
+    pushLiveBar: applyIncomingBar,
+    prependHistory,
+    ensureHistoryNearEdge,
+    needsMoreHistory,
+  };
 }

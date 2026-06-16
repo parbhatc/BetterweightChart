@@ -55,7 +55,7 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
 
       const data = await getJson(`/history?${q}`);
       if (data.s === "no_data") return { bars: [], noData: true };
-      if (data.s === "error") throw new Error(data.errmsg || "History error");
+      if (data.s === "error") return { bars: [], noData: true };
 
       /** @type {Bar[]} */
       const bars = data.t.map((time, i) =>
@@ -69,7 +69,7 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
         }),
       );
 
-      return { bars, meta: data.meta };
+      return { bars, meta: data.meta, noData: Boolean(data.meta?.noData) };
     },
 
     subscribeBars(symbolInfo, resolution, onTick, subscriberUID) {

@@ -1,9 +1,14 @@
 .tv-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
-  padding: 0.3rem 0.5rem;
-  background: var(--tv-bg);
+  gap: var(--space-2);
+  min-height: var(--toolbar-height);
+  padding:
+    max(0px, var(--safe-top))
+    max(var(--space-2), var(--safe-right))
+    0
+    max(var(--space-2), var(--safe-left));
+  background: var(--tv-bg-elevated);
   border-bottom: 1px solid var(--tv-border);
   flex-shrink: 0;
   z-index: 20;
@@ -13,7 +18,7 @@
 .tv-toolbar__left {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: var(--space-2);
   min-width: 0;
   flex-shrink: 0;
 }
@@ -21,7 +26,7 @@
 .tv-toolbar__right {
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: var(--space-2);
   flex-shrink: 0;
   margin-left: auto;
 }
@@ -30,27 +35,25 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 2rem;
-  height: 2rem;
+  width: var(--control-size-md);
+  height: var(--control-size-md);
   padding: 0;
-  border: 1px solid var(--tv-border);
-  border-radius: 6px;
-  background: var(--tv-surface);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
 }
 
-.tv-toolbar__icon-btn:hover {
-  color: var(--tv-text);
-  background: color-mix(in srgb, var(--tv-text) 6%, var(--tv-surface));
-  border-color: color-mix(in srgb, var(--tv-text) 18%, var(--tv-border));
-}
+@media (hover: hover) {
+  .tv-toolbar__icon-btn {
+    transition: var(--transition-colors);
+  }
 
-.tv-toolbar__icon-btn:active {
-  background: color-mix(in srgb, var(--tv-accent) 12%, var(--tv-surface));
-  border-color: color-mix(in srgb, var(--tv-accent) 35%, var(--tv-border));
-  color: var(--tv-text);
+  .tv-toolbar__icon-btn:hover {
+    color: var(--tv-text);
+    background: var(--tv-surface-hover);
+  }
 }
 
 .tv-toolbar__icon {
@@ -60,7 +63,8 @@
 
 .tv-toolbar__sep {
   width: 1px;
-  height: 1.35rem;
-  background: var(--tv-border);
-  margin: 0 0.15rem;
+  height: 1.25rem;
+  background: var(--tv-border-subtle);
+  margin: 0 var(--space-1);
+  flex-shrink: 0;
 }

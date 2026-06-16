@@ -5,6 +5,7 @@
 
 import { loadLastResolution } from "../ui/timeframe/favorites.js";
 import { loadLastSymbol } from "../ui/chart/symbol/store.js";
+import { loadThemePreference } from "../ui/theme/store.js";
 
 /** @typedef {{ time: number, open: number, high: number, low: number, close: number, volume?: number }} Bar */
 
@@ -75,7 +76,7 @@ export function createDatafeed(baseUrl = "/datafeed") {
 
       const data = await getJson(`/history?${q}`);
       if (data.s === "no_data") return { bars: [], noData: true };
-      if (data.s === "error") throw new Error(data.errmsg || "History error");
+      if (data.s === "error") return { bars: [], noData: true };
 
       /** @type {Bar[]} */
       const bars = data.t.map((time, i) => ({
@@ -87,7 +88,7 @@ export function createDatafeed(baseUrl = "/datafeed") {
         volume: data.v?.[i],
       }));
 
-      return { bars, meta: data.meta };
+      return { bars, meta: data.meta, noData: Boolean(data.meta?.noData) };
     },
 
     subscribeBars() {
@@ -108,13 +109,17 @@ export function readPageOptions(search = window.location.search) {
   const rawSymbol = sp.get("symbol") || loadLastSymbol(defaultSymbol);
   const defaultResolution = datafeed === "tradingview" ? "5" : "1";
   const resolution = sp.get("resolution") || loadLastResolution(defaultResolution);
+  const themeParam = sp.get("theme");
+  const theme =
+    themeParam === "light" ? "light" : themeParam === "dark" ? "dark" : loadThemePreference("dark");
   return {
     symbol: datafeed === "tradingview" ? rawSymbol : rawSymbol.toUpperCase(),
-    theme: sp.get("theme") === "light" ? "light" : "dark",
+    theme,
     resolution,
     drawings: sp.get("drawings") !== "0",
     chrome: sp.get("chrome") !== "0",
     countBack: sp.get("countback") != null ? Number(sp.get("countback")) : 500,
+    historyChunk: sp.get("historychunk") != null ? Number(sp.get("historychunk")) : undefined,
     datafeedType: datafeed ?? undefined,
     tradingview: datafeed === "tradingview",
   };

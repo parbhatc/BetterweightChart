@@ -1,4 +1,10 @@
 import { TickMarkType, PriceScaleMode } from "lightweight-charts";
+import {
+  formatAxisDateTick,
+  formatAxisMonthTick,
+  formatAxisTimeTick,
+  formatChartTimeLabel,
+} from "../time/labelFormat.js";
 import { toDate } from "../format.js";
 
 /** @param {string | undefined} mode */
@@ -20,57 +26,34 @@ export function resolvePriceScalePlacement(placement) {
 
 /**
  * @param {object} scales
- * @param {string} timeZone
+ * @param {{ timeZone?: string, chartTimeToUtc?: (chartSec: number) => number }} [opts]
  */
-export function buildTimeScaleFormatters(scales, timeZone) {
-  const hour12 = scales.timeHoursFormat !== "24-hours";
-  const showDow = Boolean(scales.dayOfWeekOnLabels);
-  const dateFormat = scales.dateFormat ?? "d_mmm_yy";
+export function buildTimeScaleFormatters(scales, opts = {}) {
+  const axisZone = "UTC";
+  const labelZone = opts.timeZone ?? axisZone;
+  const toUtc = opts.chartTimeToUtc;
 
   const timeFormatter = (t) => {
-    const d = toDate(t);
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12,
-    }).format(d);
+    const unix = typeof t === "number" && toUtc ? toUtc(t) : t;
+    return formatChartTimeLabel(unix, scales, labelZone, { includeTime: true });
   };
 
   const tickMarkFormatter = (time, tickMarkType) => {
     const d = toDate(time);
-    const fmt = (opts) => new Intl.DateTimeFormat("en-US", { timeZone, ...opts }).format(d);
 
     switch (tickMarkType) {
       case TickMarkType.Year:
-        return fmt({ year: "numeric" });
+        return new Intl.DateTimeFormat("en-US", { timeZone: axisZone, year: "numeric" }).format(d);
       case TickMarkType.Month:
-        return fmt({ month: "short" });
-      case TickMarkType.DayOfMonth: {
-        const prefix = showDow ? `${fmt({ weekday: "short" })} ` : "";
-        switch (dateFormat) {
-          case "dd_mm_yy":
-            return `${prefix}${fmt({ day: "numeric", month: "short", year: "2-digit" })}`;
-          case "mm_dd":
-            return `${prefix}${fmt({ month: "short", day: "numeric" })}`;
-          case "yy_mm_dd":
-            return `${prefix}${fmt({ year: "2-digit", month: "short", day: "numeric" })}`;
-          case "d_mmm_yy":
-          default:
-            return `${prefix}${fmt({ day: "numeric", month: "short", year: "2-digit" })}`;
-        }
-      }
+        return formatAxisMonthTick(time, scales, axisZone);
+      case TickMarkType.DayOfMonth:
+        return formatAxisDateTick(time, scales, axisZone);
       case TickMarkType.Time:
-        return new Intl.DateTimeFormat("en-US", {
-          timeZone,
-          hour: "numeric",
-          minute: "2-digit",
-          hour12,
-        }).format(d);
+        return formatAxisTimeTick(d, axisZone, scales);
+      case TickMarkType.TimeWithSeconds:
+        return formatAxisTimeTick(d, axisZone, scales, true);
       default:
-        return "";
+        return formatAxisDateTick(time, scales, axisZone);
     }
   };
 

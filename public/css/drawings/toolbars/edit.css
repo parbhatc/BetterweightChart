@@ -5,15 +5,15 @@
 .tv-floating-toolbar__hint {
   position: fixed;
   z-index: 200;
-  padding: 4px 8px;
-  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-md);
   background: var(--tv-surface);
   border: 1px solid var(--tv-border);
-  box-shadow: 0 2px 8px color-mix(in srgb, #000 22%, transparent);
+  box-shadow: var(--shadow-md);
   color: var(--tv-text);
-  font-size: 0.72rem;
-  font-weight: 500;
-  line-height: 1.2;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-snug);
   white-space: nowrap;
   pointer-events: none;
 }
@@ -26,8 +26,8 @@
   display: flex;
   align-items: center;
   gap: 0;
-  padding: 2px 4px;
-  min-height: 38px;
+  padding: var(--space-1) var(--space-2);
+  min-height: 2.375rem;
 }
 
 .floating-toolbar-react-widgets__button[hidden] {
@@ -38,25 +38,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 4px;
+  min-width: 2.125rem;
+  height: 2.125rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
-  padding: 0 4px;
-  transition: color 0.12s ease, background 0.12s ease;
+  padding: 0 var(--space-1);
+  transition: var(--transition-colors), var(--transition-transform);
 }
 
 .floating-toolbar-react-widgets__button:hover {
   color: var(--tv-text);
-  background: color-mix(in srgb, var(--tv-text) 6%, transparent);
+  background: var(--tv-surface-hover);
+  border-color: var(--tv-border-subtle);
+}
+
+.floating-toolbar-react-widgets__button:active {
+  transform: scale(0.96);
 }
 
 .floating-toolbar-react-widgets__button.is-pressed,
 .floating-toolbar-react-widgets__button[aria-pressed="true"] {
   color: var(--tv-accent);
+  background: var(--tv-accent-muted);
 }
 
 .drawing-edit-toolbar__color-wrap {
@@ -64,8 +70,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.75rem;
+  height: 1.75rem;
 }
 
 .drawing-edit-toolbar__color-icon {
@@ -77,9 +83,9 @@
   position: absolute;
   right: 2px;
   bottom: 2px;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: var(--radius-xs);
   border: 1px solid color-mix(in srgb, var(--tv-text) 25%, transparent);
   pointer-events: none;
 }
@@ -89,11 +95,11 @@
   flex-direction: column;
   align-items: center;
   gap: 2px;
-  min-width: 34px;
+  min-width: 2.125rem;
 }
 
 .drawing-edit-toolbar__width-label {
-  font-size: 10px;
+  font-size: var(--text-2xs);
   line-height: 1;
   color: var(--tv-muted);
 }

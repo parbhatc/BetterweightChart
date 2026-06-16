@@ -1,3 +1,5 @@
+import { formatChartTimeLabel } from "./time/labelFormat.js";
+
 /** @param {number | { year: number, month: number, day: number }} t */
 export function toDate(t) {
   if (typeof t === "number") return new Date(t * 1000);
@@ -18,7 +20,12 @@ export function dateTime12h(d) {
   });
 }
 
-/** @param {{ time: number }} bar */
-export function barTimeLabel(bar) {
-  return dateTime12h(toDate(bar.time));
+/**
+ * @param {{ time: number }} bar
+ * @param {object} [scales]
+ * @param {string} [timeZone]
+ */
+export function barTimeLabel(bar, scales, timeZone) {
+  if (!scales || !timeZone) return dateTime12h(toDate(bar.time));
+  return formatChartTimeLabel(bar.time, scales, timeZone, { includeTime: true });
 }

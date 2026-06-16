@@ -126,7 +126,10 @@ export function mountStatusLineContextMenu(opts) {
     if (ev.key === "Escape") close();
   });
   window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  window.addEventListener("scroll", () => {
+    if (root.hidden) return;
+    close();
+  }, true);
 
   registerContextMenu({
     close,

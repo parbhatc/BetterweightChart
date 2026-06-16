@@ -1,10 +1,23 @@
 import { createColorPicker, applyColorOpacity } from "../../../ui/color/picker.js";
 import { loadEditToolbarPos, saveEditToolbarPos } from "../favorites/store.js";
+import {
+  applyFloatingToolbarPos,
+  bindFloatingToolbarViewportGuard,
+  isFloatingToolbarPosInViewport,
+  readFloatingToolbarPos,
+} from "../floating/position.js";
 import { createTvMenu, LINE_WIDTH_MENU_ITEMS, LINE_STYLE_MENU_ITEMS } from "../../settings/menu/tv.js";
 import { createDrawingSettingsDialog } from "../../settings/dialog/index.js";
 import { wireToolbarHints, hideToolbarHint } from "../../settings/hint/tool.js";
 import { isRegressionTrendTool } from "../../tools/regression/trend.js";
 import { isChannelBackgroundTool } from "../../tools/channel/family.js";
+import {
+  clearLayoutScopedToolDefault,
+  hasLayoutScopedToolDefault,
+  loadLayoutScopedToolDefaults,
+  saveLayoutScopedToolDefault,
+} from "../defaults/layoutScope.js";
+import { extractToolDefaults } from "../defaults/store.js";
 
 const EDIT_TOOL_HINTS = {
   templates: "Templates",
@@ -114,13 +127,7 @@ export function mountEditToolbar(opts) {
   let originTop = 0;
 
   function applyFixedPosition(pos) {
-    const pad = 8;
-    const w = root.offsetWidth || 320;
-    const h = root.offsetHeight || 40;
-    const maxLeft = window.innerWidth - w - pad;
-    const maxTop = window.innerHeight - h - pad;
-    root.style.left = `${Math.min(Math.max(pad, pos.left), Math.max(pad, maxLeft))}px`;
-    root.style.top = `${Math.min(Math.max(pad, pos.top), Math.max(pad, maxTop))}px`;
+    return applyFloatingToolbarPos(root, pos);
   }
 
   function applyPosition(pos) {
@@ -129,10 +136,13 @@ export function mountEditToolbar(opts) {
     const h = root.offsetHeight || 40;
     const left = pos.left - w / 2;
     const top = pos.top - h - 12;
-    const maxLeft = window.innerWidth - w - pad;
-    const maxTop = window.innerHeight - h - pad;
-    root.style.left = `${Math.min(Math.max(pad, left), Math.max(pad, maxLeft))}px`;
-    root.style.top = `${Math.min(Math.max(pad, top), Math.max(pad, maxTop))}px`;
+    return applyFloatingToolbarPos(root, { left, top }, pad);
+  }
+
+  function clampManualPosition(save = false) {
+    if (root.hidden || !manualPosition) return;
+    const clamped = applyFixedPosition(readFloatingToolbarPos(root));
+    if (save) saveEditToolbarPos(clamped);
   }
 
   function syncFromDrawing() {
@@ -145,7 +155,10 @@ export function mountEditToolbar(opts) {
     const width = drawing.lineWidth ?? 2;
     const channelBackground = isChannelBackgroundTool(drawing.type);
     const regressionTrend = isRegressionTrendTool(drawing.type);
-    if (templatesBtn instanceof HTMLElement) templatesBtn.hidden = regressionTrend;
+    if (templatesBtn instanceof HTMLElement) {
+      templatesBtn.hidden = regressionTrend;
+      templatesBtn.classList.toggle("has-template", hasLayoutScopedToolDefault(drawing.type));
+    }
     if (lineColorBtn instanceof HTMLElement) lineColorBtn.hidden = regressionTrend;
     if (backgroundColorBtn instanceof HTMLElement) backgroundColorBtn.hidden = !channelBackground;
     if (textColorBtn instanceof HTMLElement) textColorBtn.hidden = regressionTrend;
@@ -183,8 +196,14 @@ export function mountEditToolbar(opts) {
   function ensureSavedPosition() {
     const saved = loadEditToolbarPos();
     if (!saved) return false;
+    const size = { width: root.offsetWidth || 320, height: root.offsetHeight || 40 };
+    if (!isFloatingToolbarPosInViewport(saved, size)) {
+      manualPosition = false;
+      return false;
+    }
     manualPosition = true;
-    applyFixedPosition(saved);
+    const clamped = applyFixedPosition(saved);
+    saveEditToolbarPos(clamped);
     return true;
   }
 
@@ -192,7 +211,8 @@ export function mountEditToolbar(opts) {
     if (controller.isDraggingDrawing()) return;
     root.hidden = false;
     syncFromDrawing();
-    if (!manualPosition) repositionToDrawing();
+    if (manualPosition) clampManualPosition(true);
+    else repositionToDrawing();
   }
 
   function hide() {
@@ -302,6 +322,40 @@ export function mountEditToolbar(opts) {
     });
   }
 
+  function openTemplatesMenu(anchor) {
+    const drawing = controller.getSelectedDrawing();
+    if (!drawing) return;
+    const toolType = drawing.type;
+    const hasTemplate = hasLayoutScopedToolDefault(toolType);
+    tvMenu.open(
+      anchor,
+      [
+        { id: "save", label: "Save as template" },
+        { id: "apply", label: "Apply template" },
+        { id: "reset", label: "Reset template" },
+      ],
+      {
+        onSelect: (id) => {
+          if (id === "save") {
+            saveLayoutScopedToolDefault(toolType, extractToolDefaults(drawing));
+            syncFromDrawing();
+            return;
+          }
+          if (id === "apply") {
+            if (!hasTemplate) return;
+            controller.updateDrawing(drawing.id, loadLayoutScopedToolDefaults(toolType));
+            syncFromDrawing();
+            return;
+          }
+          if (id === "reset") {
+            clearLayoutScopedToolDefault(toolType);
+            syncFromDrawing();
+          }
+        },
+      },
+    );
+  }
+
   widgets.addEventListener("click", (ev) => {
     const btn = ev.target.closest("[data-name]");
     if (!(btn instanceof HTMLElement)) return;
@@ -312,6 +366,10 @@ export function mountEditToolbar(opts) {
     ev.preventDefault();
     ev.stopPropagation();
 
+    if (name === "templates") {
+      openTemplatesMenu(btn);
+      return;
+    }
     if (name === "line-tool-color") {
       openLineColorPicker(btn);
       return;
@@ -354,8 +412,9 @@ export function mountEditToolbar(opts) {
     root.classList.add("is-dragging");
     startX = ev.clientX;
     startY = ev.clientY;
-    originLeft = root.offsetLeft;
-    originTop = root.offsetTop;
+    const rect = root.getBoundingClientRect();
+    originLeft = rect.left;
+    originTop = rect.top;
     dragHandle.setPointerCapture(ev.pointerId);
     ev.preventDefault();
   });
@@ -365,13 +424,15 @@ export function mountEditToolbar(opts) {
     dragging = false;
     root.classList.remove("is-dragging");
     if (ev?.pointerId != null) dragHandle.releasePointerCapture(ev.pointerId);
-    saveEditToolbarPos({ left: root.offsetLeft, top: root.offsetTop });
+    clampManualPosition(true);
   };
 
   dragHandle.addEventListener("pointermove", (ev) => {
     if (!dragging) return;
-    root.style.left = `${originLeft + ev.clientX - startX}px`;
-    root.style.top = `${originTop + ev.clientY - startY}px`;
+    applyFixedPosition({
+      left: originLeft + ev.clientX - startX,
+      top: originTop + ev.clientY - startY,
+    });
   });
   dragHandle.addEventListener("pointerup", endDrag);
   dragHandle.addEventListener("pointercancel", endDrag);
@@ -410,7 +471,14 @@ export function mountEditToolbar(opts) {
 
   bindRangeChart();
   controller.on("toolChange", bindRangeChart);
-  window.addEventListener("resize", repositionToDrawing);
+
+  const unbindViewportGuard = bindFloatingToolbarViewportGuard(root, {
+    onGuard: () => {
+      if (manualPosition) clampManualPosition(true);
+      else repositionToDrawing();
+    },
+  });
+
   syncVisibility();
 
   return {
@@ -418,8 +486,8 @@ export function mountEditToolbar(opts) {
     syncVisibility,
     refreshSettingsContext: () => settingsDialog.refreshContext(),
     destroy() {
+      unbindViewportGuard();
       rangeChart?.timeScale().unsubscribeVisibleLogicalRangeChange(onRange);
-      window.removeEventListener("resize", repositionToDrawing);
       settingsDialog.destroy();
       root.remove();
     },

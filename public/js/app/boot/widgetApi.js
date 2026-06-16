@@ -19,6 +19,7 @@ export function createChartWidgetApi(ctx) {
     loadBarsForPanes,
     pushLiveBar,
     prependHistory,
+    ensureHistoryNearEdge,
     resetChartView,
     resetTimeScale,
     scrollToLatest,
@@ -150,7 +151,7 @@ export function createChartWidgetApi(ctx) {
      */
     loadMoreHistory: () => {
       const pane = getActivePane();
-      return pane ? prependHistory(pane) : Promise.resolve(false);
+      return pane ? ensureHistoryNearEdge(pane) : Promise.resolve(false);
     },
 
     openSettings: (section) => mountChartSettingsUi().open(section),

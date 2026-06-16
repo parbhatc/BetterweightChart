@@ -11,6 +11,8 @@ import {
 import { createFavoriteToolbar } from "../favorite/index.js";
 import { FAV_STAR_FILLED, FAV_STAR_OUTLINE, FAV_TOOLBAR_TOGGLE } from "../constants.js";
 import { createFlyoutHost } from "../flyout/host.js";
+import { createDrawingToolbarCollapse, NARROW_DRAW_TOOLBAR_MQ } from "../collapse.js";
+import { mountMobilePlacementBar } from "../../placement/mobileBar.js";
 import { createToolbarBuilders } from "../builders.js";
 import { loadToolbarGroupTools, saveToolbarGroupTool } from "../selection/store.js";
 
@@ -33,6 +35,13 @@ export function mountMainToolbar(opts) {
   let favoriteToolbarVisible = loadFavoriteToolbarVisible();
 
   const flyout = createFlyoutHost(toolbarEl);
+  const toolbarCollapse = createDrawingToolbarCollapse({ toolbarEl, flyout });
+
+  function maybeExpandToolbar() {
+    if (NARROW_DRAW_TOOLBAR_MQ.matches && toolbarCollapse.isCollapsed()) {
+      toolbarCollapse.expand();
+    }
+  }
 
   function findGroupForTool(type) {
     return TOOL_GROUPS.find((g) => {
@@ -80,6 +89,8 @@ export function mountMainToolbar(opts) {
     getFavorites: () => favoriteTools,
     getActiveTool: () => controller.getActiveTool(),
     onSelectTool: (type) => {
+      maybeExpandToolbar();
+      controller.armChartPlacementSuppress?.();
       const group = findGroupForTool(type);
       if (group) selectTool(type, group.id);
       else if (CURSOR_TOOLS.has(type)) selectCursorTool(type);
@@ -158,6 +169,7 @@ export function mountMainToolbar(opts) {
 
   function selectCursorTool(type) {
     if (!CURSOR_TOOLS.has(type)) return;
+    maybeExpandToolbar();
     cursorSelection = type;
     controller.setActiveTool(type);
     clearActiveUi();
@@ -180,6 +192,8 @@ export function mountMainToolbar(opts) {
       selectCursorTool("cursor");
       return;
     }
+
+    maybeExpandToolbar();
 
     if (SUPPORTED_DRAW_TOOLS.has(type)) {
       controller.setActiveTool(type);
@@ -220,6 +234,7 @@ export function mountMainToolbar(opts) {
     closeAllFlyouts: () => flyout.closeAllFlyouts(),
     flyout,
     attachFavoriteButton,
+    maybeExpandToolbar,
   });
 
   const {
@@ -273,9 +288,18 @@ export function mountMainToolbar(opts) {
       },
     }),
     buildUtilityCluster({
+      id: "stay-draw",
+      label: "Stay in drawing mode",
+      icon: "stay-draw-unlocked",
+      onPrimaryClick: () => {
+        controller.setStayInDrawingMode(!controller.getStayInDrawingMode());
+        syncUtilityUi();
+      },
+    }),
+    buildUtilityCluster({
       id: "lock",
       label: "Lock all drawings",
-      icon: "lock",
+      icon: "unlock",
       onPrimaryClick: () => {
         controller.setLockAllDrawings(!controller.getLockAllDrawings());
         syncUtilityUi();
@@ -286,11 +310,7 @@ export function mountMainToolbar(opts) {
       label: "Hide drawings",
       icon: "hide",
       withFlyout: buildHideFlyout,
-      onPrimaryClick: () => {
-        controller.setDrawingsHidden(!controller.getDrawingsHidden());
-        if (!controller.getDrawingsHidden()) controller.setHideAll(false);
-        syncUtilityUi();
-      },
+      primaryOpensFlyout: true,
     }),
   );
   inner.appendChild(utilsSection);
@@ -303,11 +323,7 @@ export function mountMainToolbar(opts) {
       label: "Remove drawings",
       icon: "remove",
       withFlyout: buildRemoveFlyout,
-      onPrimaryClick: () => {
-        controller.removeDrawings({ includeLocked: controller.getAlwaysRemoveLocked() });
-        selectCursorTool("cursor");
-        syncUtilityUi();
-      },
+      primaryOpensFlyout: true,
     }),
   );
   inner.appendChild(clearSection);
@@ -331,6 +347,7 @@ export function mountMainToolbar(opts) {
   root.appendChild(footer);
 
   toolbarEl.appendChild(root);
+  toolbarCollapse.mountBottomToggle();
   syncAllGroupPrimaryButtons();
   syncCursorFlyout();
   syncUtilityUi();
@@ -343,17 +360,27 @@ export function mountMainToolbar(opts) {
     syncActiveToolUi(tool);
   });
 
-  document.addEventListener("click", (ev) => {
+  function dismissDrawFlyoutsUnlessInside(ev) {
     if (ev.target.closest(".draw-tools__flyout")) return;
     if (ev.target.closest(".draw-tools__expand")) return;
+    if (ev.target.closest(".tv-draw-toolbar-toggle")) return;
     if (ev.target.closest(".tv-floating-toolbar")) return;
     if (toolbarEl.contains(ev.target)) return;
+    const hadOpenFlyout = toolbarEl.querySelector(".draw-tools__cluster--open") != null;
     flyout.closeAllFlyouts();
-  });
+    if (hadOpenFlyout) controller.armChartPlacementSuppress(350);
+  }
+
+  document.addEventListener("click", dismissDrawFlyoutsUnlessInside);
+  document.addEventListener("pointerdown", dismissDrawFlyoutsUnlessInside, true);
+  document.addEventListener("touchstart", dismissDrawFlyoutsUnlessInside, { capture: true, passive: true });
+
+  const stage = toolbarEl.closest(".tv-stage") ?? toolbarEl.closest(".tv-workspace");
+  mountMobilePlacementBar(controller, stage);
 
   window.addEventListener("resize", () => flyout.repositionOpenFlyouts());
 
-  return { selectCursorTool, selectTool };
+  return { selectCursorTool, selectTool, toolbarCollapse };
 }
 
 export const mountDrawingToolbar = mountMainToolbar;

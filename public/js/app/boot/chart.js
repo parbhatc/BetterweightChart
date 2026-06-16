@@ -6,6 +6,7 @@ import {
   enforcePriceBarRatioOnPriceZoom,
 } from "../../chart/price/barRatio.js";
 import { mountMarketStatusPopup } from "../../chart/market/status.js";
+import { chartTimeToUtc, utcToChartTime } from "../../chart/timezone/chartTime.js";
 import { precisionFromSettings, priceFormatFromPrecisionSetting, resolveTimezone } from "../../chart/timezone/list.js";
 import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes } from "../../chart/settings/applier.js";
 import {
@@ -24,19 +25,30 @@ import { createMultiPaneDrawingHub } from "../../drawings/multi/paneHub.js";
 import { isElectronicSession } from "../../primitives/session/background.js";
 import { createAppLoader } from "../../ui/loader/app.js";
 import { createChartSettings, mountChartSettings } from "../../ui/chart/settings.js";
+import { loadShowMobilePlacementBar, saveShowMobilePlacementBar } from "../../drawings/toolbars/utility/settings/store.js";
 import { mountSymbolSearch } from "../../ui/symbol/search.js";
 import { mountStatusLineContextMenu } from "../../ui/context/statusLine.js";
 import { mountTimeframePicker } from "../../ui/timeframe/picker.js";
 import { loadLastResolution, saveLastResolution } from "../../ui/timeframe/favorites.js";
 import { getPaneSymbol, savePaneSymbols } from "../../ui/chart/symbol/store.js";
 import { mountTimezoneClock } from "../../ui/timezone/clock.js";
+import { mountAppTouchScrollLock } from "../touch/scrollLock.js";
+import { mountBottomFullscreenExit } from "../../ui/header/fullscreen/mode.js";
 import {
   createLayoutManager,
   findLayoutByName,
+  layoutNameExists,
+  removeLayoutFromLibrary,
   upsertLayoutLibraryEntry,
 } from "../../ui/header/layout/manager.js";
+import { showLayoutNameDialog } from "../../ui/header/layout/dialogs.js";
+import {
+  getLayoutToolDefaultsSnapshot,
+  setLayoutToolDefaults,
+  setLayoutToolDefaultsChangeHandler,
+} from "../../drawings/toolbars/defaults/layoutScope.js";
 import { mountHeaderToolbar } from "../../ui/header/toolbar/index.js";
-import { applyCursorMode } from "../cursor/mode.js";
+import { applyCursorMode, resolveThemeCrosshair } from "../cursor/mode.js";
 import { createLayoutSync } from "../layout/sync.js";
 import { wireContextMenus } from "../wire/contextMenus.js";
 import { applySymbolLineStyle } from "../symbol/lineStyle.js";
@@ -51,7 +63,9 @@ import {
   installChartDebugGlobal,
 } from "../../debug/chart/index.js";
 import { barTimeLabel } from "../../chart/format.js";
-import { chartThemeFallback } from "./themes.js";
+import { formatChartTimeLabel } from "../../chart/time/labelFormat.js";
+import { chartThemeFallback, applyCanvasPresetForTheme } from "./themes.js";
+import { saveThemePreference } from "../../ui/theme/store.js";
 import { createPaneExtras } from "./paneExtras.js";
 import { createChartWidgetApi } from "./widgetApi.js";
 
@@ -66,7 +80,10 @@ export async function bootChart(overrides = {}) {
   const debugOn = configureChartDebug();
 
   const opts = { ...readPageOptions(), ...overrides };
-  document.documentElement.setAttribute("data-theme", opts.theme);
+  /** @type {"dark" | "light"} */
+  let currentTheme = opts.theme === "light" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", currentTheme);
+  mountAppTouchScrollLock();
 
   if (debugOn) chartDebug("boot", "bootChart start", { opts });
 
@@ -79,7 +96,7 @@ export async function bootChart(overrides = {}) {
   const datafeed = resolveDatafeed(opts);
   const cfg = await datafeed.onReady();
   const themeColors =
-    cfg.themes?.[opts.theme] ?? cfg.themes?.dark ?? chartThemeFallback(opts.theme);
+    cfg.themes?.[currentTheme] ?? cfg.themes?.dark ?? chartThemeFallback(currentTheme);
   const resolutions = cfg.resolutions ?? [{ id: "1", label: "1m" }];
 
   const statusEl = document.getElementById("ohlc");
@@ -98,6 +115,19 @@ export async function bootChart(overrides = {}) {
       store: settingsStore,
       triggerEl: document.getElementById("settings-btn") ?? undefined,
       onLiveChange: () => applyChartSettingsFn(),
+      getTheme: () => currentTheme,
+      onThemeChange: (mode) => {
+        saveThemePreference(mode);
+        applyThemeMode(mode);
+      },
+      getDrawingSettings: () => ({
+        showMobilePlacementBar: drawing?.getShowMobilePlacementBar?.() ?? loadShowMobilePlacementBar(),
+      }),
+      setDrawingSetting: (key, value) => {
+        if (key !== "showMobilePlacementBar") return;
+        drawing?.setShowMobilePlacementBar?.(value);
+        saveShowMobilePlacementBar(Boolean(value));
+      },
     });
     return chartSettings;
   }
@@ -124,13 +154,31 @@ export async function bootChart(overrides = {}) {
       layoutId: layoutManager?.getLayoutId() ?? "1",
       sync: layoutManager?.getSync() ?? {},
       drawings: drawingHub?.getDrawingsByPane?.(),
+      chartSettings: structuredClone(settingsStore.get()),
+      toolDefaults: getLayoutToolDefaultsSnapshot(),
     };
+  }
+
+  function applyLayoutChartSettings(settings) {
+    if (!settings || typeof settings !== "object") return;
+    settingsStore.replace(settings, { skipHistory: true });
+    applyChartSettingsFn();
+  }
+
+  function restoreLayoutChartSettings() {
+    let settings = layoutManager?.getChartSettingsSnapshot?.() ?? null;
+    if (!settings && layoutManager) {
+      settings = findLayoutByName(layoutManager.getLayoutName())?.chartSettings ?? null;
+    }
+    applyLayoutChartSettings(settings);
   }
 
   function autosaveLayout() {
     if (!layoutManager) return;
     const entry = buildLayoutEntry();
     layoutManager.setDrawingsSnapshot(entry.drawings ?? null);
+    layoutManager.setChartSettingsSnapshot(entry.chartSettings ?? null);
+    layoutManager.setToolDefaultsSnapshot(entry.toolDefaults ?? null);
     upsertLayoutLibraryEntry(entry);
     layoutManager.markSaved();
     headerToolbarUi?.updateSaveState();
@@ -148,6 +196,14 @@ export async function bootChart(overrides = {}) {
     }, 350);
   }
 
+  function restoreLayoutToolDefaults() {
+    let toolDefaults = layoutManager?.getToolDefaultsSnapshot?.() ?? null;
+    if (!toolDefaults && layoutManager) {
+      toolDefaults = findLayoutByName(layoutManager.getLayoutName())?.toolDefaults ?? null;
+    }
+    setLayoutToolDefaults(toolDefaults);
+  }
+
   function restoreLayoutDrawings() {
     if (!drawingHub) return;
     let drawings = layoutManager?.getDrawingsSnapshot?.() ?? null;
@@ -155,6 +211,18 @@ export async function bootChart(overrides = {}) {
       drawings = findLayoutByName(layoutManager.getLayoutName())?.drawings ?? null;
     }
     if (drawings) drawingHub.setDrawingsByPane(drawings);
+  }
+
+  async function uniqueLayoutName(initial, title, confirmLabel) {
+    const name = await showLayoutNameDialog({ title, value: initial, confirmLabel });
+    if (!name) return null;
+    let unique = name;
+    let n = 2;
+    while (layoutNameExists(unique)) {
+      unique = `${name} ${n}`;
+      n += 1;
+    }
+    return unique;
   }
 
   function attachPaneDrawings(pane) {
@@ -170,8 +238,9 @@ export async function bootChart(overrides = {}) {
     if (!drawing) return;
     const tool = drawing.getActiveTool();
     const isCursor = drawing.isCursorTool();
+    const themeCrosshair = resolveThemeCrosshair(settingsStore, themeColors);
     for (const pane of getAllChartPanes()) {
-      applyCursorMode(pane.chart, pane.el, tool, isCursor, pane.series);
+      applyCursorMode(pane.chart, pane.el, tool, isCursor, pane.series, themeCrosshair);
     }
   }
 
@@ -204,10 +273,13 @@ export async function bootChart(overrides = {}) {
   }
 
   function applyThemeMode(mode) {
-    const colors = cfg.themes?.[mode] ?? cfg.themes?.dark ?? chartThemeFallback(mode);
-    document.documentElement.setAttribute("data-theme", mode);
+    currentTheme = mode === "light" ? "light" : "dark";
+    const colors = cfg.themes?.[currentTheme] ?? cfg.themes?.dark ?? chartThemeFallback(currentTheme);
+    document.documentElement.setAttribute("data-theme", currentTheme);
     applyTheme(colors);
+    applyCanvasPresetForTheme(settingsStore, currentTheme);
     applyChartSettings();
+    refreshWatermark();
   }
 
   const watermarkText = document.getElementById("watermark");
@@ -407,6 +479,7 @@ export async function bootChart(overrides = {}) {
     syncLayoutDateRangeFrom: null,
     getLayoutManager: () => layoutManager,
     prependHistory: null,
+    ensureHistoryNearEdge: null,
     setPrimaryFutureWhitespace: (n) => {
       futureWhitespaceBars = n;
     },
@@ -458,6 +531,7 @@ export async function bootChart(overrides = {}) {
       getAllChartPanes,
       tzClock,
       resolveTimezone,
+      refreshCandleData: refreshCandleData,
     });
   }
 
@@ -492,8 +566,7 @@ export async function bootChart(overrides = {}) {
 
     applySymbolLineStyleLocal();
 
-    const active = getActivePane();
-    if (drawing?.isCursorTool()) {
+    if (drawing) {
       applyDrawingCursorAll();
     }
     refreshCandleData();
@@ -513,7 +586,10 @@ export async function bootChart(overrides = {}) {
     });
     mountMarketStatusPopup(statusEl, () => ({ symbolInfo }));
   }
-  settingsStore.onChange(applyChartSettings);
+  settingsStore.onChange(() => {
+    applyChartSettings();
+    scheduleAutosaveLayout();
+  });
   applyChartSettingsFn = applyChartSettings;
 
   /** @param {number} index */
@@ -536,6 +612,16 @@ export async function bootChart(overrides = {}) {
     applyDrawingCursorAll();
   }
 
+  function chartTimeZone() {
+    const sym = settingsStore.get().symbol ?? {};
+    return resolveTimezone(sym.timezone, symbolInfo);
+  }
+
+  function formatChartLabel(unixSec, { includeTime = true } = {}) {
+    const scales = settingsStore.get().scales ?? {};
+    return formatChartTimeLabel(unixSec, scales, chartTimeZone(), { includeTime });
+  }
+
   /** @param {ChartPane} pane */
   function buildDrawingContext(pane) {
     const sym = settingsStore.get().symbol ?? {};
@@ -552,13 +638,9 @@ export async function bootChart(overrides = {}) {
       series: pane.series,
       colorBarsOnPrevClose: sym.colorBarsOnPrevClose ?? false,
       symbol: sym,
-      formatPointTime: (unixSec) =>
-        new Intl.DateTimeFormat("en-US", {
-          timeZone: tz,
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true,
-        }).format(new Date(unixSec * 1000)),
+      utcToChartTime: (t) => utcToChartTime(t, tz),
+      chartTimeToUtc: (t) => chartTimeToUtc(t, tz),
+      formatPointTime: (unixSec) => formatChartLabel(unixSec, { includeTime: true }),
     };
   }
 
@@ -587,10 +669,11 @@ export async function bootChart(overrides = {}) {
     scheduleAutosaveLayout();
   }
 
-  const { loadPaneBars, loadBarsForPanes, loadBars: loadBarsAll, pushLiveBar, prependHistory } =
+  const { loadPaneBars, loadBarsForPanes, loadBars: loadBarsAll, pushLiveBar, prependHistory, ensureHistoryNearEdge } =
     createBarLoader({
     datafeed,
     countBack: opts.countBack,
+    historyChunk: opts.historyChunk ?? opts.countBack,
     getLayoutManager: () => layoutManager,
     loader,
     refreshPaneCandleData,
@@ -621,6 +704,7 @@ export async function bootChart(overrides = {}) {
   viewportDeps.maintainLockedRatio = maintainLockedRatio;
   viewportDeps.syncLayoutDateRangeFrom = syncLayoutDateRangeFrom;
   viewportDeps.prependHistory = prependHistory;
+  viewportDeps.ensureHistoryNearEdge = ensureHistoryNearEdge;
 
   async function loadBars() {
     return loadBarsAll(getAllChartPanes, () => getActivePane() ?? chartPanes.get(0));
@@ -751,14 +835,53 @@ export async function bootChart(overrides = {}) {
         layoutManager,
         onSaveLayout: autosaveLayout,
         onLoadLayout: (item) => {
+          applyLayoutChartSettings(item.chartSettings);
+          setLayoutToolDefaults(item.toolDefaults);
+          layoutManager.setToolDefaultsSnapshot(item.toolDefaults ?? null);
           drawingHub?.setDrawingsByPane?.(item.drawings);
           autosaveLayout();
         },
         onLayoutChange: scheduleAutosaveLayout,
+        onCreateLayout: () => {
+          void (async () => {
+            if (layoutManager.isDirty()) autosaveLayout();
+            const unique = await uniqueLayoutName("Layout", "Create new layout", "Create");
+            if (!unique) return;
+            layoutManager.setLayoutName(unique);
+            drawingHub?.setDrawingsByPane?.({});
+            layoutManager.setDrawingsSnapshot(null);
+            setLayoutToolDefaults({});
+            layoutManager.setToolDefaultsSnapshot(null);
+            layoutManager.markDirty();
+            headerToolbarUi?.updateSaveState();
+          })();
+        },
+        onDuplicateLayout: () => {
+          void (async () => {
+            autosaveLayout();
+            const unique = await uniqueLayoutName(
+              `${layoutManager.getLayoutName()} copy`,
+              "Make a copy",
+              "Create copy",
+            );
+            if (!unique) return;
+            const entry = { ...buildLayoutEntry(), name: unique };
+            upsertLayoutLibraryEntry(entry);
+            layoutManager.setLayoutName(unique);
+            layoutManager.markDirty();
+            headerToolbarUi?.updateSaveState();
+          })();
+        },
+        onDeleteLayout: (name) => {
+          removeLayoutFromLibrary(name);
+        },
       });
+      setLayoutToolDefaultsChangeHandler(scheduleAutosaveLayout);
       if (drawing) {
         drawing.on("change", scheduleAutosaveLayout);
       }
+      restoreLayoutChartSettings();
+      restoreLayoutToolDefaults();
       restoreLayoutDrawings();
       if (layoutManager.getAutoSave()) {
         autosaveLayout();
@@ -845,6 +968,14 @@ export async function bootChart(overrides = {}) {
       settingsStore.set("symbol", "timezone", tz);
     },
   });
+
+  const bottomToolbar = document.getElementById("chart-bottom-toolbar");
+  if (bottomToolbar && headerToolbarUi?.fullscreen) {
+    mountBottomFullscreenExit({
+      mountEl: bottomToolbar,
+      fullscreen: headerToolbarUi.fullscreen,
+    });
+  }
 
 
   if (symbolPicker) {
@@ -950,6 +1081,7 @@ export async function bootChart(overrides = {}) {
       loadBarsForPanes,
       pushLiveBar,
       prependHistory,
+      ensureHistoryNearEdge,
       resetChartView,
       resetTimeScale,
       scrollToLatest,
@@ -957,7 +1089,7 @@ export async function bootChart(overrides = {}) {
       applySymbolFormat,
       refreshWatermark,
       refreshStatusLine,
-      barTimeLabel,
+      barTimeLabel: (bar) => barTimeLabel(bar, settingsStore.get().scales ?? {}, chartTimeZone()),
       mountChartSettingsUi,
       layoutManager,
       lastBar: last,

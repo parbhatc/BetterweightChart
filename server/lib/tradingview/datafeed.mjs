@@ -53,22 +53,36 @@ export async function tradingViewResolve(symbol) {
  */
 export async function tradingViewHistory(opts) {
   const countBack = opts.countback ?? 500;
-  const { bars, symbolInfo } = await fetchTradingViewBars(opts.symbol, opts.resolution, countBack);
-  symbolCache.set(opts.symbol, symbolInfo);
+  const resSec = RESOLUTIONS.find((r) => r.id === opts.resolution)?.sec ?? 60;
+  /** @type {{ from?: number, to?: number } | null} */
+  let range = null;
+  if (opts.to != null) {
+    const to = Number(opts.to);
+    const from = opts.from != null ? Number(opts.from) : to - countBack * resSec;
+    range = { from, to };
+  }
 
-  let out = bars;
-  if (opts.to != null) out = out.filter((b) => b.time <= opts.to);
-  if (opts.from != null) out = out.filter((b) => b.time >= opts.from);
+  try {
+    const { bars, symbolInfo, noData } = await fetchTradingViewBars(
+      opts.symbol,
+      opts.resolution,
+      countBack,
+      range,
+    );
+    symbolCache.set(opts.symbol, symbolInfo);
 
-  if (!out.length) return { s: "no_data", bars: [] };
-  return {
-    s: "ok",
-    t: out.map((b) => b.time),
-    o: out.map((b) => b.open),
-    h: out.map((b) => b.high),
-    l: out.map((b) => b.low),
-    c: out.map((b) => b.close),
-    v: out.map((b) => b.volume ?? 0),
-    meta: { symbolInfo },
-  };
+    if (!bars.length) return { s: "no_data", bars: [] };
+    return {
+      s: "ok",
+      t: bars.map((b) => b.time),
+      o: bars.map((b) => b.open),
+      h: bars.map((b) => b.high),
+      l: bars.map((b) => b.low),
+      c: bars.map((b) => b.close),
+      v: bars.map((b) => b.volume ?? 0),
+      meta: { symbolInfo, noData: Boolean(noData) || bars.length < countBack * 0.2 },
+    };
+  } catch (err) {
+    return { s: "no_data", bars: [], meta: { error: err?.message ?? String(err) } };
+  }
 }

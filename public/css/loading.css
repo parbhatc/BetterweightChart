@@ -5,9 +5,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--tv-bg) 82%, transparent);
-  backdrop-filter: blur(2px);
-  transition: opacity 0.2s ease, visibility 0.2s ease;
+  background: color-mix(in srgb, var(--tv-bg) 95%, transparent);
+  transition: opacity var(--duration-slow) var(--ease-out), visibility var(--duration-slow) var(--ease-out);
 }
 
 .app-loader--hidden {
@@ -17,12 +16,31 @@
 }
 
 .app-loader__spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid color-mix(in srgb, var(--tv-muted) 35%, transparent);
+  position: relative;
+  width: 2.5rem;
+  height: 2.5rem;
+}
+
+.app-loader__spinner::before,
+.app-loader__spinner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+}
+
+.app-loader__spinner::before {
+  border-top-color: var(--tv-border-strong);
+  border-right-color: var(--tv-border-subtle);
+  animation: app-loader-spin 1s linear infinite;
+}
+
+.app-loader__spinner::after {
+  inset: 6px;
   border-top-color: var(--tv-accent);
-  border-radius: 50%;
-  animation: app-loader-spin 0.75s linear infinite;
+  border-right-color: var(--tv-accent-soft);
+  animation: app-loader-spin 0.7s linear infinite reverse;
 }
 
 @keyframes app-loader-spin {

@@ -6,9 +6,20 @@ export function createFlyoutHost(toolbarEl) {
   /** @type {HTMLElement[]} */
   const flyouts = [];
 
+  function clearFlyoutPlacement(flyout) {
+    flyout.style.top = "";
+    flyout.style.left = "";
+    flyout.style.right = "";
+    flyout.style.bottom = "";
+    flyout.style.width = "";
+    flyout.style.height = "";
+    flyout.style.maxHeight = "";
+  }
+
   function closeAllFlyouts() {
     flyouts.forEach((m) => {
       m.hidden = true;
+      clearFlyoutPlacement(m);
     });
     toolbarEl.querySelectorAll(".draw-tools__expand").forEach((b) => {
       b.setAttribute("aria-expanded", "false");
@@ -21,14 +32,21 @@ export function createFlyoutHost(toolbarEl) {
   function positionFlyout(flyout, cluster) {
     const control = cluster.querySelector(".draw-tools__control");
     if (!control) return;
+    clearFlyoutPlacement(flyout);
+
     const pad = 8;
     const gap = 2;
     const rect = control.getBoundingClientRect();
     const toolbarRect = toolbarEl.getBoundingClientRect();
-    const top = Math.max(pad, rect.top);
     const isMega = flyout.classList.contains("draw-tools__flyout--mega");
+    const top = Math.max(pad, rect.top);
+
     flyout.style.top = `${top}px`;
-    flyout.style.left = isMega ? `${toolbarRect.right + gap}px` : `${rect.right + gap}px`;
+
+    let left = isMega ? toolbarRect.right + gap : rect.right + gap;
+    const maxLeft = window.innerWidth - pad - 160;
+    if (left > maxLeft) left = Math.max(toolbarRect.right + gap, maxLeft);
+    flyout.style.left = `${left}px`;
     flyout.style.height = "";
     flyout.style.maxHeight = "";
 
@@ -50,9 +68,11 @@ export function createFlyoutHost(toolbarEl) {
     flyouts.push(flyout);
     flyout.addEventListener("mousedown", (ev) => ev.stopPropagation());
     flyout.addEventListener("click", (ev) => ev.stopPropagation());
+    flyout.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+    flyout.addEventListener("touchstart", (ev) => ev.stopPropagation(), { passive: true });
   }
 
-  function attachFlyoutToggle(cluster, expandBtn, flyout) {
+  function attachFlyoutToggle(cluster, expandBtn, flyout, onOpen) {
     mountFlyout(flyout, cluster);
     expandBtn.addEventListener("click", (ev) => {
       ev.preventDefault();
@@ -64,6 +84,7 @@ export function createFlyoutHost(toolbarEl) {
       cluster.classList.add("draw-tools__cluster--open");
       positionFlyout(flyout, cluster);
       flyout.hidden = false;
+      onOpen?.();
     });
   }
 

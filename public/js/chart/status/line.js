@@ -78,17 +78,23 @@ export function renderStatusLine(el, opts) {
   const market = getMarketStatusDetails(symbolInfo);
   const { showTitle, titleSource } = resolveTitleSettings(sl);
 
+  let head = "";
   if (showTitle) {
-    let head = "";
     if (titleSource === "symbol") {
       head += `<span class="status-line__ticker">${symbol}</span>`;
-    } else if (titleSource === "name" && symbolInfo?.description) {
-      head += `<span class="status-line__name">${symbolInfo.description}</span>`;
+    } else if (titleSource === "name") {
+      if (symbolInfo?.description) {
+        head += `<span class="status-line__name">${symbolInfo.description}</span>`;
+      } else {
+        head += `<span class="status-line__ticker">${symbol}</span>`;
+      }
     } else if (titleSource === "symbol_name") {
       head += `<span class="status-line__ticker">${symbol}</span>`;
       if (symbolInfo?.description) {
         head += `<span class="status-line__dot" aria-hidden="true">•</span><span class="status-line__name">${symbolInfo.description}</span>`;
       }
+    } else {
+      head += `<span class="status-line__ticker">${symbol}</span>`;
     }
     if (resolution) {
       head += `<span class="status-line__dot" aria-hidden="true">•</span><span class="status-line__res">${resolution}</span>`;
@@ -96,11 +102,12 @@ export function renderStatusLine(el, opts) {
     if (symbolInfo?.exchange) {
       head += `<span class="status-line__dot" aria-hidden="true">•</span><span class="status-line__exch">${symbolInfo.exchange}</span>`;
     }
-    if (head) parts.push(`<span class="status-line__head">${head}</span>`);
   }
-  if (sl.showMarketStatus) {
-    parts.push(renderMarketStatusIcons(market));
-  }
+
+  const titleRowParts = [];
+  if (head) titleRowParts.push(`<span class="status-line__head">${head}</span>`);
+  if (sl.showMarketStatus) titleRowParts.push(renderMarketStatusIcons(market));
+
   const sym = settings.symbol ?? {};
   const colorOnPrev = Boolean(sym.colorBarsOnPrevClose);
   const barUp = isBarUp(bar, prevBar, colorOnPrev);
@@ -115,13 +122,16 @@ export function renderStatusLine(el, opts) {
     return `<span class="${pairCls.trim()}"><span class="status-line__lbl">${lbl}</span>${valHtml}</span>`;
   };
 
+  const ohlRowParts = [];
+  const tailRowParts = [];
+
   if (sl.showOHLC) {
-    parts.push(
+    ohlRowParts.push(
       pair("O", fmtNum(bar.open, precision), { colored: true }),
       pair("H", fmtNum(bar.high, precision), { colored: true }),
       pair("L", fmtNum(bar.low, precision), { colored: true }),
-      pair("C", fmtNum(bar.close, precision), { colored: true }),
     );
+    tailRowParts.push(pair("C", fmtNum(bar.close, precision), { colored: true }));
   }
 
   if (sl.showBarChange) {
@@ -130,13 +140,23 @@ export function renderStatusLine(el, opts) {
     const chgUp = barChg >= 0;
     const chgCls = barPriceClass(chgUp);
     const chgColor = candleValueColor(sym, chgUp);
-    parts.push(
-      `<span class="status-line__chg status-line__chg--${chgUp ? "up" : "down"}"><span class="status-line__val ${chgCls}" style="color:${chgColor}">${sign}${fmtNum(barChg, precision)} (${sign}${barPct.toFixed(2)}%)</span></span>`,
+    tailRowParts.push(
+      `<span class="status-line__pair status-line__chg status-line__chg--${chgUp ? "up" : "down"}"><span class="status-line__lbl">Chg</span><span class="status-line__val ${chgCls}" style="color:${chgColor}">${sign}${fmtNum(barChg, precision)} (${sign}${barPct.toFixed(2)}%)</span></span>`,
     );
   }
 
   if (sl.showVolume !== false) {
-    parts.push(pair("Vol", fmtVol(bar.volume), { colored: true, extraPairCls: "status-line__vol" }));
+    tailRowParts.push(pair("Vol", fmtVol(bar.volume), { colored: true, extraPairCls: "status-line__vol" }));
+  }
+
+  if (titleRowParts.length) {
+    parts.push(`<div class="status-line__row status-line__row--title">${titleRowParts.join("")}</div>`);
+  }
+  if (ohlRowParts.length) {
+    parts.push(`<div class="status-line__row status-line__row--ohlc">${ohlRowParts.join("")}</div>`);
+  }
+  if (tailRowParts.length) {
+    parts.push(`<div class="status-line__row status-line__row--tail">${tailRowParts.join("")}</div>`);
   }
 
   el.innerHTML = parts.join("");

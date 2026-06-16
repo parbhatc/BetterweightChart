@@ -6,7 +6,7 @@ import { mountEditToolbar } from "../toolbars/edit/index.js";
 
 
 
-const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "editText"];
+const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "editText", "placementChange"];
 
 
 
@@ -160,6 +160,10 @@ export function createMultiPaneDrawingHub(opts) {
 
     });
 
+    ctrl.on("placementChange", () => {
+      if (paneIndex === activeIndex) emit("placementChange");
+    });
+
   }
 
 
@@ -244,6 +248,8 @@ export function createMultiPaneDrawingHub(opts) {
 
     emit("selectionChange");
 
+    emit("placementChange");
+
   }
 
 
@@ -294,6 +300,14 @@ export function createMultiPaneDrawingHub(opts) {
 
     getHideAll: () => getActive()?.getHideAll() ?? false,
 
+    setStayInDrawingMode: (on) => broadcast("setStayInDrawingMode", on),
+
+    getStayInDrawingMode: () => getActive()?.getStayInDrawingMode() ?? false,
+
+    setShowMobilePlacementBar: (on) => broadcast("setShowMobilePlacementBar", on),
+
+    getShowMobilePlacementBar: () => getActive()?.getShowMobilePlacementBar() ?? true,
+
     setLockAllDrawings: (locked) => broadcast("setLockAllDrawings", locked),
 
     getLockAllDrawings: () => getActive()?.getLockAllDrawings() ?? false,
@@ -310,6 +324,16 @@ export function createMultiPaneDrawingHub(opts) {
 
     },
 
+    armChartPlacementSuppress: (ms) => getActive()?.armChartPlacementSuppress(ms),
+
+    getPlacementStaged: () => getActive()?.getPlacementStaged() ?? [],
+
+    hasPreview: () => getActive()?.hasPreview() ?? false,
+
+    cancelPlacement: () => getActive()?.cancelPlacement(),
+
+    finishMultiPointPlacement: () => getActive()?.finishMultiPointPlacement(),
+
     getSelectedId: () => getActive()?.getSelectedId() ?? null,
 
     getSelectedDrawing: () => getActive()?.getSelectedDrawing() ?? null,
@@ -323,6 +347,14 @@ export function createMultiPaneDrawingHub(opts) {
     getDrawingScreenAnchor: (drawing) => getActive()?.getDrawingScreenAnchor(drawing) ?? null,
 
     isDraggingDrawing: () => getActive()?.isDraggingDrawing() ?? false,
+
+    undoDrawing: () => getActive()?.undoDrawing() ?? false,
+
+    redoDrawing: () => getActive()?.redoDrawing() ?? false,
+
+    canUndoDrawing: () => getActive()?.canUndoDrawing() ?? false,
+
+    canRedoDrawing: () => getActive()?.canRedoDrawing() ?? false,
 
     clearAll: () => {
 

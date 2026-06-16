@@ -166,6 +166,7 @@ export const TOOL_LABELS = {
   magnet: "Magnet Mode",
   zoom: "Zoom In",
   lock: "Lock All Drawings",
+  "stay-draw": "Stay in Drawing Mode",
   hide: "Hide Drawings",
   remove: "Remove All Drawings",
 };

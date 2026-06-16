@@ -7,6 +7,7 @@ import {
   priceScaleModeFromSettings,
   resolvePriceScalePlacement,
 } from "../scale/settings.js";
+import { chartTimeToUtc } from "../timezone/chartTime.js";
 import { priceFormatFromPrecisionSetting } from "../timezone/list.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 
@@ -116,12 +117,15 @@ export function applySettingsToChart(opts) {
  * @param {object} opts.symbolInfo
  */
 export function applyChartTimezone(opts) {
-  const { settingsStore, symbolInfo, getAllChartPanes, tzClock } = opts;
+  const { settingsStore, symbolInfo, getAllChartPanes, tzClock, resolveTimezone, refreshCandleData } = opts;
   const sym = settingsStore.get().symbol ?? {};
   const scales = settingsStore.get().scales ?? {};
-  const { resolveTimezone } = opts;
   const tz = resolveTimezone(sym.timezone, symbolInfo);
-  const formatters = buildTimeScaleFormatters(scales, tz);
+  const formatters = buildTimeScaleFormatters(scales, {
+    timeZone: tz,
+    chartTimeToUtc: (chartSec) => chartTimeToUtc(chartSec, tz),
+  });
+  refreshCandleData?.();
   for (const pane of getAllChartPanes()) {
     if (pane.applyTimezone) pane.applyTimezone(tz, formatters);
   }

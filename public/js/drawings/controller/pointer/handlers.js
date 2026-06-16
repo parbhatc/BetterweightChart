@@ -45,116 +45,69 @@ function positionMoveDragExtras(drawing) {
  * @param {object} api
  */
 export function createPointerHandlers(api) {
-  function onPointerDown(ev) {
-    if (ev.button !== 0) return;
-    if (ev.target.closest(api.DRAWING_UI_SELECTOR)) return;
+  const MOBILE_TAP_SLOP_PX = 6;
+  const MOBILE_SCROLL_CANCEL_PX = 32;
+  const MOBILE_TAP_MAX_MS = 250;
+  const MOBILE_FREEHAND_START_PX = 12;
 
+  let pendingMobileTap = null;
+  let mobileScrollGesture = false;
+  /** @type {{ startClientX: number, startClientY: number, mediaX: number, mediaY: number } | null} */
+  let crosshairScrollAnchor = null;
+
+  function resetMobilePlacementGesture() {
+    pendingMobileTap = null;
+    mobileScrollGesture = false;
+    crosshairScrollAnchor = null;
+  }
+
+  function beginCrosshairScrollAnchor(clientX, clientY) {
+    const media = api.getDrawCrosshairMedia?.();
+    if (!media || !api.shouldSyncDrawCrosshair?.()) return;
+    crosshairScrollAnchor = {
+      startClientX: clientX,
+      startClientY: clientY,
+      mediaX: media.x,
+      mediaY: media.y,
+    };
+  }
+
+  function applyMobileCrosshairScroll(clientX, clientY) {
+    if (!crosshairScrollAnchor) return;
+    api.applyCrosshairScrollDelta?.(
+      clientX - crosshairScrollAnchor.startClientX,
+      clientY - crosshairScrollAnchor.startClientY,
+      crosshairScrollAnchor.mediaX,
+      crosshairScrollAnchor.mediaY,
+    );
+  }
+
+  function placeDrawPointAtCrosshair() {
+    const media = api.getDrawCrosshairMedia?.();
+    if (!media) return;
     const rect = api.container.getBoundingClientRect();
-    const px = ev.clientX - rect.left;
-    const py = ev.clientY - rect.top;
+    placeDrawPointAt(rect.left + media.x, rect.top + media.y);
+  }
 
-    const existingMeasure = api.getMeasureOverlay();
-    const wantsMeasure = api.getMeasureMode() || (api.isCursorTool() && ev.shiftKey);
+  function shouldSwallowDrawMove(ev) {
+    if (!api.isPrimaryButtonDown(ev)) return false;
+    if (api.getMeasureDragActive() || api.getFreehandDrawing()) return true;
+    if (api.hasActiveDrag() || api.isDragging()) return true;
+    if (api.isCursorTool() || api.getActiveTool() === "eraser") return false;
+    if (api.useMobileDragPlacement?.()) return true;
+    return true;
+  }
 
-    if (existingMeasure && isMeasureComplete(existingMeasure)) {
-      api.setMeasureOverlay(null);
-      api.syncChartPointerHandling();
-      return;
-    }
-
-    if (existingMeasure && !wantsMeasure) {
-      api.setMeasureOverlay(null);
-      api.syncChartPointerHandling();
-    }
-
-    if (wantsMeasure) {
-      const point = api.resolvePoint(ev.clientX, ev.clientY);
-      if (!point) return;
-      api.swallowChartPointer(ev);
-      api.setMeasureDragActive(true);
-      api.setMeasureOverlay({ start: point, end: point });
-      api.syncChartPointerHandling();
-      return;
-    }
-
-    if (api.getActiveTool() === "eraser") {
-      const idx = api.findDrawingAtPointer(ev.clientX, ev.clientY);
-      if (idx >= 0) {
-        api.swallowChartPointer(ev);
-        api.removeDrawingAt(idx);
-      }
-      return;
-    }
-
-    if (api.tryAnchorDrag(ev, px, py)) return;
-
-    if (api.isCursorTool() && api.getActiveTool() !== "eraser") {
-      const statsHit = api.findStatsHit(px, py);
-      if (statsHit) {
-        api.swallowChartPointer(ev);
-        api.selectDrawing(statsHit.id);
-        const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
-        if (originPoint) {
-          api.queuePendingDrag({
-            mode: "move",
-            drawingId: statsHit.id,
-            startPoints: statsHit.points.map((p) => ({ ...p })),
-            originPoint,
-            startClientX: ev.clientX,
-            startClientY: ev.clientY,
-            ...positionMoveDragExtras(statsHit),
-          });
-        }
-        return;
-      }
-
-      const idx = api.findDrawingAtPointer(ev.clientX, ev.clientY);
-      if (idx >= 0) {
-        api.swallowChartPointer(ev);
-        const drawing = api.getDrawings()[idx];
-        api.selectDrawing(drawing.id);
-        if (!drawing.locked && drawing.type !== "regression-trend") {
-          const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
-          if (originPoint) {
-            const p0 = drawing.points[0];
-            const p1 = drawing.points[1];
-            api.queuePendingDrag({
-              mode: "move",
-              drawingId: drawing.id,
-              startPoints:
-                drawing.type === "parallel-channel" && p0 && p1
-                  ? [p0, p1].map((p) => ({ ...p }))
-                  : drawing.type === "flat-top-bottom" && p0 && p1
-                    ? [p0, p1].map((p) => ({ ...p }))
-                    : drawing.points.map((p) => ({ ...p })),
-              originPoint,
-              startPriceOffset:
-                drawing.type === "parallel-channel" ? api.resolvePriceOffset(drawing) : undefined,
-              startFlatPrice:
-                drawing.type === "flat-top-bottom" ? api.resolveFlatPrice(drawing) : undefined,
-              startClientX: ev.clientX,
-              startClientY: ev.clientY,
-              ...positionMoveDragExtras(drawing),
-            });
-          }
-        }
-        return;
-      }
-
-      api.selectDrawing(null);
-      if (api.getValuesTooltipOnLongPress()) api.scheduleLongPress(ev.clientX, ev.clientY);
-      return;
-    }
-
-    const point = api.resolvePoint(ev.clientX, ev.clientY);
+  /** @param {number} clientX @param {number} clientY */
+  function placeDrawPointAt(clientX, clientY) {
+    const point = api.resolvePoint(clientX, clientY);
     if (!point) return;
-    api.swallowChartPointer(ev);
 
     const activeTool = api.getActiveTool();
     const placementStaged = api.getPlacementStaged();
 
     if (isRegressionTrendTool(activeTool)) {
-      const regPoint = api.resolveRegressionPoint(ev.clientX, ev.clientY);
+      const regPoint = api.resolveRegressionPoint(clientX, clientY);
       if (!regPoint) return;
       if (placementStaged.length === 0) {
         placementStaged.push(regPoint);
@@ -167,7 +120,7 @@ export function createPointerHandlers(api) {
     }
 
     if (isFreehandTool(activeTool)) {
-      api.startFreehand(point, ev.clientX, ev.clientY);
+      api.startFreehand(point, clientX, clientY);
       return;
     }
 
@@ -255,6 +208,134 @@ export function createPointerHandlers(api) {
     api.commitDrawing(newDrawing(activeTool, [...placementStaged]));
   }
 
+  function onPointerDown(ev) {
+    if (ev.button !== 0) return;
+    if (ev.target.closest(api.DRAWING_UI_SELECTOR)) return;
+
+    const rect = api.container.getBoundingClientRect();
+    const px = ev.clientX - rect.left;
+    const py = ev.clientY - rect.top;
+
+    const existingMeasure = api.getMeasureOverlay();
+    const wantsMeasure = api.getMeasureMode() || (api.isCursorTool() && ev.shiftKey);
+
+    if (existingMeasure && isMeasureComplete(existingMeasure)) {
+      api.setMeasureOverlay(null);
+      api.syncChartPointerHandling();
+      return;
+    }
+
+    if (existingMeasure && !wantsMeasure) {
+      api.setMeasureOverlay(null);
+      api.syncChartPointerHandling();
+    }
+
+    if (wantsMeasure) {
+      const point = api.resolvePoint(ev.clientX, ev.clientY);
+      if (!point) return;
+      api.swallowChartPointer(ev);
+      api.beginPointerSession(ev);
+      api.setMeasureDragActive(true);
+      api.setMeasureOverlay({ start: point, end: point });
+      api.syncChartPointerHandling();
+      return;
+    }
+
+    if (api.getActiveTool() === "eraser") {
+      const idx = api.findDrawingAtPointer(ev.clientX, ev.clientY);
+      if (idx >= 0) {
+        api.swallowChartPointer(ev);
+        api.removeDrawingAt(idx);
+      }
+      return;
+    }
+
+    if (api.tryAnchorDrag(ev, px, py)) return;
+
+    if (api.isCursorTool() && api.getActiveTool() !== "eraser") {
+      const statsHit = api.findStatsHit(px, py);
+      if (statsHit) {
+        api.swallowChartPointer(ev);
+        api.selectDrawing(statsHit.id);
+        const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
+        if (originPoint) {
+          api.beginPointerSession(ev);
+          api.queuePendingDrag({
+            mode: "move",
+            drawingId: statsHit.id,
+            startPoints: statsHit.points.map((p) => ({ ...p })),
+            originPoint,
+            startClientX: ev.clientX,
+            startClientY: ev.clientY,
+            ...positionMoveDragExtras(statsHit),
+          });
+        }
+        return;
+      }
+
+      const idx = api.findDrawingAtPointer(ev.clientX, ev.clientY);
+      if (idx >= 0) {
+        api.swallowChartPointer(ev);
+        const drawing = api.getDrawings()[idx];
+        api.selectDrawing(drawing.id);
+        if (!drawing.locked && drawing.type !== "regression-trend") {
+          const originPoint = api.resolvePoint(ev.clientX, ev.clientY);
+          if (originPoint) {
+            const p0 = drawing.points[0];
+            const p1 = drawing.points[1];
+            api.beginPointerSession(ev);
+            api.queuePendingDrag({
+              mode: "move",
+              drawingId: drawing.id,
+              startPoints:
+                drawing.type === "parallel-channel" && p0 && p1
+                  ? [p0, p1].map((p) => ({ ...p }))
+                  : drawing.type === "flat-top-bottom" && p0 && p1
+                    ? [p0, p1].map((p) => ({ ...p }))
+                    : drawing.points.map((p) => ({ ...p })),
+              originPoint,
+              startPriceOffset:
+                drawing.type === "parallel-channel" ? api.resolvePriceOffset(drawing) : undefined,
+              startFlatPrice:
+                drawing.type === "flat-top-bottom" ? api.resolveFlatPrice(drawing) : undefined,
+              startClientX: ev.clientX,
+              startClientY: ev.clientY,
+              ...positionMoveDragExtras(drawing),
+            });
+          }
+        }
+        return;
+      }
+
+      api.selectDrawing(null);
+      if (api.getValuesTooltipOnLongPress()) api.scheduleLongPress(ev.clientX, ev.clientY);
+      return;
+    }
+
+    if (!api.isCursorTool()) {
+      if (api.useMobileDragPlacement?.()) {
+        api.swallowChartPointer(ev);
+        beginCrosshairScrollAnchor(ev.clientX, ev.clientY);
+        pendingMobileTap = {
+          pointerId: ev.pointerId ?? null,
+          startX: ev.clientX,
+          startY: ev.clientY,
+          startTime: performance.now(),
+        };
+        mobileScrollGesture = false;
+        return;
+      }
+
+      api.swallowChartPointer(ev);
+      api.beginPointerSession(ev);
+    }
+
+    const point = api.resolvePoint(ev.clientX, ev.clientY);
+    if (!point) return;
+    api.syncDrawCrosshair?.(ev.clientX, ev.clientY);
+    placeDrawPointAt(ev.clientX, ev.clientY);
+  }
+
   function onChartDoubleClick(ev) {
     if (ev.target.closest(api.DRAWING_UI_SELECTOR)) return;
     if (isMultiPointTool(api.getActiveTool())) {
@@ -274,6 +355,52 @@ export function createPointerHandlers(api) {
   }
 
   function onPointerMove(ev) {
+    if (pendingMobileTap && api.isPrimaryButtonDown(ev)) {
+      const dx = ev.clientX - pendingMobileTap.startX;
+      const dy = ev.clientY - pendingMobileTap.startY;
+      const dist = Math.hypot(dx, dy);
+      const activeTool = api.getActiveTool();
+
+      if (
+        dist >= MOBILE_TAP_SLOP_PX &&
+        !isFreehandTool(activeTool) &&
+        api.shouldSyncDrawCrosshair?.()
+      ) {
+        applyMobileCrosshairScroll(ev.clientX, ev.clientY);
+      }
+
+      if (isFreehandTool(activeTool)) {
+        if (dist >= MOBILE_FREEHAND_START_PX) {
+          const point = api.resolvePoint(ev.clientX, ev.clientY);
+          if (point) {
+            pendingMobileTap = null;
+            api.swallowChartPointer(ev);
+            api.beginPointerSession(ev);
+            api.startFreehand(point, ev.clientX, ev.clientY, ev);
+          }
+        } else if (dist >= MOBILE_SCROLL_CANCEL_PX) {
+          pendingMobileTap = null;
+          mobileScrollGesture = true;
+        }
+      } else if (dist >= MOBILE_SCROLL_CANCEL_PX) {
+        pendingMobileTap = null;
+        mobileScrollGesture = true;
+      }
+    }
+
+    if (shouldSwallowDrawMove(ev)) {
+      api.swallowChartPointer(ev);
+    }
+    if (
+      api.shouldSyncDrawCrosshair?.() &&
+      api.useMobileDragPlacement?.() &&
+      api.isPrimaryButtonDown(ev) &&
+      mobileScrollGesture
+    ) {
+      applyMobileCrosshairScroll(ev.clientX, ev.clientY);
+    } else if (api.shouldSyncDrawCrosshair?.() && !api.useMobileDragPlacement?.()) {
+      api.syncDrawCrosshair(ev.clientX, ev.clientY);
+    }
     api.updateCursorMark(ev.clientX, ev.clientY);
     api.cancelLongPressIfMoved(ev.clientX, ev.clientY);
     api.updateDrawingHover(ev.clientX, ev.clientY);
@@ -286,14 +413,14 @@ export function createPointerHandlers(api) {
       return;
     }
 
-    if (api.getFreehandDrawing() && api.isPrimaryButtonDown(ev)) {
+    if (api.getFreehandDrawing()) {
       const point = api.resolvePoint(ev.clientX, ev.clientY);
       if (point) api.appendFreehandPoint(ev.clientX, ev.clientY, point);
       return;
     }
 
     if (api.isDragging() && !api.isPrimaryButtonDown(ev)) {
-      api.finishPointerDrag();
+      api.finishPointerDrag(ev);
       return;
     }
 
@@ -305,7 +432,10 @@ export function createPointerHandlers(api) {
 
     const placementStaged = api.getPlacementStaged();
     if (!placementStaged.length) return;
-    const point = api.resolvePoint(ev.clientX, ev.clientY);
+    const point =
+      api.useMobileDragPlacement?.() && api.resolveDrawCrosshairPoint?.()
+        ? api.resolveDrawCrosshairPoint()
+        : api.resolvePoint(ev.clientX, ev.clientY);
     if (!point) return;
 
     const activeTool = api.getActiveTool();
@@ -347,7 +477,31 @@ export function createPointerHandlers(api) {
     api.setPreview({ ...api.getPreview(), points: pts });
   }
 
-  function onPointerUp() {
+  function onPointerUp(ev) {
+    let pinnedFromMobileTap = false;
+    if (pendingMobileTap) {
+      const tap = pendingMobileTap;
+      pendingMobileTap = null;
+      const samePointer =
+        ev.pointerId == null || tap.pointerId == null || ev.pointerId === tap.pointerId;
+      if (
+        samePointer &&
+        !mobileScrollGesture &&
+        !isFreehandTool(api.getActiveTool())
+      ) {
+        const dx = ev.clientX - tap.startX;
+        const dy = ev.clientY - tap.startY;
+        const elapsed = performance.now() - tap.startTime;
+        if (Math.hypot(dx, dy) <= MOBILE_TAP_SLOP_PX && elapsed <= MOBILE_TAP_MAX_MS) {
+          api.swallowChartPointer(ev);
+          placeDrawPointAtCrosshair();
+          pinnedFromMobileTap = true;
+        }
+      }
+      mobileScrollGesture = false;
+      crosshairScrollAnchor = null;
+    }
+
     if (api.getMeasureDragActive()) {
       api.setMeasureDragActive(false);
       const overlay = api.getMeasureOverlay();
@@ -363,12 +517,19 @@ export function createPointerHandlers(api) {
     if (api.getFreehandDrawing()) {
       api.finishFreehand();
     }
-    api.finishPointerDrag();
+    api.finishPointerDrag(ev);
     api.clearLongPress();
     api.hideValuesTooltip();
+    if (api.shouldSyncDrawCrosshair?.() && !pinnedFromMobileTap && !api.useMobileDragPlacement?.()) {
+      api.pinDrawCrosshairAt?.(ev.clientX, ev.clientY);
+    }
+    if (api.shouldSyncDrawCrosshair?.() && api.useMobileDragPlacement?.()) {
+      crosshairScrollAnchor = null;
+      requestAnimationFrame(() => api.syncDrawCrosshairAtMediaAnchor?.());
+    }
   }
 
-  function onPointerLeave() {
+  function onPointerLeave(ev) {
     api.clearLongPress();
     api.hideValuesTooltip();
     api.setHoveredDrawing(null);
@@ -378,13 +539,54 @@ export function createPointerHandlers(api) {
   }
 
   let lastChartPointerDownAt = 0;
+  /** @type {number | null} */
+  let lastChartPointerId = null;
+
+  function shouldIgnoreChartPointerDown(ev) {
+    if (api.isChartPlacementSuppressed?.()) return true;
+    if (ev.pointerType === "mouse" && api.recentTouchInteraction?.()) return true;
+    const now = ev.timeStamp || performance.now();
+    if (
+      ev.pointerId != null &&
+      ev.pointerId === lastChartPointerId &&
+      now - lastChartPointerDownAt < 150
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   function onChartPointerDown(ev) {
     if (ev.button !== 0) return;
+    if (ev.type === "mousedown") return;
     if (ev.target.closest(api.DRAWING_UI_SELECTOR)) return;
-    const now = ev.timeStamp;
-    if (now - lastChartPointerDownAt < 40) return;
-    lastChartPointerDownAt = now;
+    if (shouldIgnoreChartPointerDown(ev)) return;
+    lastChartPointerDownAt = ev.timeStamp || performance.now();
+    lastChartPointerId = ev.pointerId ?? null;
     onPointerDown(ev);
+  }
+
+  function onDocumentPointerMove(ev) {
+    if (api.useMobileDragPlacement?.()) return;
+    if (!api.shouldSyncDrawCrosshair?.()) return;
+    if (!api.isPrimaryButtonDown?.(ev)) return;
+    api.syncDrawCrosshair(ev.clientX, ev.clientY);
+  }
+
+  function onDocumentPointerUp(ev) {
+    if (api.useMobileDragPlacement?.()) return;
+    if (!api.shouldSyncDrawCrosshair?.()) return;
+    if (ev.pointerType === "mouse") return;
+    const container = api.getContainer?.();
+    if (!container) return;
+    const rect = container.getBoundingClientRect();
+    const overChart =
+      ev.clientX >= rect.left &&
+      ev.clientX <= rect.right &&
+      ev.clientY >= rect.top &&
+      ev.clientY <= rect.bottom;
+    if (overChart) api.pinDrawCrosshairAt?.(ev.clientX, ev.clientY);
+    else api.repinDrawCrosshair?.();
   }
 
   function onCrosshairMove(param) {
@@ -393,31 +595,39 @@ export function createPointerHandlers(api) {
     else api.hideCursorMark();
   }
 
+  function onLostPointerCapture(ev) {
+    if (api.getMeasureDragActive() || api.getFreehandDrawing() || api.isDragging()) {
+      onPointerUp(ev);
+    }
+  }
+
   function bindChartListeners() {
-    api.container.addEventListener("mousedown", onChartPointerDown, true);
     api.container.addEventListener("pointerdown", onChartPointerDown, true);
     api.container.addEventListener("dblclick", onChartDoubleClick, true);
-    api.overlayRoot.addEventListener("mousemove", onPointerMove);
-    api.container.addEventListener("mousemove", onPointerMove);
-    api.container.addEventListener("mouseup", onPointerUp);
+    api.container.addEventListener("lostpointercapture", onLostPointerCapture);
+    api.overlayRoot.addEventListener("pointermove", onPointerMove);
+    api.container.addEventListener("pointermove", onPointerMove);
     api.container.addEventListener("pointerup", onPointerUp);
     api.container.addEventListener("pointercancel", onPointerUp);
-    api.overlayRoot.addEventListener("mouseleave", onPointerLeave);
+    api.overlayRoot.addEventListener("pointerleave", onPointerLeave);
     api.chart.subscribeCrosshairMove(onCrosshairMove);
+    document.addEventListener("pointermove", onDocumentPointerMove);
+    document.addEventListener("pointerup", onDocumentPointerUp);
   }
 
   function unbindChartListeners() {
-    api.container.removeEventListener("mousedown", onChartPointerDown, true);
     api.container.removeEventListener("pointerdown", onChartPointerDown, true);
     api.container.removeEventListener("dblclick", onChartDoubleClick, true);
-    api.overlayRoot.removeEventListener("mousemove", onPointerMove);
-    api.container.removeEventListener("mousemove", onPointerMove);
-    api.container.removeEventListener("mouseup", onPointerUp);
+    api.container.removeEventListener("lostpointercapture", onLostPointerCapture);
+    api.overlayRoot.removeEventListener("pointermove", onPointerMove);
+    api.container.removeEventListener("pointermove", onPointerMove);
     api.container.removeEventListener("pointerup", onPointerUp);
     api.container.removeEventListener("pointercancel", onPointerUp);
-    api.overlayRoot.removeEventListener("mouseleave", onPointerLeave);
+    api.overlayRoot.removeEventListener("pointerleave", onPointerLeave);
     api.chart.unsubscribeCrosshairMove(onCrosshairMove);
+    document.removeEventListener("pointermove", onDocumentPointerMove);
+    document.removeEventListener("pointerup", onDocumentPointerUp);
   }
 
-  return { bindChartListeners, unbindChartListeners, onKeyDown: null };
+  return { bindChartListeners, unbindChartListeners, resetMobilePlacementGesture };
 }

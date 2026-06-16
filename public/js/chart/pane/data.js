@@ -9,6 +9,7 @@ import {
 } from "../future/whitespace.js";
 import { isElectronicSession } from "../../primitives/session/background.js";
 import { resolveTimezone } from "../timezone/list.js";
+import { chartTimeZoneForPane, utcToChartTime } from "../timezone/chartTime.js";
 import { BAR_SEC } from "../constants.js";
 import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
 
@@ -23,9 +24,11 @@ export function chartMapBarsForPane(pane, settingsStore, symbolInfo, resolutions
   const bars = barsForPane(pane, settingsStore, symbolInfo);
   const barSec = barSecForPane(pane, resolutions);
   const ws = pane.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
+  const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
+  const shifted = bars.map((b) => ({ ...b, time: utcToChartTime(b.time, tz) }));
   return {
     bars,
-    mapBars: withFutureWhitespace(bars, barSec, ws),
+    mapBars: withFutureWhitespace(shifted, barSec, ws),
     barSec,
   };
 }
@@ -61,7 +64,9 @@ export function barsForPane(pane, settingsStore, symbolInfo) {
  */
 export function buildChartSeriesForPane(pane, visible, settingsStore, resolutions) {
   const sym = settingsStore.get().symbol ?? {};
-  const candles = buildCandleSeriesData(visible, sym);
+  const tz = chartTimeZoneForPane(pane, settingsStore, pane.symbolInfo ?? null);
+  const shifted = visible.map((b) => ({ ...b, time: utcToChartTime(b.time, tz) }));
+  const candles = buildCandleSeriesData(shifted, sym);
   const ws = pane.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
   return withFutureWhitespace(candles, barSecForPane(pane, resolutions), ws);
 }
@@ -143,9 +148,11 @@ export function updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInf
     const idx = visible.findIndex((b) => b.time === bar.time);
     if (idx < 0) return false;
 
+    const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
     const context = visible.slice(Math.max(0, idx - 1), idx + 1);
     const candle = buildCandleSeriesData(context, sym).at(-1);
     if (!candle) return false;
+    candle.time = utcToChartTime(bar.time, tz);
 
     try {
       pane.series.update(candle, true);

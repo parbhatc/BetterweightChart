@@ -242,7 +242,10 @@ export function mountTimeScaleContextMenu(opts) {
   });
 
   window.addEventListener("resize", close);
-  window.addEventListener("scroll", close, true);
+  window.addEventListener("scroll", () => {
+    if (root.hidden && !submenuEl) return;
+    close();
+  }, true);
 
   registerContextMenu({
     close,

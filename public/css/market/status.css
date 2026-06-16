@@ -1,7 +1,7 @@
 .mkt-icons {
   display: inline-flex;
   align-items: center;
-  gap: 0.15rem;
+  gap: var(--space-1);
   line-height: 1;
 }
 
@@ -9,19 +9,25 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 1.35rem;
-  height: 1.35rem;
+  width: var(--control-size-sm);
+  height: var(--control-size-sm);
   padding: 0;
   border: none;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
   background: transparent;
   cursor: pointer;
   color: var(--tv-muted);
-  transition: background 0.12s ease, color 0.12s ease;
 }
 
-.mkt-icon:hover {
-  background: color-mix(in srgb, var(--tv-text) 8%, transparent);
+@media (hover: hover) {
+  .mkt-icon {
+    transition: var(--transition-colors);
+  }
+
+  .mkt-icon:hover {
+    background: var(--tv-surface-hover);
+    color: var(--tv-text);
+  }
 }
 
 .mkt-icon svg {
@@ -39,20 +45,21 @@
 }
 
 .mkt-icon--delay {
-  color: #f57c00;
+  color: var(--tv-warning);
 }
 
 .mkt-popup {
   position: fixed;
   z-index: 450;
-  width: min(22rem, calc(100vw - 16px));
+  width: min(22rem, calc(100vw - var(--space-4)));
   background: var(--tv-surface);
   border: 1px solid var(--tv-border);
-  border-radius: 6px;
-  box-shadow: 0 4px 20px color-mix(in srgb, #000 40%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-popover);
   color: var(--tv-text);
-  font-size: 0.8rem;
+  font-size: var(--text-base);
   user-select: none;
+  overflow: hidden;
 }
 
 .mkt-popup[hidden] {
@@ -65,18 +72,24 @@
   gap: 0;
   max-height: min(70vh, 24rem);
   overflow-y: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tv-border) transparent;
 }
 
 .mkt-popup__inner::-webkit-scrollbar {
-  display: none;
+  width: 6px;
+}
+
+.mkt-popup__inner::-webkit-scrollbar-thumb {
+  background: var(--tv-border);
+  border-radius: var(--radius-full);
 }
 
 .mkt-widget {
   display: flex;
-  gap: 0.65rem;
-  padding: 0.85rem 0.9rem;
-  border-bottom: 1px solid var(--tv-border);
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--tv-border-subtle);
 }
 
 .mkt-widget:last-child {
@@ -87,7 +100,7 @@
   flex-shrink: 0;
   display: flex;
   align-items: flex-start;
-  padding-top: 0.1rem;
+  padding-top: var(--space-1);
 }
 
 .mkt-widget__icon svg {
@@ -104,7 +117,7 @@
 }
 
 .mkt-widget__icon--delay {
-  color: #f57c00;
+  color: var(--tv-warning);
 }
 
 .mkt-widget__body {
@@ -113,9 +126,10 @@
 }
 
 .mkt-widget__title {
-  font-weight: 600;
-  font-size: 0.85rem;
-  margin-bottom: 0.35rem;
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-md);
+  margin-bottom: var(--space-2);
+  line-height: var(--leading-snug);
 }
 
 .mkt-widget__title--open {
@@ -127,14 +141,14 @@
 }
 
 .mkt-widget__title--delay {
-  color: #f57c00;
+  color: var(--tv-warning);
 }
 
 .mkt-widget__text {
-  margin: 0 0 0.65rem;
-  line-height: 1.45;
+  margin: 0 0 var(--space-3);
+  line-height: var(--leading-normal);
   color: var(--tv-muted);
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
 }
 
 .mkt-widget__item {
@@ -142,24 +156,26 @@
 }
 
 .mkt-widget__item--bold {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   color: var(--tv-text);
-  margin-top: 0.2rem;
+  margin-top: var(--space-1);
 }
 
 .mkt-session {
-  margin-top: 0.15rem;
+  margin-top: var(--space-1);
 }
 
 .mkt-session__day {
-  margin-bottom: 0.35rem;
+  margin-bottom: var(--space-2);
 }
 
 .mkt-session__weekday {
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   color: var(--tv-muted);
-  margin-bottom: 0.25rem;
-  font-weight: 600;
+  margin-bottom: var(--space-1);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
 }
 
 .mkt-session__track-wrap {
@@ -170,7 +186,7 @@
 .mkt-session__track {
   position: relative;
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--radius-xs);
   overflow: hidden;
   background: color-mix(in srgb, var(--tv-muted) 25%, transparent);
 }
@@ -205,19 +221,20 @@
 .mkt-session__mark-row {
   position: relative;
   height: 1rem;
-  margin-bottom: 0.25rem;
+  margin-bottom: var(--space-1);
 }
 
 .mkt-session__mark {
   position: absolute;
   transform: translateX(-50%);
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   color: var(--tv-muted);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .mkt-session__tz {
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   color: var(--tv-muted);
-  margin-top: 0.35rem;
+  margin-top: var(--space-2);
 }

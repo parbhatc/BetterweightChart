@@ -1,4 +1,5 @@
 import { CHEVRON_RIGHT, drawToolIcon } from "../catalog/icons.js";
+import { NARROW_DRAW_TOOLBAR_MQ, MOBILE_DRAW_TOOLBAR_MQ } from "./collapse.js";
 import {
   CURSOR_ICON,
   SUPPORTED_DRAW_TOOLS,
@@ -20,6 +21,7 @@ import { createUtilityToolbarUi } from "./utility/index.js";
  * @param {() => void} ctx.closeAllFlyouts
  * @param {import("./flyout/host.js").createFlyoutHost} ctx.flyout
  * @param {(actionsEl: HTMLElement, toolType: string) => void} ctx.attachFavoriteButton
+ * @param {() => void} [ctx.maybeExpandToolbar]
  */
 export function createToolbarBuilders(ctx) {
   const {
@@ -33,6 +35,7 @@ export function createToolbarBuilders(ctx) {
     closeAllFlyouts,
     flyout,
     attachFavoriteButton,
+    maybeExpandToolbar,
   } = ctx;
 
   const { attachFlyoutToggle } = flyout;
@@ -60,7 +63,15 @@ export function createToolbarBuilders(ctx) {
     const actionsEl = item.querySelector(".draw-tools__flyout-item-actions");
     if (actionsEl) attachFavoriteButton(actionsEl, toolType);
 
-    item.addEventListener("click", () => selectTool(toolType, group.id));
+    item.addEventListener("pointerdown", (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    });
+    item.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      controller.armChartPlacementSuppress?.();
+      selectTool(toolType, group.id);
+    });
     return item;
   }
 
@@ -201,6 +212,12 @@ export function createToolbarBuilders(ctx) {
       group.icon,
     );
     mainBtn.addEventListener("click", () => {
+      maybeExpandToolbar?.();
+      if (MOBILE_DRAW_TOOLBAR_MQ.matches && control.querySelector(".draw-tools__expand")) {
+        controller.armChartPlacementSuppress?.();
+        control.querySelector(".draw-tools__expand")?.click();
+        return;
+      }
       if (group.isCursor) selectCursorTool(cursorSelection);
       else selectTool(groupSelection[group.id] ?? group.defaultTool, group.id);
     });
@@ -219,6 +236,7 @@ export function createToolbarBuilders(ctx) {
     closeAllFlyouts,
     flyout,
     selectCursorTool,
+    maybeExpandToolbar,
   });
 
   return {

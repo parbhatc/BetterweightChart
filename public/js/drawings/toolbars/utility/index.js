@@ -1,4 +1,5 @@
 import { CHEVRON_RIGHT, drawToolIcon } from "../../catalog/icons.js";
+import { NARROW_DRAW_TOOLBAR_MQ, MOBILE_DRAW_TOOLBAR_MQ } from "../collapse.js";
 
 /**
  * @param {object} ctx
@@ -7,9 +8,10 @@ import { CHEVRON_RIGHT, drawToolIcon } from "../../catalog/icons.js";
  * @param {() => void} ctx.closeAllFlyouts
  * @param {import("../flyout/host.js").createFlyoutHost} ctx.flyout
  * @param {(type: string) => void} ctx.selectCursorTool
+ * @param {() => void} [ctx.maybeExpandToolbar]
  */
 export function createUtilityToolbarUi(ctx) {
-  const { toolbarEl, controller, closeAllFlyouts, flyout, selectCursorTool } = ctx;
+  const { toolbarEl, controller, closeAllFlyouts, flyout, selectCursorTool, maybeExpandToolbar } = ctx;
   const { attachFlyoutToggle } = flyout;
 
   function buildUtilityFlyout(cluster, control, items, onItem) {
@@ -58,7 +60,7 @@ export function createUtilityToolbarUi(ctx) {
       flyoutEl.appendChild(row);
     }
 
-    attachFlyoutToggle(cluster, expandBtn, flyoutEl);
+    attachFlyoutToggle(cluster, expandBtn, flyoutEl, syncUtilityUi);
     control.appendChild(expandBtn);
     return flyoutEl;
   }
@@ -75,15 +77,43 @@ export function createUtilityToolbarUi(ctx) {
       magnetBtn.classList.toggle("draw-tools__tool--active", mode !== "off");
       magnetBtn.innerHTML = drawToolIcon(mode === "strong" ? "magnet-strong" : "magnet");
     }
+    const stayDrawBtn = toolbarEl.querySelector('[data-draw-action="stay-draw"]');
+    if (stayDrawBtn) {
+      const on = controller.getStayInDrawingMode();
+      stayDrawBtn.classList.toggle("draw-tools__tool--active", on);
+      stayDrawBtn.setAttribute("aria-pressed", String(on));
+      stayDrawBtn.title = on ? "Stay in drawing mode" : "Return to cursor after drawing";
+      stayDrawBtn.setAttribute("aria-label", stayDrawBtn.title);
+      stayDrawBtn.innerHTML = drawToolIcon(on ? "stay-draw-locked" : "stay-draw-unlocked");
+    }
     const lockBtn = toolbarEl.querySelector('[data-draw-action="lock"]');
     if (lockBtn) {
-      lockBtn.classList.toggle("draw-tools__tool--active", controller.getLockAllDrawings());
-      lockBtn.setAttribute("aria-pressed", String(controller.getLockAllDrawings()));
+      const locked = controller.getLockAllDrawings();
+      lockBtn.classList.toggle("draw-tools__tool--active", locked);
+      lockBtn.setAttribute("aria-pressed", String(locked));
+      lockBtn.title = locked ? "Unlock all drawings" : "Lock all drawings";
+      lockBtn.setAttribute("aria-label", lockBtn.title);
+      lockBtn.innerHTML = drawToolIcon(locked ? "lock" : "unlock");
     }
     const hideBtn = toolbarEl.querySelector('[data-draw-action="hide"]');
     if (hideBtn) {
-      hideBtn.classList.toggle("draw-tools__tool--active", controller.getDrawingsHidden() || controller.getHideAll());
+      const hidden = controller.getDrawingsHidden() || controller.getHideAll();
+      hideBtn.classList.toggle("draw-tools__tool--active", hidden);
+      hideBtn.setAttribute("aria-pressed", String(hidden));
     }
+    document.querySelectorAll("#draw-flyout-hide [data-utility-action]").forEach((el) => {
+      const id = el.dataset.utilityAction;
+      if (id === "hide-drawings") {
+        const on = controller.getDrawingsHidden();
+        el.classList.toggle("draw-tools__flyout-item--active", on);
+        el.setAttribute("aria-pressed", String(on));
+      }
+      if (id === "hide-all") {
+        const on = controller.getHideAll();
+        el.classList.toggle("draw-tools__flyout-item--active", on);
+        el.setAttribute("aria-pressed", String(on));
+      }
+    });
     document.querySelectorAll("#draw-flyout-remove [data-utility-action]").forEach((el) => {
       const id = el.dataset.utilityAction;
       const labelEl = el.querySelector(".draw-tools__flyout-label");
@@ -112,6 +142,7 @@ export function createUtilityToolbarUi(ctx) {
 
   function buildRemoveFlyout(cluster, control) {
     const flyoutEl = buildUtilityFlyout(cluster, control, [], () => {});
+    if (!flyoutEl) return;
     flyoutEl.id = "draw-flyout-remove";
     flyoutEl.innerHTML = "";
 
@@ -153,19 +184,21 @@ export function createUtilityToolbarUi(ctx) {
   }
 
   function buildHideFlyout(cluster, control) {
-    buildUtilityFlyout(cluster, control, [], () => {});
-    const flyoutEl = cluster.querySelector(".draw-tools__flyout");
+    const flyoutEl = buildUtilityFlyout(cluster, control, [], () => {});
     if (!flyoutEl) return;
     flyoutEl.id = "draw-flyout-hide";
     flyoutEl.innerHTML = "";
 
-    const addRow = (id, label, onClick) => {
+    const addRow = (id, label, icon, onClick, isActive = () => false) => {
       const row = document.createElement("button");
       row.type = "button";
       row.className = "draw-tools__flyout-item";
       row.dataset.utilityAction = id;
       row.setAttribute("role", "menuitem");
-      row.innerHTML = `<span class="draw-tools__flyout-label">${label}</span>`;
+      const active = isActive();
+      if (active) row.classList.add("draw-tools__flyout-item--active");
+      row.setAttribute("aria-pressed", String(active));
+      row.innerHTML = `${drawToolIcon(icon)}<span class="draw-tools__flyout-label">${label}</span>`;
       row.addEventListener("click", () => {
         onClick();
         closeAllFlyouts();
@@ -174,18 +207,17 @@ export function createUtilityToolbarUi(ctx) {
       flyoutEl.appendChild(row);
     };
 
-    addRow("hide-drawings", "Hide drawings", () => {
+    addRow("hide-drawings", "Hide Drawings", "hide", () => {
       controller.setDrawingsHidden(!controller.getDrawingsHidden());
       if (!controller.getDrawingsHidden()) controller.setHideAll(false);
-    });
-    addRow("hide-all", "Hide all", () => {
+    }, () => controller.getDrawingsHidden());
+    addRow("hide-all", "Hide all", "hide", () => {
       controller.setHideAll(!controller.getHideAll());
-    });
+    }, () => controller.getHideAll());
   }
 
   function buildMagnetFlyout(cluster, control) {
-    buildUtilityFlyout(cluster, control, [], () => {});
-    const flyoutEl = cluster.querySelector(".draw-tools__flyout");
+    const flyoutEl = buildUtilityFlyout(cluster, control, [], () => {});
     if (!flyoutEl) return;
     flyoutEl.id = "draw-flyout-magnet";
     flyoutEl.innerHTML = "";
@@ -209,7 +241,7 @@ export function createUtilityToolbarUi(ctx) {
     }
   }
 
-  function buildUtilityCluster({ id, label, icon, withFlyout, onPrimaryClick }) {
+  function buildUtilityCluster({ id, label, icon, withFlyout, onPrimaryClick, primaryOpensFlyout }) {
     const cluster = document.createElement("div");
     cluster.className = "draw-tools__cluster";
     cluster.dataset.utilityGroup = id;
@@ -224,7 +256,15 @@ export function createUtilityToolbarUi(ctx) {
     btn.title = label;
     btn.setAttribute("aria-label", label);
     btn.innerHTML = drawToolIcon(icon);
-    btn.addEventListener("click", onPrimaryClick);
+    btn.addEventListener("click", () => {
+      maybeExpandToolbar?.();
+      if ((primaryOpensFlyout || MOBILE_DRAW_TOOLBAR_MQ.matches) && withFlyout) {
+        controller.armChartPlacementSuppress?.();
+        control.querySelector(".draw-tools__expand")?.click();
+        return;
+      }
+      onPrimaryClick?.();
+    });
     control.appendChild(btn);
     cluster.appendChild(control);
 
