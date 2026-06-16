@@ -67,6 +67,7 @@ export async function bootChart(overrides = {}) {
   initPrimaryChart(ctx);
   attachPaneExtrasBoot(ctx);
   ctx.setupPaneExtras(ctx.chartPanes.get(0), ctx.statusEl ?? undefined);
+  ctx.wireLayoutPaneSync(ctx.chart);
 
   ctx.settingsStore.onChange(() => {
     ctx.applyChartSettings();
@@ -86,7 +87,9 @@ export async function bootChart(overrides = {}) {
       ctx.layoutAutosaveTimer = null;
     }
     ctx.persistPaneSymbols();
-    ctx.autosaveLayout();
+    if (ctx.layoutManager?.getAutoSave()) {
+      ctx.saveLayoutToLibrary();
+    }
   });
 
   const primaryWrap =

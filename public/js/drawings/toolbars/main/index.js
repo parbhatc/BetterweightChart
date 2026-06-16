@@ -71,7 +71,11 @@ export function mountMainToolbar(opts) {
     favBtn.addEventListener("click", (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
+      const adding = !isFavoriteTool(favoriteTools, toolType);
       favoriteTools = toggleFavoriteTool(favoriteTools, toolType);
+      if (adding && favoriteTools.includes(toolType)) {
+        setFavoriteToolbarVisible(true);
+      }
       syncFavoriteButtons();
       favoriteToolbar.render();
     });

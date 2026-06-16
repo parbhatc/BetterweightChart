@@ -8,6 +8,48 @@ import { mountEditToolbar } from "../toolbars/edit/index.js";
 
 const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "editText", "placementChange"];
 
+/**
+ * @param {{ time: number, close: number }[]} bars
+ * @param {number} time
+ */
+function barCloseAtTime(bars, time) {
+  if (!bars?.length) return undefined;
+  const exact = bars.find((b) => b.time === time);
+  if (exact) return exact.close;
+  return bars.filter((b) => b.time <= time).at(-1)?.close;
+}
+
+/**
+ * @param {object} sourceCtx
+ * @param {object} targetCtx
+ * @param {{ time?: number, price?: number, drawDot?: boolean } | null} snapshot
+ */
+function remapCrosshairSnapshot(sourceCtx, targetCtx, snapshot) {
+  if (snapshot?.time == null || snapshot.price == null) return snapshot;
+  if ((sourceCtx.paneSymbol ?? "") === (targetCtx.paneSymbol ?? "")) return snapshot;
+  const price = barCloseAtTime(targetCtx.utcBars, snapshot.time);
+  return price != null ? { ...snapshot, price } : snapshot;
+}
+
+/**
+ * @param {import("../types.js").UserDrawing[]} drawings
+ * @param {object} sourceCtx
+ * @param {object} targetCtx
+ */
+function remapDrawingsForPane(drawings, sourceCtx, targetCtx) {
+  if ((sourceCtx.paneSymbol ?? "") === (targetCtx.paneSymbol ?? "")) {
+    return structuredClone(drawings);
+  }
+  const bars = targetCtx.utcBars ?? [];
+  return structuredClone(drawings).map((d) => ({
+    ...d,
+    points: d.points.map((pt) => ({
+      ...pt,
+      price: barCloseAtTime(bars, pt.time) ?? pt.price,
+    })),
+  }));
+}
+
 
 
 /**
@@ -128,6 +170,7 @@ export function createMultiPaneDrawingHub(opts) {
 
     const clone = structuredClone(source.getDrawings());
     const selectedId = source.getSelectedId();
+    const sourceCtx = getContextForPane(sourceIndex);
 
     syncingDrawings = true;
 
@@ -137,10 +180,12 @@ export function createMultiPaneDrawingHub(opts) {
 
         if (idx === sourceIndex) continue;
 
+        const mapped = remapDrawingsForPane(clone, sourceCtx, getContextForPane(idx));
+
         if (opts.dragFrame) {
-          ctrl.applyDrawingsSync(clone, selectedId);
+          ctrl.applyDrawingsSync(mapped, selectedId);
         } else {
-          ctrl.replaceDrawings(clone, { silent: true });
+          ctrl.replaceDrawings(mapped, { silent: true });
           ctrl.selectDrawing(selectedId, { silent: true });
         }
 
@@ -190,13 +235,15 @@ export function createMultiPaneDrawingHub(opts) {
     if (key === lastGlobalCrosshairKey) return;
     lastGlobalCrosshairKey = key;
 
+    const sourceCtx = getContextForPane(sourceIndex);
     syncingDrawings = true;
     try {
       for (const [idx, ctrl] of controllers) {
         if (idx === sourceIndex) continue;
         const chart = charts.get(idx);
         if (chart) crosshairEchoCharts.add(chart);
-        ctrl.applyCrosshairSyncSnapshot?.(snapshot);
+        const mapped = remapCrosshairSnapshot(sourceCtx, getContextForPane(idx), snapshot);
+        ctrl.applyCrosshairSyncSnapshot?.(mapped);
       }
     } finally {
       syncingDrawings = false;

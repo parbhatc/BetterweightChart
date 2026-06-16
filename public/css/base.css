@@ -35,6 +35,9 @@
   --tv-warning: #d29922;
   --tv-favorite: #d29922;
 
+  /* Multi-chart active pane ring (TradingView-style) */
+  --tv-pane-active-ring: #2962ff;
+
   /* Settings switches & primary actions */
   --tv-switch-track: var(--tv-border-strong);
   --tv-switch-on: color-mix(in srgb, var(--tv-up) 55%, var(--tv-border-strong));
@@ -161,6 +164,8 @@
   --tv-down-soft: rgb(220 38 38 / 0.12);
   --tv-warning: #ca8a04;
   --tv-favorite: #ca8a04;
+
+  --tv-pane-active-ring: #2962ff;
 
   --tv-switch-track: var(--tv-border-strong);
   --tv-switch-on: var(--tv-accent);

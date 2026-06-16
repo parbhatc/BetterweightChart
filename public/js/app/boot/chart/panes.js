@@ -29,9 +29,20 @@ export function attachPaneHelpers(ctx) {
     return getAllChartPanes().map((p) => ({ chart: p.chart, series: p.series }));
   }
 
+  function getLayoutPanes() {
+    return getAllChartPanes().map((p) => ({
+      chart: p.chart,
+      series: p.series,
+      symbol: p.symbol,
+      bars: p.bars,
+    }));
+  }
+
   const { syncLayoutDateRangeFrom, syncLayoutCrosshairFrom, wireLayoutPaneSync } = createLayoutSync({
     getLayoutManager: () => ctx.layoutManager,
     getLayoutCharts,
+    getLayoutPanes,
+    isBarsLoading: () => Boolean(ctx.ui?.barsLoading),
   });
   ctx.syncLayoutDateRangeFrom = syncLayoutDateRangeFrom;
   ctx.wireLayoutPaneSync = wireLayoutPaneSync;

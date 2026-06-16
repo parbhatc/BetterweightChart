@@ -298,9 +298,6 @@ export function createPaneExtras(deps) {
       chartDebugTime("perf", `visibleRangeHandler pane ${pane.index}`, () => {
         if (pane.index === 0) {
           viewportDeps?.maintainLockedRatio?.();
-          if (viewportDeps?.getLayoutManager?.()?.getSync().dateRange) {
-            viewportDeps?.syncLayoutDateRangeFrom?.(pane.chart);
-          }
         }
 
         const r = pane.chart.timeScale().getVisibleLogicalRange();

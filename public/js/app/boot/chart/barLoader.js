@@ -13,6 +13,7 @@ export function attachBarLoader(ctx) {
     countBack: ctx.opts.countBack,
     historyChunk: ctx.opts.historyChunk ?? ctx.opts.countBack,
     getLayoutManager: () => ctx.layoutManager,
+    getAllChartPanes: ctx.getAllChartPanes,
     loader: ctx.loader,
     refreshPaneCandleData: ctx.refreshPaneCandleData,
     applyLiveBarToPane: (pane) =>
@@ -36,6 +37,12 @@ export function attachBarLoader(ctx) {
     },
     onPaneBarUpdate: (pane) => {
       pane.priceLineLabel?.requestRefresh();
+    },
+    onHistoryPrepended: (pane) => {
+      if (!ctx.layoutManager?.getSync().dateRange) return;
+      const panes = ctx.getAllChartPanes();
+      const source = panes.reduce((best, p) => (p.bars.length > best.bars.length ? p : best), pane);
+      ctx.syncLayoutDateRangeFrom(source.chart);
     },
   });
 

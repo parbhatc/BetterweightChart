@@ -62,6 +62,7 @@ export function createBarLoader(opts) {
     countBack,
     historyChunk = DEFAULT_HISTORY_CHUNK,
     getLayoutManager,
+    getAllChartPanes,
     loader,
     refreshPaneCandleData,
     applyLiveBarToPane,
@@ -195,11 +196,83 @@ export function createBarLoader(opts) {
 
   /**
    * @param {object} pane
+   * @param {object[]} olderBars
+   * @param {{ adjustViewport?: boolean, reason?: string }} [opts]
+   */
+  function mergeOlderBarsIntoPane(pane, olderBars, opts = {}) {
+    if (!pane.bars.length || !olderBars.length) return 0;
+    const firstTime = pane.bars[0].time;
+    const relevant = olderBars.filter((b) => b.time < firstTime);
+    if (!relevant.length) return 0;
+
+    const ts = pane.chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    const beforeLen = pane.bars.length;
+    pane.bars = mergeBarsDeduped(relevant, pane.bars);
+    const added = pane.bars.length - beforeLen;
+    if (added <= 0) return 0;
+
+    pane.mapBars = null;
+    pane.shiftedBars = null;
+    pane._shiftedKey = null;
+    pane._historyExhausted = false;
+    refreshPaneCandleData(pane);
+    if (pane.index === 0) setPrimaryBars(pane);
+    publishResolutionCache(pane);
+    onHistoryPrepended?.(pane, added);
+    chartDebug("data", opts.reason ?? "history merged", {
+      pane: pane.index,
+      added,
+      total: pane.bars.length,
+    });
+
+    if (opts.adjustViewport !== false && range) {
+      ts.setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
+    }
+    return added;
+  }
+
+  function getSeriesPeerPanes(pane) {
+    return (getAllChartPanes?.() ?? []).filter(
+      (p) =>
+        p !== pane &&
+        p.symbol === pane.symbol &&
+        p.resolution === pane.resolution &&
+        p.bars?.length,
+    );
+  }
+
+  async function ensurePaneSymbolInfo(pane) {
+    if (!pane.symbolInfo && pane.symbol) {
+      pane.symbolInfo = await datafeed.resolveSymbol(pane.symbol);
+    }
+  }
+
+  function trySyncHistoryFromPeer(pane) {
+    const peers = getSeriesPeerPanes(pane).filter((p) => p.bars.length > pane.bars.length);
+    if (!peers.length) return false;
+    const peer = peers.reduce((best, p) => (p.bars.length > best.bars.length ? p : best));
+    return mergeOlderBarsIntoPane(pane, peer.bars, { reason: "history synced from peer" }) > 0;
+  }
+
+  function syncPrependedBarsToPeers(sourcePane, olderBars) {
+    for (const peer of getSeriesPeerPanes(sourcePane)) {
+      if (peer.bars.length >= sourcePane.bars.length) continue;
+      mergeOlderBarsIntoPane(peer, olderBars, { reason: "history synced from peer prepend" });
+    }
+  }
+
+  /**
+   * @param {object} pane
    * @param {number} [chunk]
    */
   async function prependHistory(pane, chunk = historyChunk) {
-    if (pane._loadingHistory || !pane.bars.length || !pane.symbolInfo) return false;
+    if (pane._loadingHistory || !pane.bars.length) return false;
     if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
+    await ensurePaneSymbolInfo(pane);
+    if (!pane.symbolInfo) return false;
+    if (trySyncHistoryFromPeer(pane)) return true;
+
     pane._loadingHistory = true;
     try {
       const first = pane.bars[0];
@@ -231,26 +304,13 @@ export function createBarLoader(opts) {
         return false;
       }
 
-      const ts = pane.chart.timeScale();
-      const range = ts.getVisibleLogicalRange();
-      const beforeLen = pane.bars.length;
-
-      pane.bars = mergeBarsDeduped(older, pane.bars);
-
-      const added = pane.bars.length - beforeLen;
+      const added = mergeOlderBarsIntoPane(pane, older, { reason: "history prepended", adjustViewport: true });
       if (added <= 0) {
         pane._historyExhausted = true;
         return false;
       }
-
-      chartDebug("data", "history prepended", { pane: pane.index, added, total: pane.bars.length });
-      refreshPaneCandleData(pane);
-      if (pane.index === 0) setPrimaryBars(pane);
-      onHistoryPrepended?.(pane, added);
-
-      if (range) {
-        ts.setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
-      }
+      syncPrependedBarsToPeers(pane, older);
+      publishResolutionCache(pane);
       return true;
     } catch (err) {
       chartDebug("data", "prependHistory failed", { pane: pane.index, err: String(err) });
@@ -272,7 +332,8 @@ export function createBarLoader(opts) {
     return hasLeadingGap(pane.bars, barSec);
   }
 
-  function finishPaneAfterBarsLoaded(pane) {
+  async function finishPaneAfterBarsLoaded(pane) {
+    await ensurePaneSymbolInfo(pane);
     refreshPaneCandleData(pane);
     subscribePane(pane);
     publishResolutionCache(pane);
@@ -284,7 +345,7 @@ export function createBarLoader(opts) {
     return pane.bars.at(-1);
   }
 
-  function tryLoadPaneFromResolutionCache(pane, reason) {
+  async function tryLoadPaneFromResolutionCache(pane, reason) {
     if (!tryRestorePaneResolutionCache(pane)) return null;
     chartDebug("data", "loadPaneBars restored from cache", {
       pane: pane.index,
@@ -364,11 +425,11 @@ export function createBarLoader(opts) {
       if (opts.force) {
         unsubscribePane(pane.index);
         pane._historyErrorUntil = null;
-        const restored = tryLoadPaneFromResolutionCache(pane, "force");
+        const restored = await tryLoadPaneFromResolutionCache(pane, "force");
         if (restored) return restored;
         clearPaneBarState(pane);
       } else if (!pane.bars?.length) {
-        const restored = tryLoadPaneFromResolutionCache(pane, "shared");
+        const restored = await tryLoadPaneFromResolutionCache(pane, "shared");
         if (restored) return restored;
       }
 
@@ -401,7 +462,7 @@ export function createBarLoader(opts) {
       pane._historyExhausted = Boolean(result.noData);
       pane._historyErrorUntil = null;
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });
-      return finishPaneAfterBarsLoaded(pane);
+      return await finishPaneAfterBarsLoaded(pane);
     });
 
     loadInFlightByPane.set(pane.index, task);

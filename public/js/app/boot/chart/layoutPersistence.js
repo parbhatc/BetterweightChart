@@ -34,8 +34,12 @@ export function attachLayoutPersistence(ctx) {
     applyLayoutChartSettings(settings);
   }
 
-  function autosaveLayout() {
+  /**
+   * @param {{ toLibrary?: boolean }} [opts]
+   */
+  function autosaveLayout(opts = {}) {
     if (!ctx.layoutManager) return;
+    const toLibrary = opts.toLibrary !== false;
     if (ctx.layoutAutosaveTimer) {
       clearTimeout(ctx.layoutAutosaveTimer);
       ctx.layoutAutosaveTimer = null;
@@ -44,11 +48,38 @@ export function attachLayoutPersistence(ctx) {
     ctx.layoutManager.setDrawingsSnapshot(entry.drawings ?? null);
     ctx.layoutManager.setChartSettingsSnapshot(entry.chartSettings ?? null);
     ctx.layoutManager.setToolDefaultsSnapshot(entry.toolDefaults ?? null);
-    upsertLayoutLibraryEntry(entry);
+    if (toLibrary) {
+      upsertLayoutLibraryEntry(entry);
+    }
     ctx.layoutManager.markSaved();
     if (!ctx._layoutRestorePending) {
       ctx.headerToolbarUi?.updateSaveState();
     }
+  }
+
+  function saveLayoutToLibrary() {
+    autosaveLayout({ toLibrary: true });
+  }
+
+  function resetToUnsavedWorkspace() {
+    if (!ctx.layoutManager) return;
+    const defaults = {
+      symbol: false,
+      interval: false,
+      crosshair: true,
+      time: false,
+      dateRange: true,
+      drawings: false,
+    };
+    ctx.layoutManager.setLayoutName("Unnamed", { markDirty: false });
+    ctx.layoutManager.setLayout("s");
+    ctx.layoutManager.setSync(defaults);
+    ctx.drawingHub?.setDrawingsByPane?.({});
+    ctx.layoutManager.setDrawingsSnapshot(null);
+    setLayoutToolDefaults({});
+    ctx.layoutManager.setToolDefaultsSnapshot(null);
+    ctx.layoutManager.markSaved();
+    ctx.headerToolbarUi?.updateSaveState();
   }
 
   function scheduleAutosaveLayout() {
@@ -62,7 +93,7 @@ export function attachLayoutPersistence(ctx) {
     if (ctx.layoutAutosaveTimer) clearTimeout(ctx.layoutAutosaveTimer);
     ctx.layoutAutosaveTimer = setTimeout(() => {
       ctx.layoutAutosaveTimer = null;
-      autosaveLayout();
+      saveLayoutToLibrary();
     }, 350);
   }
 
@@ -100,6 +131,8 @@ export function attachLayoutPersistence(ctx) {
     applyLayoutChartSettings,
     restoreLayoutChartSettings,
     autosaveLayout,
+    saveLayoutToLibrary,
+    resetToUnsavedWorkspace,
     scheduleAutosaveLayout,
     restoreLayoutToolDefaults,
     restoreLayoutDrawings,

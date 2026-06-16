@@ -91,7 +91,8 @@ export function mountHeaderToolbar(opts) {
   const saveActionEl = root.querySelector("[data-dirty-save-label]");
 
   function performSave() {
-    if (!layoutManager.isDirty()) return;
+    const inLibrary = savedLayoutsInclude(layoutManager.getLayoutName());
+    if (!layoutManager.isDirty() && inLibrary) return;
     onSaveLayout?.();
     layoutManager.markSaved();
     updateSaveState();
@@ -131,6 +132,7 @@ export function mountHeaderToolbar(opts) {
     const dirty = layoutManager.isDirty();
     const autoSave = layoutManager.getAutoSave();
     const showDirty = dirty && !autoSave;
+    const inLibrary = savedLayoutsInclude(layoutManager.getLayoutName());
     layoutNameEl.textContent = layoutManager.getLayoutName();
     saveWrap?.classList.toggle("tv-header-tools__save-wrap--autosave", autoSave);
     saveWrap?.classList.toggle("tv-header-tools__save-wrap--dirty", showDirty);
@@ -139,11 +141,21 @@ export function mountHeaderToolbar(opts) {
       saveActionEl.hidden = !showDirty;
       saveActionEl.setAttribute("aria-hidden", showDirty ? "false" : "true");
     }
-    const savedLabel = autoSave ? "Auto-saving layout" : "All changes saved";
+    const savedLabel = autoSave
+      ? "Auto-saving layout"
+      : dirty
+        ? "Save layout"
+        : inLibrary
+          ? "All changes saved"
+          : "Unsaved layout";
     const tooltip = showDirty ? "Save layout" : savedLabel;
     saveBtn.dataset.tooltip = tooltip;
     saveBtn.title = tooltip;
     saveBtn.setAttribute("aria-label", tooltip);
+  }
+
+  function savedLayoutsInclude(name) {
+    return loadSavedLayouts().some((s) => s.name === name);
   }
 
   function updateLayoutIcon() {
@@ -361,23 +373,21 @@ export function mountHeaderToolbar(opts) {
         const name = btn.dataset.saveName;
         closeMenu();
         void (async () => {
-          if (name === currentName) {
-            await showLayoutConfirmDialog({
-              title: "Cannot delete layout",
-              message: "Switch to another layout before deleting the active one.",
-              confirmLabel: "OK",
-              cancelLabel: "",
-            });
-            openSaveMenu();
-            return;
-          }
           const confirmed = await showLayoutConfirmDialog({
             title: "Delete layout",
-            message: `Delete saved layout "${name}"?`,
+            message:
+              name === currentName
+                ? `Delete "${name}" and reset to a new unsaved workspace?`
+                : `Delete saved layout "${name}"?`,
             confirmLabel: "Delete",
             destructive: true,
           });
-          if (confirmed) onDeleteLayout?.(name);
+          if (!confirmed) {
+            openSaveMenu();
+            return;
+          }
+          onDeleteLayout?.(name);
+          updateSaveState();
           openSaveMenu();
         })();
       }

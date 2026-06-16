@@ -438,19 +438,22 @@
   z-index: 15;
 }
 
+.tv-layout-grid--multi .tv-chart-wrap {
+  box-sizing: border-box;
+  outline: 1px solid transparent;
+  outline-offset: -1px;
+  transition: outline-color 0.12s ease;
+}
+
 .tv-layout-grid--multi .tv-chart-wrap--active {
   z-index: 1;
-}
-
-.tv-layout-grid--multi .tv-chart-wrap--pane:not(.tv-chart-wrap--active) {
-  opacity: 0.94;
-}
-
-.tv-layout-grid--multi .tv-chart-wrap--pane.tv-chart-wrap--active {
-  opacity: 1;
-  cursor: default;
+  outline-color: var(--tv-pane-active-ring);
 }
 
 .tv-layout-grid--multi .tv-chart-wrap--pane:not(.tv-chart-wrap--active) {
   cursor: pointer;
+}
+
+.tv-layout-grid--multi .tv-chart-wrap--pane.tv-chart-wrap--active {
+  cursor: default;
 }

@@ -1,3 +1,4 @@
+/** Global user prefs (localStorage) — not stored on chart layouts. */
 export const FAV_TOOLS_KEY = "tv-draw-fav-tools";
 export const FAV_TOOLBAR_VISIBLE_KEY = "tv-draw-fav-toolbar-visible";
 export const FAV_TOOLBAR_POS_KEY = "tv-draw-fav-toolbar-pos";

@@ -42,12 +42,12 @@ export function createLayoutManager(opts) {
     interval: false,
     crosshair: true,
     time: false,
-    dateRange: false,
+    dateRange: true,
     drawings: false,
   };
   let layoutName = "Unnamed";
   let dirty = false;
-  let autoSave = true;
+  let autoSave = false;
   /** @type {Record<string, object[]> | null} */
   let drawingsSnapshot = null;
   /** @type {object | null} */
@@ -124,9 +124,12 @@ export function createLayoutManager(opts) {
     return layoutName;
   }
 
-  function setLayoutName(name) {
+  /** @param {string} name @param {{ markDirty?: boolean }} [opts] */
+  function setLayoutName(name, opts = {}) {
     layoutName = name.trim() || "Unnamed";
-    dirty = true;
+    if (opts.markDirty !== false) {
+      dirty = true;
+    }
     persist();
   }
 

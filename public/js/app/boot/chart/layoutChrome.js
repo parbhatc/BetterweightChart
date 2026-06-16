@@ -36,7 +36,9 @@ export function wireLayoutChrome(ctx) {
         await ctx.loadBarsForPanes(empty);
       }
       if (ctx.layoutManager?.getSync().dateRange) {
-        ctx.syncLayoutDateRangeFrom(ctx.chart);
+        requestAnimationFrame(() => {
+          ctx.syncLayoutDateRangeFrom(ctx.chart);
+        });
       }
     },
     onActivePaneChange: (index) => {
@@ -53,18 +55,19 @@ export function wireLayoutChrome(ctx) {
     mountEl: toolbarRight,
     getChart: () => ctx.chart,
     layoutManager: ctx.layoutManager,
-    onSaveLayout: ctx.autosaveLayout,
+    onSaveLayout: ctx.saveLayoutToLibrary,
     onLoadLayout: (item) => {
       ctx.applyLayoutChartSettings(item.chartSettings);
       setLayoutToolDefaults(item.toolDefaults);
       ctx.layoutManager.setToolDefaultsSnapshot(item.toolDefaults ?? null);
       ctx.drawingHub?.setDrawingsByPane?.(item.drawings);
-      ctx.autosaveLayout();
     },
     onLayoutChange: ctx.scheduleAutosaveLayout,
     onCreateLayout: () => {
       void (async () => {
-        if (ctx.layoutManager.isDirty()) ctx.autosaveLayout();
+        if (ctx.layoutManager.isDirty() && ctx.layoutManager.getAutoSave()) {
+          ctx.saveLayoutToLibrary();
+        }
         const unique = await ctx.uniqueLayoutName("Layout", "Create new layout", "Create");
         if (!unique) return;
         ctx.layoutManager.setLayoutName(unique);
@@ -78,7 +81,9 @@ export function wireLayoutChrome(ctx) {
     },
     onDuplicateLayout: () => {
       void (async () => {
-        ctx.autosaveLayout();
+        if (ctx.layoutManager.getAutoSave()) {
+          ctx.saveLayoutToLibrary();
+        }
         const unique = await ctx.uniqueLayoutName(
           `${ctx.layoutManager.getLayoutName()} copy`,
           "Make a copy",
@@ -94,6 +99,9 @@ export function wireLayoutChrome(ctx) {
     },
     onDeleteLayout: (name) => {
       removeLayoutFromLibrary(name);
+      if (name === ctx.layoutManager.getLayoutName()) {
+        ctx.resetToUnsavedWorkspace();
+      }
     },
   });
 
@@ -109,7 +117,7 @@ export function wireLayoutChrome(ctx) {
     ctx.restoreLayoutToolDefaults();
     ctx.restoreLayoutDrawings();
     if (ctx.layoutManager.getAutoSave()) {
-      ctx.autosaveLayout();
+      ctx.saveLayoutToLibrary();
     } else {
       ctx.headerToolbarUi?.updateSaveState();
     }

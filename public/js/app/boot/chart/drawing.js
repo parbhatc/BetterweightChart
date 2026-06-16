@@ -46,6 +46,8 @@ export function attachDrawingBoot(ctx) {
       bars,
       mapBars,
       barSec,
+      utcBars: pane.bars,
+      paneSymbol: pane.symbol,
       precision: precisionFromSettings(ctx.settingsStore.get(), pane.symbolInfo ?? ctx.symbolInfo),
       visiblePriceRange,
       chart: pane.chart,
