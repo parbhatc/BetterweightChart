@@ -11,6 +11,7 @@ import {
   configureChartDebug,
   installChartDebugGlobal,
 } from "../../../debug/chart/index.js";
+import { wrapDatafeedDebug } from "../../../debug/chart/datafeed.js";
 import { barTimeLabel } from "../../../chart/format.js";
 
 import { createBootContext, initSymbolResolution } from "./state.js";
@@ -43,7 +44,7 @@ export async function bootChart(overrides = {}) {
 
   if (debugOn) chartDebug("boot", "bootChart start", { opts: ctx.opts });
 
-  ctx.datafeed = resolveDatafeed(ctx.opts);
+  ctx.datafeed = wrapDatafeedDebug(resolveDatafeed(ctx.opts));
   ctx.cfg = await ctx.datafeed.onReady();
   ctx.themeColors =
     ctx.cfg.themes?.[ctx.currentTheme] ??
@@ -130,7 +131,7 @@ export async function bootChart(overrides = {}) {
         panes: ctx.getAllChartPanes().length,
       });
     }
-    return createChartWidgetApi({
+    const widget = createChartWidgetApi({
       datafeed: ctx.datafeed,
       chart: ctx.chart,
       series: ctx.series,
@@ -147,6 +148,7 @@ export async function bootChart(overrides = {}) {
       pushLiveBar: ctx.pushLiveBar,
       prependHistory: ctx.prependHistory,
       ensureHistoryNearEdge: ctx.ensureHistoryNearEdge,
+      stashPaneResolutionCache: ctx.stashPaneResolutionCache,
       resetChartView: ctx.resetChartView,
       resetTimeScale: ctx.resetTimeScale,
       scrollToLatest: ctx.scrollToLatest,
@@ -160,6 +162,17 @@ export async function bootChart(overrides = {}) {
       lastBar: last,
       countBack: ctx.opts.countBack,
     });
+    if (typeof window !== "undefined") {
+      window.__BWC_WIDGET__ = widget;
+      if (debugOn) {
+        chartDebug("boot", "widget API", {
+          getBars: typeof widget.getBars === "function",
+          fetchBars: typeof widget.fetchBars === "function",
+          hint: "window.__BWC_WIDGET__.getBars() or .fetchBars({ countBack: 200 })",
+        });
+      }
+    }
+    return widget;
   } finally {
     ctx.loader.hide();
     document.getElementById("app-loader")?.classList.add("app-loader--hidden");

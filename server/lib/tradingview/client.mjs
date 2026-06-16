@@ -92,8 +92,18 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
     const symbolId = "sds_sym_1";
     const symbolNumber = "s1";
     const symbolMainId = "sds_1";
+    const resSec = resolutionSec(resolution);
     const beforeTime = range?.to != null ? Math.floor(range.to) : null;
-    const maxMore = beforeTime != null ? 8 : 0;
+    const nowSec = Math.floor(Date.now() / 1000);
+    /** Bars from now back to range.to — create_series only loads from the live edge. */
+    const depthToTarget =
+      beforeTime != null ? Math.max(0, Math.ceil((nowSec - beforeTime) / resSec)) : 0;
+    const seriesCountBack =
+      beforeTime != null
+        ? Math.min(5000, Math.max(countBack, depthToTarget + countBack))
+        : countBack;
+    const maxMore =
+      beforeTime != null ? Math.max(12, Math.ceil(depthToTarget / Math.max(countBack, 1)) + 4) : 0;
 
     let settled = false;
     let initialized = false;
@@ -132,17 +142,34 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
     }
 
     function completeFetch() {
-      let out = sortedBars();
+      const all = sortedBars();
+      let out = all;
       if (beforeTime != null) {
-        out = out.filter((b) => b.time <= beforeTime);
+        // Prepend: bars strictly before anchor time (session gaps — no calendar from/to window).
+        out = all.filter((b) => b.time <= beforeTime);
+        if (out.length > countBack) out = out.slice(-countBack);
+      } else if (range?.from != null) {
+        out = all.filter((b) => b.time >= range.from);
       }
-      if (range?.from != null) {
-        out = out.filter((b) => b.time >= range.from);
-      }
+      const oldest = out[0]?.time;
+      const newest = out[out.length - 1]?.time;
       finish(null, {
         bars: out,
         symbolInfo: symbolInfoFromResolved(tvSymbol, symbolMeta ?? {}),
         noData: out.length === 0,
+        meta:
+          out.length === 0 && beforeTime != null
+            ? {
+                depthToTarget,
+                seriesCountBack,
+                beforeTime,
+                fetched: all.length,
+                fetchedOldest: all[0]?.time,
+                fetchedNewest: all[all.length - 1]?.time,
+              }
+            : out.length
+              ? { oldest, newest, fetched: all.length }
+              : undefined,
       });
     }
 
@@ -155,7 +182,7 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
         symbolNumber,
         symbolId,
         resolution,
-        countBack,
+        seriesCountBack,
         "",
       ]);
     }
@@ -176,17 +203,19 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
         return;
       }
       if (morePending || moreAttempts >= maxMore) {
-        completeFetch();
+        if (oldest <= beforeTime) completeFetch();
+        else finish(new Error(`TradingView history depth exhausted at ${oldest}, need ${beforeTime}`));
         return;
       }
       if (lastOldest != null && oldest >= lastOldest) {
-        completeFetch();
+        if (oldest <= beforeTime) completeFetch();
+        else finish(new Error(`TradingView history stuck at ${oldest}, need ${beforeTime}`));
         return;
       }
       lastOldest = oldest;
       morePending = true;
       moreAttempts += 1;
-      send("request_more_data", [chartSession, symbolNumber, countBack]);
+      send("request_more_data", [chartSession, symbolNumber, seriesCountBack]);
     }
 
     function onSeriesPayload(series) {

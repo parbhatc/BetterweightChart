@@ -27,7 +27,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           }
           ctx.symbol = sym;
           ctx.refreshWatermark();
-          await ctx.loadBarsForPanes(panes);
+          await ctx.loadBarsForPanes(panes, { force: true });
           const active = ctx.getActivePane();
           if (active) {
             ctx.symbolInfo = active.symbolInfo;
@@ -52,7 +52,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         pane.symbolInfo = await ctx.datafeed.resolveSymbol(sym);
         ctx.symbolInfo = pane.symbolInfo;
         ctx.applySymbolFormat(ctx.symbolInfo);
-        await ctx.loadPaneBars(pane);
+        await ctx.loadPaneBars(pane, { force: true });
         ctx.refreshStatusLine();
         ctx.persistPaneSymbols();
       },
@@ -77,12 +77,13 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             paneCount: panes.length,
           });
           for (const pane of panes) {
+            ctx.stashPaneResolutionCache(pane, pane.resolution);
             pane.resolution = res;
           }
           ctx.resolution = res;
           ctx.refreshWatermark();
           ctx.refreshStatusLine();
-          await ctx.loadBarsForPanes(panes);
+          await ctx.loadBarsForPanes(panes, { force: true });
           ctx.afterTimeframeChange();
           return;
         }
@@ -95,12 +96,13 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           paneIndex: pane.index,
           sync: false,
         });
+        ctx.stashPaneResolutionCache(pane, pane.resolution);
         pane.resolution = res;
         if (pane.index === 0) ctx.chartPanes.get(0).resolution = res;
         ctx.resolution = res;
         ctx.refreshWatermark();
         ctx.refreshStatusLine();
-        await ctx.loadPaneBars(pane);
+        await ctx.loadPaneBars(pane, { force: true });
         ctx.afterTimeframeChange();
       },
     });

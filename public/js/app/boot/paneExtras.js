@@ -9,6 +9,7 @@ import {
   resolvePriceLineColorForPane,
 } from "../symbol/lineStyle.js";
 import { chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
+import { HISTORY_EDGE_BARS } from "../bar/loader.js";
 import {
   buildChartSeriesForPane,
   ensureFutureWhitespace as growFutureWhitespace,
@@ -227,6 +228,10 @@ export function createPaneExtras(deps) {
           deferWhitespacePane = null;
           ensurePaneFutureWhitespace(p);
         }
+        const r = pane.chart.timeScale().getVisibleLogicalRange();
+        if (r && r.from < HISTORY_EDGE_BARS && viewportDeps?.ensureHistoryNearEdge) {
+          void viewportDeps.ensureHistoryNearEdge(pane);
+        }
       },
     });
   }
@@ -285,6 +290,7 @@ export function createPaneExtras(deps) {
   /** @param {object} pane */
   function wirePaneViewportHandlers(pane) {
     let growScheduled = false;
+    let historyScheduled = false;
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
       if (ui.barsLoading) return;
@@ -300,6 +306,16 @@ export function createPaneExtras(deps) {
         const r = pane.chart.timeScale().getVisibleLogicalRange();
         if (!r) return;
         const realCount = barsForPane(pane).length;
+
+        if (r.from < HISTORY_EDGE_BARS && viewportDeps?.ensureHistoryNearEdge) {
+          if (!historyScheduled) {
+            historyScheduled = true;
+            requestAnimationFrame(() => {
+              historyScheduled = false;
+              void viewportDeps.ensureHistoryNearEdge(pane);
+            });
+          }
+        }
 
         if (r.to < realCount - 16) return;
 

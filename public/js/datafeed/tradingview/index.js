@@ -54,8 +54,8 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
       if (periodParams.countBack != null) q.set("countback", String(periodParams.countBack));
 
       const data = await getJson(`/history?${q}`);
-      if (data.s === "no_data") return { bars: [], noData: true };
-      if (data.s === "error") return { bars: [], noData: true };
+      if (data.s === "no_data") return { bars: [], noData: true, meta: data.meta };
+      if (data.s === "error") return { bars: [], noData: true, meta: data.meta };
 
       /** @type {Bar[]} */
       const bars = data.t.map((time, i) =>

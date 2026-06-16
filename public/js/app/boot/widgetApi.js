@@ -1,3 +1,5 @@
+import { chartDebug } from "../../debug/chart/index.js";
+
 /**
  * Public chart widget API returned from bootChart().
  * @param {object} ctx
@@ -20,6 +22,7 @@ export function createChartWidgetApi(ctx) {
     pushLiveBar,
     prependHistory,
     ensureHistoryNearEdge,
+    stashPaneResolutionCache,
     resetChartView,
     resetTimeScale,
     scrollToLatest,
@@ -41,8 +44,12 @@ export function createChartWidgetApi(ctx) {
     datafeed,
     lastBar,
 
-    /** Bars currently on the active pane. */
-    getBars: getBarsSnapshot,
+    /** Bars currently loaded on the active pane (snapshot). */
+    getBars() {
+      const bars = getBarsSnapshot();
+      chartDebug("data", "widget.getBars", { count: bars.length });
+      return bars;
+    },
 
     getSymbol,
     getResolution,
@@ -57,6 +64,11 @@ export function createChartWidgetApi(ctx) {
     async fetchBars(periodParams = {}) {
       const pane = getActivePane();
       if (!pane?.symbolInfo) return { bars: [], noData: true };
+      chartDebug("data", "widget.fetchBars", {
+        symbol: pane.symbol,
+        resolution: pane.resolution,
+        ...periodParams,
+      });
       return datafeed.getBars(pane.symbolInfo, pane.resolution, {
         countBack,
         ...periodParams,
@@ -112,7 +124,7 @@ export function createChartWidgetApi(ctx) {
       if (layoutManager && sync?.symbol) {
         for (const pane of getAllChartPanes()) pane.symbol = sym;
         refreshWatermark();
-        await loadBarsForPanes(getAllChartPanes());
+        await loadBarsForPanes(getAllChartPanes(), { force: true });
         const active = getActivePane();
         if (active) applySymbolFormat(active.symbolInfo);
         return;
@@ -123,7 +135,7 @@ export function createChartWidgetApi(ctx) {
       refreshWatermark();
       pane.symbolInfo = await datafeed.resolveSymbol(sym);
       applySymbolFormat(pane.symbolInfo);
-      await loadPaneBars(pane);
+      await loadPaneBars(pane, { force: true });
       refreshStatusLine();
     },
 
@@ -131,18 +143,22 @@ export function createChartWidgetApi(ctx) {
     async setResolution(res) {
       const sync = layoutManager?.getSync();
       if (layoutManager && sync?.interval) {
-        for (const pane of getAllChartPanes()) pane.resolution = res;
+        for (const pane of getAllChartPanes()) {
+          stashPaneResolutionCache(pane, pane.resolution);
+          pane.resolution = res;
+        }
         refreshWatermark();
         refreshStatusLine();
-        await loadBarsForPanes(getAllChartPanes());
+        await loadBarsForPanes(getAllChartPanes(), { force: true });
         return;
       }
       const pane = getActivePane();
       if (!pane) return;
+      stashPaneResolutionCache(pane, pane.resolution);
       pane.resolution = res;
       refreshWatermark();
       refreshStatusLine();
-      await loadPaneBars(pane);
+      await loadPaneBars(pane, { force: true });
     },
 
     /**

@@ -63,7 +63,7 @@ export async function tradingViewHistory(opts) {
   }
 
   try {
-    const { bars, symbolInfo, noData } = await fetchTradingViewBars(
+    const { bars, symbolInfo, noData, meta } = await fetchTradingViewBars(
       opts.symbol,
       opts.resolution,
       countBack,
@@ -71,7 +71,7 @@ export async function tradingViewHistory(opts) {
     );
     symbolCache.set(opts.symbol, symbolInfo);
 
-    if (!bars.length) return { s: "no_data", bars: [] };
+    if (!bars.length) return { s: "no_data", bars: [], meta: meta ?? {} };
     return {
       s: "ok",
       t: bars.map((b) => b.time),
@@ -80,7 +80,7 @@ export async function tradingViewHistory(opts) {
       l: bars.map((b) => b.low),
       c: bars.map((b) => b.close),
       v: bars.map((b) => b.volume ?? 0),
-      meta: { symbolInfo, noData: Boolean(noData) || bars.length < countBack * 0.2 },
+      meta: { symbolInfo, noData: Boolean(noData) || bars.length < countBack * 0.2, ...meta },
     };
   } catch (err) {
     return { s: "no_data", bars: [], meta: { error: err?.message ?? String(err) } };

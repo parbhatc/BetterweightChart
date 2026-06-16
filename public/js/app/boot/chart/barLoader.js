@@ -51,6 +51,7 @@ export function attachBarLoader(ctx) {
     prependHistory: barLoader.prependHistory,
     ensureHistoryNearEdge: barLoader.ensureHistoryNearEdge,
     setOverlayLoaderEnabled: barLoader.setOverlayLoaderEnabled,
+    stashPaneResolutionCache: barLoader.stashPaneResolutionCache,
     loadBars: () =>
       barLoader.loadBars(ctx.getAllChartPanes, () => ctx.getActivePane() ?? ctx.chartPanes.get(0)),
   });

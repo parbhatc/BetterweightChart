@@ -119,7 +119,7 @@ export function readPageOptions(search = window.location.search) {
     drawings: sp.get("drawings") !== "0",
     chrome: sp.get("chrome") !== "0",
     countBack: sp.get("countback") != null ? Number(sp.get("countback")) : 500,
-    historyChunk: sp.get("historychunk") != null ? Number(sp.get("historychunk")) : undefined,
+    historyChunk: sp.get("historychunk") != null ? Number(sp.get("historychunk")) : 200,
     datafeedType: datafeed ?? undefined,
     tradingview: datafeed === "tradingview",
   };
