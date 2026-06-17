@@ -20,6 +20,8 @@ import { wireController, buildControllerApi } from "./lifecycle.js";
  * @param {HTMLElement} opts.container
  * @param {() => { bars: { time: number, open?: number, high?: number, low?: number, close?: number }[], barSec: number }} opts.getContext
  * @param {(bar: object, prev: object | null) => void} [opts.onValuesTooltipBarChange]
+ * @param {() => number} [opts.getIndicatorCount]
+ * @param {() => void} [opts.removeIndicators]
  */
 export function createDrawingController(opts) {
   const ctx = createControllerState(opts);

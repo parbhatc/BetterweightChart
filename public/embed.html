@@ -16,13 +16,13 @@
     </script>
   </head>
   <body class="tv-app--embed">
-    <div class="tv-app" aria-busy="true">
-      <div class="app-loader" id="app-loader" role="status" aria-label="Loading chart">
-        <div class="app-loader__spinner" aria-hidden="true"></div>
-      </div>
+    <div class="tv-app">
       <div class="tv-workspace tv-workspace--embed">
         <aside id="drawing-toolbar" class="drawing-toolbar" aria-label="Drawing tools"></aside>
-        <main class="tv-stage">
+        <main class="tv-stage" aria-busy="true">
+          <div class="app-loader" id="app-loader" role="status" aria-label="Loading chart">
+            <div class="app-loader__spinner" aria-hidden="true"></div>
+          </div>
           <div class="tv-chart-wrap">
             <div class="tv-chart-wrap__stage">
               <div class="tv-watermark" aria-hidden="true">

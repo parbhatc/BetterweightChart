@@ -5,7 +5,7 @@ const STORAGE_KEY = "tv-chart-layout-state";
 
 /** @typedef {{ symbol: boolean, interval: boolean, crosshair: boolean, time: boolean, dateRange: boolean, drawings: boolean }} SyncSettings */
 
-/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>>, drawingTemplates?: import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates }} SavedLayout */
+/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, indicators?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>>, drawingTemplates?: import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates, viewports?: Record<string, { scaleMargins?: { top: number, bottom: number }, logicalRange?: { from: number, to: number }, barSpacing?: number }> }} SavedLayout */
 
 /** @typedef {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, wrapEl: HTMLElement, chartEl: HTMLElement, destroy: () => void, symbol: string, resolution: string, symbolInfo: object | null, bars: object[] }} SecondaryPane */
 
@@ -50,12 +50,16 @@ export function createLayoutManager(opts) {
   let autoSave = false;
   /** @type {Record<string, object[]> | null} */
   let drawingsSnapshot = null;
+  /** @type {Record<string, object[]> | null} */
+  let indicatorsSnapshot = null;
   /** @type {object | null} */
   let chartSettingsSnapshot = null;
   /** @type {Record<string, Record<string, unknown>> | null} */
   let toolDefaultsSnapshot = null;
   /** @type {import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates | null} */
   let drawingTemplatesSnapshot = null;
+  /** @type {Record<string, { scaleMargins?: { top: number, bottom: number }, logicalRange?: { from: number, to: number }, barSpacing?: number }> | null} */
+  let viewportsSnapshot = null;
 
   function applyPlacements() {
     const def = getLayoutDef(layoutId);
@@ -154,6 +158,16 @@ export function createLayoutManager(opts) {
     return drawingsSnapshot;
   }
 
+  /** @param {Record<string, object[]> | null | undefined} indicators */
+  function setIndicatorsSnapshot(indicators) {
+    indicatorsSnapshot = indicators ?? null;
+    persist();
+  }
+
+  function getIndicatorsSnapshot() {
+    return indicatorsSnapshot;
+  }
+
   /** @param {object | null | undefined} settings */
   function setChartSettingsSnapshot(settings) {
     chartSettingsSnapshot = settings ? structuredClone(settings) : null;
@@ -186,6 +200,17 @@ export function createLayoutManager(opts) {
     return drawingTemplatesSnapshot;
   }
 
+  /** @param {Record<string, object> | null | undefined} viewports */
+  function setViewportsSnapshot(viewports) {
+    viewportsSnapshot =
+      viewports && typeof viewports === "object" ? structuredClone(viewports) : null;
+    persist();
+  }
+
+  function getViewportsSnapshot() {
+    return viewportsSnapshot;
+  }
+
   function markSaved() {
     dirty = false;
     persist();
@@ -210,9 +235,11 @@ export function createLayoutManager(opts) {
         dirty,
         autoSave,
         drawings: drawingsSnapshot,
+        indicators: indicatorsSnapshot,
         chartSettings: chartSettingsSnapshot,
         toolDefaults: toolDefaultsSnapshot,
         drawingTemplates: drawingTemplatesSnapshot,
+        viewports: viewportsSnapshot,
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {
@@ -229,11 +256,13 @@ export function createLayoutManager(opts) {
       if (data.layoutName) layoutName = data.layoutName;
       if (data.sync) sync = { ...sync, ...data.sync };
       if (data.drawings && typeof data.drawings === "object") drawingsSnapshot = data.drawings;
+      if (data.indicators && typeof data.indicators === "object") indicatorsSnapshot = data.indicators;
       if (data.chartSettings && typeof data.chartSettings === "object") chartSettingsSnapshot = data.chartSettings;
       if (data.toolDefaults && typeof data.toolDefaults === "object") toolDefaultsSnapshot = data.toolDefaults;
       if (data.drawingTemplates && typeof data.drawingTemplates === "object") {
         drawingTemplatesSnapshot = data.drawingTemplates;
       }
+      if (data.viewports && typeof data.viewports === "object") viewportsSnapshot = data.viewports;
       dirty = Boolean(data.dirty);
       if (typeof data.autoSave === "boolean") autoSave = data.autoSave;
     } catch {
@@ -267,12 +296,16 @@ export function createLayoutManager(opts) {
     setAutoSave,
     setDrawingsSnapshot,
     getDrawingsSnapshot,
+    setIndicatorsSnapshot,
+    getIndicatorsSnapshot,
     setChartSettingsSnapshot,
     getChartSettingsSnapshot,
     setToolDefaultsSnapshot,
     getToolDefaultsSnapshot,
     setDrawingTemplatesSnapshot,
     getDrawingTemplatesSnapshot,
+    setViewportsSnapshot,
+    getViewportsSnapshot,
     setActivePane,
     getActivePaneIndex: () => activePaneIndex,
     getSecondaryPanes,

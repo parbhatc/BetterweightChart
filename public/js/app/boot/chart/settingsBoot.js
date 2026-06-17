@@ -4,6 +4,7 @@ import {
   resolveTimezone,
 } from "../../../chart/timezone/list.js";
 import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes } from "../../../chart/settings/applier.js";
+import { ensurePanePriceScaleForPan, resetPanePriceScalePanReady } from "../../../chart/price/panScale.js";
 import { mountChartSettings } from "../../../ui/chart/settings.js";
 import { loadShowMobilePlacementBar, saveShowMobilePlacementBar } from "../../../drawings/toolbars/utility/settings/store.js";
 import { applyCanvasPresetForTheme } from "../themes.js";
@@ -16,6 +17,10 @@ import { chartThemeFallback } from "../themes.js";
 export function attachSettingsBoot(ctx) {
   /** @type {ReturnType<typeof mountChartSettings> | null} */
   let chartSettings = null;
+  /** @type {string | undefined} */
+  let lastChartDataRefreshKey = undefined;
+  /** @type {string | undefined} */
+  let lastChartTimezone = undefined;
 
   function mountChartSettingsUi() {
     if (chartSettings) return chartSettings;
@@ -94,13 +99,22 @@ export function attachSettingsBoot(ctx) {
   }
 
   function applyChartTimezone() {
-    applyChartTimezoneToPanes({
+    const result = applyChartTimezoneToPanes({
       settingsStore: ctx.settingsStore,
       symbolInfo: ctx.symbolInfo,
       tzClock: ctx.tzClock,
       refreshCandleData: ctx.refreshCandleData,
       resolveTimezone,
+      previousTimezone: lastChartTimezone,
+      previousDataKey: lastChartDataRefreshKey,
     });
+    lastChartTimezone = result.timezone;
+    lastChartDataRefreshKey = result.dataKey;
+    ctx._chartDataRefreshKey = result.dataKey;
+    if (result.dataChanged) {
+      ctx._chartDataRevision = (ctx._chartDataRevision ?? 0) + 1;
+    }
+    return result.dataChanged;
   }
 
   function applyChartSettings() {
@@ -129,6 +143,15 @@ export function attachSettingsBoot(ctx) {
     ctx.refreshStatusLine();
     for (const pane of ctx.getAllChartPanes()) {
       pane.priceLineLabel?.requestRefresh();
+    }
+
+    for (const pane of ctx.getAllChartPanes()) {
+      if (!pane.bars?.length) continue;
+      if (sc.autoScale || sc.lockPriceToBarRatio) {
+        resetPanePriceScalePanReady(pane);
+      } else {
+        ensurePanePriceScaleForPan(pane, sc, ctx.activePriceScaleId);
+      }
     }
   }
 

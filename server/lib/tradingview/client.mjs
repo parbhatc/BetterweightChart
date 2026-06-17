@@ -1,4 +1,9 @@
 import { packTvHeartbeat, packTvMessage, unpackTvFrames } from "./protocol.mjs";
+import {
+  isSymbolResolutionSupported,
+  resolutionSec,
+  supportedResolutionsForSymbol,
+} from "../resolutions.mjs";
 
 const WS_ORIGIN = "https://www.tradingview.com";
 
@@ -34,36 +39,50 @@ function barFromTv(v) {
 
 /** @param {object} meta */
 function symbolInfoFromResolved(tvSymbol, meta) {
-  const pricescale = meta.pricescale ?? 100;
-  const minmov = meta.minmov ?? 1;
+  const src = meta && typeof meta === "object" ? meta : {};
+  const pricescale = src.pricescale ?? 100;
+  const minmov = src.minmov ?? 1;
+  const tick = src.minTick ?? src.pipSize ?? minmov / pricescale;
+  const logoid = src.logoid ?? src.logo?.logoid;
+
   return {
-    name: tvSymbol,
-    ticker: tvSymbol,
-    description: meta.description ?? meta.short_description ?? tvSymbol,
-    type: meta.type ?? "stock",
-    exchange: meta.exchange ?? meta.listed_exchange ?? meta.source_id ?? "",
-    listed_exchange: meta.listed_exchange ?? meta.source_id ?? "",
-    session: meta.session ?? meta["session-display"] ?? "24x7",
-    timezone: meta.timezone ?? "Etc/UTC",
+    ...src,
+    name: src.name ?? tvSymbol,
+    ticker: src.ticker ?? tvSymbol,
+    description: src.description ?? src.short_description ?? tvSymbol,
+    type: src.type ?? "stock",
+    exchange: src.exchange ?? src.listed_exchange ?? src.source_id ?? "",
+    listed_exchange: src.listed_exchange ?? src.source_id ?? "",
+    session: src.session ?? src["session-display"] ?? "24x7",
+    timezone: src.timezone ?? "Etc/UTC",
     minmov,
     pricescale,
-    tick: minmov / pricescale,
-    has_intraday: true,
-    has_daily: true,
-    has_weekly_and_monthly: true,
-    supported_resolutions: ["1", "5", "15", "60", "D"],
-    volume_precision: 0,
+    tick,
+    minTick: src.minTick ?? tick,
+    pipSize: src.pipSize ?? tick,
+    pipValue: src.pipValue,
+    pointvalue: src.pointvalue,
+    has_intraday: src.has_intraday ?? true,
+    has_daily: src.has_daily ?? true,
+    has_weekly_and_monthly: src.has_weekly_and_monthly ?? true,
+    has_ticks: src.has_ticks,
+    has_seconds: src.has_seconds,
+    has_empty_bars: src.has_empty_bars,
+    intraday_multipliers: src.intraday_multipliers,
+    seconds_multipliers: src.seconds_multipliers,
+    weekly_multipliers: src.weekly_multipliers,
+    monthly_multipliers: src.monthly_multipliers,
+    supported_resolutions: supportedResolutionsForSymbol(src.supported_resolutions),
+    subsession_id: src.subsession_id,
+    subsessions: src.subsessions,
+    session_holidays: src.session_holidays,
+    corrections: src.corrections,
+    volume_precision: src.volume_precision ?? 0,
     data_status: "streaming",
-    currency_code: meta.currency_code,
-    logoid: meta.logoid ?? meta.logo?.logoid,
-    logoUrl: meta.logoid || meta.logo?.logoid ? `https://s3-symbol-logo.tradingview.com/${meta.logoid ?? meta.logo?.logoid}--big.svg` : undefined,
+    currency_code: src.currency_code,
+    logoid,
+    logoUrl: logoid ? `https://s3-symbol-logo.tradingview.com/${logoid}--big.svg` : undefined,
   };
-}
-
-const RES_SEC = { "1": 60, "5": 300, "15": 900, "60": 3600, D: 86400 };
-
-function resolutionSec(resolution) {
-  return RES_SEC[resolution] ?? 60;
 }
 
 /** @param {object[]} series @param {{ time: number }[]} bars */
@@ -139,6 +158,15 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
 
     function sortedBars() {
       return [...bars].sort((a, b) => a.time - b.time);
+    }
+
+    function emptyResult(metaExtra = {}) {
+      finish(null, {
+        bars: [],
+        symbolInfo: symbolInfoFromResolved(tvSymbol, symbolMeta ?? {}),
+        noData: true,
+        meta: { invalidResolution: resolution, ...metaExtra },
+      });
     }
 
     function completeFetch() {
@@ -247,10 +275,17 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
         }
 
         switch (msg.m) {
-          case "symbol_resolved":
+          case "symbol_resolved": {
             symbolMeta = msg.p?.[2] ?? null;
+            const info = symbolInfoFromResolved(tvSymbol, symbolMeta ?? {});
+            symbolMeta = { ...symbolMeta, supported_resolutions: info.supported_resolutions };
+            if (!isSymbolResolutionSupported(info, resolution)) {
+              emptyResult({ reason: "unsupported_resolution" });
+              break;
+            }
             createInitialSeries();
             break;
+          }
           case "timescale_update": {
             const payload = msg.p?.[1] ?? {};
             onSeriesPayload(payload[symbolMainId]?.s ?? []);
@@ -268,6 +303,9 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
             break;
           case "symbol_error":
             finish(new Error(msg.p?.[2] ?? "Unknown symbol"));
+            break;
+          case "series_error":
+            emptyResult({ reason: "series_error" });
             break;
           case "critical_error":
             if (bars.length) completeFetch();

@@ -7,6 +7,7 @@ import {
   TickMarkType,
 } from "lightweight-charts";
 import { dateTime12h, toDate } from "../format.js";
+import { lwcPaneIndexAtY } from "../pane/studyScale.js";
 
 const DEFAULT_VISIBLE_BARS = 96;
 /** Empty bars of whitespace on the right for future time. */
@@ -26,6 +27,11 @@ export function createTvChart(el, themeColors) {
       textColor: c.text,
       fontSize: 12,
       fontFamily: "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif",
+      panes: {
+        enableResize: false,
+        separatorColor: c.bg,
+        separatorHoverColor: c.bg,
+      },
     },
     grid: {
       vertLines: { color: c.grid },
@@ -112,16 +118,31 @@ export function createTvChart(el, themeColors) {
     priceFormat: { type: "price", precision: 2, minMove: 0.25 },
   });
 
+  // Scale margins only here; autoScale comes from settings. After the first bar
+  // load we fit once then lock autoScale off for free chart-body dragging.
+  series.priceScale().applyOptions({
+    scaleMargins: { top: 0.08, bottom: 0.12 },
+  });
+
   el.addEventListener(
     "wheel",
     (ev) => {
       const rect = el.getBoundingClientRect();
       const x = ev.clientX - rect.left;
+      const y = ev.clientY - rect.top;
       const rw = chart.priceScale("right").width();
       const lw = chart.priceScale("left").width();
       const onRight = rw > 0 && x >= rect.width - rw;
       const onLeft = lw > 0 && x <= lw;
       if (!onRight && !onLeft) return;
+
+      // Only zoom the main (price) pane — study panes keep their own fixed scales.
+      if (lwcPaneIndexAtY(chart, y) !== 0) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        return;
+      }
+
       ev.preventDefault();
       ev.stopPropagation();
 
@@ -132,7 +153,8 @@ export function createTvChart(el, themeColors) {
 
       const step = Math.min(0.012, Math.max(0.0008, (Math.abs(dy) / h) * 0.055));
       const zoomIn = dy < 0;
-      const ps = chart.priceScale(onLeft ? "left" : "right");
+      // Use the main candle series scale so study-pane scales stay independent.
+      const ps = series.priceScale();
       const { scaleMargins } = ps.options();
       let top = scaleMargins?.top ?? 0.08;
       let bottom = scaleMargins?.bottom ?? 0.12;
@@ -144,6 +166,12 @@ export function createTvChart(el, themeColors) {
         bottom = Math.min(0.48, bottom + step);
       }
       ps.applyOptions({ autoScale: false, scaleMargins: { top, bottom } });
+      try {
+        chart.priceScale("right").applyOptions({ autoScale: false, scaleMargins: { top, bottom } });
+        chart.priceScale("left").applyOptions({ autoScale: false, scaleMargins: { top, bottom } });
+      } catch {
+        /* ignore */
+      }
     },
     { passive: false, capture: true },
   );
@@ -156,6 +184,11 @@ export function createTvChart(el, themeColors) {
         layout: {
           background: { type: ColorType.Solid, color: colors.bg },
           textColor: colors.text,
+          panes: {
+            enableResize: false,
+            separatorColor: colors.bg,
+            separatorHoverColor: colors.bg,
+          },
         },
         grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
         crosshair: {

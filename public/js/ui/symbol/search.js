@@ -158,5 +158,6 @@ export function mountSymbolSearch(opts) {
       setDisplay(sym, resolved);
     },
     getSymbol: () => activeSymbol,
+    open: openDropdown,
   };
 }

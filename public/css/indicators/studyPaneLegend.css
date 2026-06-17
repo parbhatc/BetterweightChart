@@ -1,0 +1,89 @@
+.study-pane-legends {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 17;
+}
+
+/* Hide LWC pane separator drag handles */
+.tv-chart-wrap__stage div[style*="row-resize"] {
+  display: none !important;
+  pointer-events: none !important;
+}
+
+.study-pane-legends__pane {
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  max-width: none;
+  pointer-events: none;
+  padding: var(--space-2) 0 0;
+  overflow: visible;
+}
+
+.study-pane-legends__status {
+  pointer-events: auto;
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  max-width: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  padding: 0 !important;
+  contain: none;
+  font-size: var(--text-sm);
+  line-height: var(--leading-tight);
+}
+
+.study-pane-legends__status .status-line__studies {
+  width: auto;
+  flex-basis: auto;
+}
+
+.study-pane-legends__status .study-legend {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  width: auto;
+}
+
+.study-pane-legends__status .study-legend__item {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.study-pane-legends__status .study-legend__item.is-hidden {
+  opacity: 0.55;
+}
+
+.study-pane-legends__status .study-legend__item.is-selected,
+.study-pane-legends__status .study-legend__item.is-expanded,
+.study-pane-legends__status .study-legend__item:focus-within,
+.study-pane-legends__status .study-legend__item.is-expanded:hover {
+  background: color-mix(in srgb, var(--tv-surface-hover) 70%, transparent);
+  border-radius: var(--radius-sm);
+  padding: 1px var(--space-2) 1px var(--space-1);
+  max-width: none;
+  width: max-content;
+  overflow: visible;
+}
+
+.study-pane-legends__status .study-legend__actions {
+  gap: 1px;
+  margin-left: 2px;
+}
+
+.study-pane-legends__status .study-legend__item:not(.is-expanded):not(.is-selected):not(:focus-within) {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+
+.study-pane-legends__status .study-legend__item:not(.is-expanded):not(.is-selected):hover {
+  background: transparent;
+}

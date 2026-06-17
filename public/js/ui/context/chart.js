@@ -16,6 +16,7 @@ const ICONS = {
  *   price: number | null,
  *   priceText: string,
  *   drawingCount: number,
+ *   indicatorCount: number,
  *   lockCursorByTime: boolean,
  *   canPaste: boolean,
  *   hasSelectedDrawing: boolean,
@@ -30,6 +31,7 @@ const ICONS = {
  *   paste: () => void,
  *   toggleLockCursor: () => void,
  *   removeDrawings: () => void,
+ *   removeIndicators: () => void,
  *   openSettings: () => void,
  * }} MenuActions
  */
@@ -88,6 +90,10 @@ export function mountChartContextMenu(opts) {
     const copyLabel = s.price != null ? `Copy price ${s.priceText}` : "Copy price";
     const drawingsLabel =
       s.drawingCount > 0 ? `Remove ${s.drawingCount} drawing${s.drawingCount === 1 ? "" : "s"}` : "Remove drawings";
+    const indicatorsLabel =
+      s.indicatorCount > 0
+        ? `Remove ${s.indicatorCount} indicator${s.indicatorCount === 1 ? "" : "s"}`
+        : "Remove indicators";
 
     root.innerHTML = `<div class="ctx-menu__scroll"><table class="ctx-menu__table"><tbody>
       ${rowItem({ id: "reset", label: "Reset chart view", shortcut: "Alt + R", icon: ICONS.reset })}
@@ -103,6 +109,7 @@ export function mountChartContextMenu(opts) {
       })}
       ${rowDivider()}
       ${rowItem({ id: "remove-drawings", label: drawingsLabel, disabled: s.drawingCount === 0 })}
+      ${rowItem({ id: "remove-indicators", label: indicatorsLabel, disabled: s.indicatorCount === 0 })}
       ${rowDivider()}
       ${rowItem({ id: "settings", label: "Settings…", icon: ICONS.settings })}
     </tbody></table></div>`;
@@ -124,7 +131,11 @@ export function mountChartContextMenu(opts) {
 
   function runAction(id) {
     const detail =
-      id === "remove-drawings" ? { drawingCount: getState().drawingCount } : undefined;
+      id === "remove-drawings"
+        ? { drawingCount: getState().drawingCount }
+        : id === "remove-indicators"
+          ? { indicatorCount: getState().indicatorCount }
+          : undefined;
     runContextMenuAction(
       "chart",
       id,
@@ -148,6 +159,9 @@ export function mountChartContextMenu(opts) {
             break;
           case "remove-drawings":
             actions.removeDrawings();
+            break;
+          case "remove-indicators":
+            actions.removeIndicators();
             break;
           case "settings":
             actions.openSettings();

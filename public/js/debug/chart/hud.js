@@ -1,12 +1,17 @@
 /** @type {ReturnType<typeof mountDebugHud> | null} */
 let activeHud = null;
 
+function defaultPingWsUrl() {
+  const proto = location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${location.host}/ws/ping`;
+}
+
 /**
- * Fixed top overlay: live FPS + API ping (debug mode only).
- * @param {{ pingUrl?: string }} [opts]
+ * Fixed top overlay: live FPS + WebSocket ping (debug mode only).
+ * @param {{ pingWsUrl?: string }} [opts]
  */
 export function mountDebugHud(opts = {}) {
-  const pingUrl = opts.pingUrl ?? "/api/health";
+  const pingWsUrl = opts.pingWsUrl ?? defaultPingWsUrl();
 
   const root = document.createElement("div");
   root.className = "bwc-debug-hud";
@@ -24,6 +29,10 @@ export function mountDebugHud(opts = {}) {
   let rafId = 0;
   /** @type {ReturnType<typeof setInterval> | null} */
   let pingTimer = null;
+  /** @type {WebSocket | null} */
+  let ws = null;
+  /** @type {number | null} */
+  let pingSentAt = null;
 
   function render() {
     const ping = pingMs == null ? "…" : `${pingMs}ms`;
@@ -47,24 +56,55 @@ export function mountDebugHud(opts = {}) {
     rafId = requestAnimationFrame(tick);
   }
 
-  async function measurePing() {
-    const t0 = performance.now();
+  function sendPing() {
+    if (ws?.readyState !== WebSocket.OPEN) return;
+    pingSentAt = performance.now();
+    ws.send("ping");
+  }
+
+  function connectWs() {
+    if (ws?.readyState === WebSocket.OPEN || ws?.readyState === WebSocket.CONNECTING) return;
+
     try {
-      const res = await fetch(pingUrl, { cache: "no-store", credentials: "same-origin" });
-      if (!res.ok) throw new Error(String(res.status));
-      pingMs = Math.round(performance.now() - t0);
+      ws = new WebSocket(pingWsUrl);
     } catch {
       pingMs = null;
+      render();
+      return;
     }
-    render();
+
+    ws.addEventListener("open", () => {
+      sendPing();
+    });
+
+    ws.addEventListener("message", (ev) => {
+      if (ev.data !== "pong" || pingSentAt == null) return;
+      pingMs = Math.round(performance.now() - pingSentAt);
+      pingSentAt = null;
+      render();
+    });
+
+    ws.addEventListener("close", () => {
+      ws = null;
+      pingSentAt = null;
+    });
+
+    ws.addEventListener("error", () => {
+      pingMs = null;
+      pingSentAt = null;
+      render();
+    });
+  }
+
+  function measurePing() {
+    connectWs();
+    sendPing();
   }
 
   render();
-  void measurePing();
+  measurePing();
   rafId = requestAnimationFrame(tick);
-  pingTimer = setInterval(() => {
-    void measurePing();
-  }, 4000);
+  pingTimer = setInterval(measurePing, 4000);
 
   const api = {
     /** @param {{ fps?: number, panning?: boolean }} stats */
@@ -76,6 +116,9 @@ export function mountDebugHud(opts = {}) {
     destroy() {
       if (rafId) cancelAnimationFrame(rafId);
       if (pingTimer) clearInterval(pingTimer);
+      pingSentAt = null;
+      ws?.close();
+      ws = null;
       root.remove();
       if (activeHud === api) activeHud = null;
     },
@@ -85,7 +128,7 @@ export function mountDebugHud(opts = {}) {
   return api;
 }
 
-/** @param {{ pingUrl?: string }} [opts] */
+/** @param {{ pingWsUrl?: string }} [opts] */
 export function ensureDebugHud(opts = {}) {
   if (!activeHud) activeHud = mountDebugHud(opts);
   return activeHud;

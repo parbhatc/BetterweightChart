@@ -3,6 +3,8 @@ import {
   updateFormingBarOnPaneSeries,
 } from "../../../chart/pane/data.js";
 import { createBarLoader } from "../../bar/loader.js";
+import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
+import { ensurePanePriceScaleForPan } from "../../../chart/price/panScale.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -37,6 +39,7 @@ export function attachBarLoader(ctx) {
     },
     onPaneBarUpdate: (pane) => {
       pane.priceLineLabel?.requestRefresh();
+      ctx.refreshIndicators?.(pane.index);
     },
     onHistoryPrepended: (pane) => {
       if (!ctx.layoutManager?.getSync().dateRange) return;
@@ -44,6 +47,15 @@ export function attachBarLoader(ctx) {
       const source = panes.reduce((best, p) => (p.bars.length > best.bars.length ? p : best), pane);
       ctx.syncLayoutDateRangeFrom(source.chart);
     },
+    syncPaneEmptyState: (pane, state) =>
+      syncPaneEmptyState(pane, {
+        ...state,
+        onChangeSymbol: () => ctx.symbolSearchUi?.open?.(),
+        onChangeInterval: () => ctx.tfPickerUi?.openPanel?.(),
+      }),
+    ensurePanePriceScaleForPan: (pane) =>
+      ensurePanePriceScaleForPan(pane, ctx.settingsStore.get().scales ?? {}, ctx.activePriceScaleId),
+    finishPaneViewportAfterLoad: (pane) => ctx.finishPaneViewportAfterLoad?.(pane),
   });
 
   ctx.viewportDeps.maintainLockedRatio = ctx.maintainLockedRatio;

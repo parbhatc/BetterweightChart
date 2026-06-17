@@ -1,5 +1,5 @@
-/** Full-app loading overlay with spinner. */
-export function createAppLoader(root = document.querySelector(".tv-app")) {
+/** Chart-stage loading overlay with spinner. */
+export function createAppLoader(root = document.querySelector(".tv-stage")) {
   const el =
     document.getElementById("app-loader") ??
     (() => {
@@ -12,6 +12,10 @@ export function createAppLoader(root = document.querySelector(".tv-app")) {
       root?.prepend(loader);
       return loader;
     })();
+
+  if (root && el.parentElement !== root) {
+    root.prepend(el);
+  }
 
   let pending = 0;
 

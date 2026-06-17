@@ -65,6 +65,9 @@ export async function wireSymbolAndTimeframePickers(ctx) {
       root: ctx.tfPickerEl,
       resolutions: ctx.resolutions,
       initial: ctx.resolution,
+      onResolutionsChange: (res) => {
+        ctx.resolutions = res;
+      },
       onChange: async (res) => {
         const sync = ctx.layoutManager?.getSync();
         if (ctx.layoutManager && sync?.interval) {

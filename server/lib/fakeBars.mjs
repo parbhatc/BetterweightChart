@@ -1,5 +1,7 @@
 /** @typedef {{ time: number, open: number, high: number, low: number, close: number }} Bar */
 
+import { CHART_RESOLUTIONS, resolutionSec } from "./resolutions.mjs";
+
 const SYMBOL_PROFILES = {
   NQ: { name: "Nasdaq 100", exchange: "CME", type: "futures", base: 21050, tick: 0.25, volatility: 0.0014, drift: 0.00002 },
   ES: { name: "S&P 500", exchange: "CME", type: "futures", base: 5525, tick: 0.25, volatility: 0.001, drift: 0.000015 },
@@ -23,20 +25,6 @@ const SYMBOL_PROFILES = {
   QQQ: { name: "Invesco QQQ Trust", exchange: "NASDAQ", type: "etf", base: 478, tick: 0.01, volatility: 0.0011, drift: 0.00001 },
 };
 
-export const RESOLUTIONS = [
-  { id: "1", label: "1m", sec: 60 },
-  { id: "3", label: "3m", sec: 180 },
-  { id: "5", label: "5m", sec: 300 },
-  { id: "15", label: "15m", sec: 900 },
-  { id: "30", label: "30m", sec: 1800 },
-  { id: "60", label: "1h", sec: 3600 },
-  { id: "240", label: "4h", sec: 14400 },
-  { id: "D", label: "1D", sec: 86400 },
-  { id: "W", label: "1W", sec: 604800 },
-];
-
-const RESOLUTION_SEC = Object.fromEntries(RESOLUTIONS.map((r) => [r.id, r.sec]));
-
 /** Seeded PRNG (mulberry32). */
 function rng(seed) {
   let s = seed >>> 0;
@@ -53,9 +41,7 @@ function roundTick(n, tick) {
   return Math.round(n / tick) * tick;
 }
 
-function resolutionSec(resolution) {
-  return RESOLUTION_SEC[resolution] ?? 60;
-}
+export const RESOLUTIONS = CHART_RESOLUTIONS;
 
 /**
  * @param {string} symbol

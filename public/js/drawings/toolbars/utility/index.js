@@ -123,11 +123,21 @@ export function createUtilityToolbarUi(ctx) {
         labelEl.textContent = n === 1 ? "Remove 1 drawing" : `Remove ${n} drawings`;
         el.toggleAttribute("disabled", n === 0);
       }
+      if (id === "remove-indicators") {
+        const n = controller.getIndicatorCount();
+        labelEl.textContent = n === 1 ? "Remove 1 indicator" : `Remove ${n} indicators`;
+        el.toggleAttribute("disabled", n === 0);
+      }
       if (id === "remove-all") {
         const d = controller.getCount();
         const i = controller.getIndicatorCount();
-        labelEl.textContent =
-          i > 0 ? `Remove ${d} drawings & ${i} indicators` : d === 1 ? "Remove 1 drawing" : `Remove ${d} drawings`;
+        if (d > 0 && i > 0) {
+          labelEl.textContent = `Remove ${d} drawing${d === 1 ? "" : "s"} & ${i} indicator${i === 1 ? "" : "s"}`;
+        } else if (i > 0) {
+          labelEl.textContent = i === 1 ? "Remove 1 indicator" : `Remove ${i} indicators`;
+        } else {
+          labelEl.textContent = d === 1 ? "Remove 1 drawing" : `Remove ${d} drawings`;
+        }
         el.toggleAttribute("disabled", d === 0 && i === 0);
       }
     });
@@ -154,8 +164,15 @@ export function createUtilityToolbarUi(ctx) {
       row.setAttribute("role", "menuitem");
       row.innerHTML = `<span class="draw-tools__flyout-label">${label}</span>`;
       row.addEventListener("click", () => {
-        if (id === "remove-drawings" || id === "remove-all") {
+        if (id === "remove-drawings") {
           controller.removeDrawings({ includeLocked: controller.getAlwaysRemoveLocked() });
+          selectCursorTool("cursor");
+        } else if (id === "remove-indicators") {
+          controller.removeIndicators();
+          selectCursorTool("cursor");
+        } else if (id === "remove-all") {
+          controller.removeDrawings({ includeLocked: controller.getAlwaysRemoveLocked() });
+          controller.removeIndicators();
           selectCursorTool("cursor");
         }
         closeAllFlyouts();
@@ -165,6 +182,7 @@ export function createUtilityToolbarUi(ctx) {
     };
 
     addRow("remove-drawings", "Remove drawings");
+    addRow("remove-indicators", "Remove indicators");
     addRow("remove-all", "Remove all");
 
     const divider = document.createElement("div");

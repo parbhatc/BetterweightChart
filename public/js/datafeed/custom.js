@@ -5,13 +5,9 @@
 /** @typedef {import("./types.js").PeriodParams} PeriodParams */
 /** @typedef {import("./types.js").SymbolInfo} SymbolInfo */
 
-const DEFAULT_RESOLUTIONS = [
-  { id: "1", label: "1m", sec: 60 },
-  { id: "5", label: "5m", sec: 300 },
-  { id: "15", label: "15m", sec: 900 },
-  { id: "60", label: "1h", sec: 3600 },
-  { id: "D", label: "1D", sec: 86400 },
-];
+import { CHART_RESOLUTIONS, tickToMinmovPricescale } from "../chart/resolutions.js";
+
+const DEFAULT_RESOLUTIONS = CHART_RESOLUTIONS;
 
 /**
  * Normalize bar time to Unix seconds (accepts ms timestamps).
@@ -144,25 +140,31 @@ function sliceBars(bars, periodParams = {}) {
  * @returns {SymbolInfo}
  */
 function defaultSymbolInfo(sym, meta, resolutions) {
-  const tick = meta.tick ?? 0.01;
+  const tick = meta.tick ?? meta.minTick ?? 0.01;
+  const { minmov, pricescale } = tickToMinmovPricescale(tick);
   return {
     name: sym,
-    ticker: sym,
-    description: meta.name ?? sym,
+    ticker: meta.ticker ?? sym,
+    description: meta.description ?? meta.name ?? sym,
     type: meta.type ?? "stock",
     exchange: meta.exchange ?? "CUSTOM",
-    listed_exchange: meta.exchange ?? "CUSTOM",
+    listed_exchange: meta.listed_exchange ?? meta.exchange ?? "CUSTOM",
     session: meta.session ?? "24x7",
     timezone: meta.timezone ?? "Etc/UTC",
-    minmov: 1,
-    pricescale: Math.round(1 / tick),
-    tick,
-    has_intraday: true,
-    has_daily: true,
-    has_weekly_and_monthly: true,
-    supported_resolutions: resolutions.map((r) => r.id),
-    volume_precision: 0,
-    data_status: "endofday",
+    minmov: meta.minmov ?? minmov,
+    pricescale: meta.pricescale ?? pricescale,
+    tick: meta.minTick ?? meta.pipSize ?? minmov / (meta.pricescale ?? pricescale),
+    minTick: meta.minTick ?? tick,
+    pipSize: meta.pipSize ?? tick,
+    pipValue: meta.pipValue,
+    pointvalue: meta.pointvalue,
+    has_intraday: meta.has_intraday ?? true,
+    has_daily: meta.has_daily ?? true,
+    has_weekly_and_monthly: meta.has_weekly_and_monthly ?? true,
+    supported_resolutions: meta.supported_resolutions ?? resolutions.map((r) => r.id),
+    volume_precision: meta.volume_precision ?? 0,
+    data_status: meta.data_status ?? "endofday",
+    currency_code: meta.currency_code,
   };
 }
 

@@ -3,6 +3,7 @@ import {
   enforcePriceBarRatio,
   enforcePriceBarRatioOnPriceZoom,
 } from "../../../chart/price/barRatio.js";
+import { resetPanePriceScalePanReady, attachChartBodyVerticalPan } from "../../../chart/price/panScale.js";
 import { ensureDebugHud } from "../../../debug/chart/hud.js";
 import { createPanFpsMonitor } from "../../../debug/chart/index.js";
 
@@ -64,6 +65,25 @@ export function initPrimaryChart(ctx) {
     true,
   );
 
+  attachChartBodyVerticalPan(ctx.el, chart, series, {
+    priceScaleId: () => ctx.activePriceScaleId(),
+    isRatioLocked: () => Boolean(ctx.settingsStore.get().scales?.lockPriceToBarRatio),
+    isBlocked: () => ctx.drawing?.shouldBlockChartPan?.() ?? false,
+    onManualScaleLock: () => {
+      const sc = ctx.settingsStore.get().scales ?? {};
+      if (sc.autoScale !== false) ctx.settingsStore.set("scales", "autoScale", false);
+    },
+    onViewportChange: () => {
+      ctx.flushViewportSnapshot?.();
+      ctx.scheduleAutosaveLayout?.();
+    },
+  });
+
+  chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+    if (ctx._layoutRestorePending) return;
+    ctx.scheduleAutosaveLayout?.();
+  });
+
   ctx.chartPanes.set(0, {
     index: 0,
     chart,
@@ -79,6 +99,7 @@ export function initPrimaryChart(ctx) {
   });
 
   ctx.resetChartView = () => {
+    resetPanePriceScalePanReady(ctx.chartPanes.get(0));
     chart.priceScale(ctx.activePriceScaleId()).applyOptions({
       autoScale: true,
       scaleMargins: { top: 0.08, bottom: 0.12 },

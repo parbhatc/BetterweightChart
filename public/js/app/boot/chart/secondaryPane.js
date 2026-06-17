@@ -1,4 +1,5 @@
 import { createTvChart } from "../../../chart/view/index.js";
+import { attachChartBodyVerticalPan } from "../../../chart/price/panScale.js";
 import { getPaneSymbol } from "../../../ui/chart/symbol/store.js";
 import { wirePaneContextMenus } from "../../wire/contextMenus.js";
 
@@ -22,6 +23,23 @@ export function createSecondaryPaneFactory(ctx) {
     wrap.appendChild(stage);
 
     const paneChart = createTvChart(chartEl, ctx.themeColors);
+    attachChartBodyVerticalPan(chartEl, paneChart.chart, paneChart.series, {
+      priceScaleId: () => ctx.activePriceScaleId(),
+      isRatioLocked: () => Boolean(ctx.settingsStore.get().scales?.lockPriceToBarRatio),
+      isBlocked: () => ctx.drawing?.shouldBlockChartPan?.() ?? false,
+      onManualScaleLock: () => {
+        const sc = ctx.settingsStore.get().scales ?? {};
+        if (sc.autoScale !== false) ctx.settingsStore.set("scales", "autoScale", false);
+      },
+      onViewportChange: () => {
+        ctx.flushViewportSnapshot?.();
+        ctx.scheduleAutosaveLayout?.();
+      },
+    });
+    paneChart.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      if (ctx._layoutRestorePending) return;
+      ctx.scheduleAutosaveLayout?.();
+    });
     const paneSymbol = getPaneSymbol(paneIndex, ctx.symbol);
     const paneState = {
       index: paneIndex,
@@ -57,6 +75,7 @@ export function createSecondaryPaneFactory(ctx) {
       index: paneIndex,
       destroy: () => {
         paneState.priceLineLabel?.destroy();
+        paneState.studyScaleLabels?.destroy();
         ctx.drawingHub?.detachPane(paneIndex);
         ctx.chartPanes.delete(paneIndex);
         paneChart.chart.remove();

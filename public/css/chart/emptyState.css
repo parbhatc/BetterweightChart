@@ -1,0 +1,101 @@
+.tv-chart-wrap--empty .tv-watermark,
+.tv-chart-wrap--empty .status-line {
+  visibility: hidden;
+}
+
+.tv-chart-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6) var(--space-4);
+  background: color-mix(in srgb, var(--tv-bg-elevated) 92%, transparent);
+  pointer-events: auto;
+}
+
+.tv-chart-empty[hidden] {
+  display: none !important;
+}
+
+.tv-chart-empty__card {
+  width: min(22rem, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+}
+
+.tv-chart-empty__icon {
+  display: flex;
+  color: var(--tv-muted);
+  opacity: 0.85;
+}
+
+.tv-chart-empty__title {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  color: var(--tv-text);
+}
+
+.tv-chart-empty__text {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: var(--leading-normal);
+  color: var(--tv-text-secondary);
+  max-width: 18rem;
+}
+
+.tv-chart-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.tv-chart-empty__btn {
+  min-height: var(--control-size-sm);
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-md);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  outline: none;
+  transition: var(--transition-colors), var(--transition-transform);
+}
+
+.tv-chart-empty__btn:active {
+  transform: scale(0.98);
+}
+
+.tv-chart-empty__btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--tv-accent-muted);
+}
+
+.tv-chart-empty__btn--primary {
+  border: 1px solid var(--tv-settings-primary-border);
+  background: var(--tv-settings-primary-bg);
+  color: var(--tv-settings-primary-text);
+  padding-inline: var(--space-5);
+}
+
+.tv-chart-empty__btn--primary:hover {
+  background: var(--tv-settings-primary-hover-bg);
+  color: var(--tv-settings-primary-hover-text);
+}
+
+.tv-chart-empty__btn--secondary {
+  border: 1px solid var(--tv-border-strong);
+  background: transparent;
+  color: var(--tv-text-secondary);
+}
+
+.tv-chart-empty__btn--secondary:hover {
+  color: var(--tv-text);
+  background: var(--tv-surface-hover);
+}

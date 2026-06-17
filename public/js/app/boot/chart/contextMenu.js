@@ -17,6 +17,8 @@ export function buildPaneContextMenuOpts(ctx, pane, wrapEl) {
     ui: ctx.ui,
     getDrawing: () => ctx.drawing,
     getDrawingCount: ctx.getDrawingCountForPane,
+    getIndicatorCount: ctx.getIndicatorCountForPane,
+    removeIndicators: ctx.removeIndicatorsForPane,
     resetChartView: ctx.resetPaneChartView,
     resetTimeScale: ctx.resetPaneTimeScale,
   };

@@ -39,7 +39,7 @@ export const DEFAULT_SETTINGS = {
     backgroundOpacity: 50,
   },
   scales: {
-    autoScale: true,
+    autoScale: false,
     logarithmic: false,
     invertScale: false,
     priceScaleMode: "regular",

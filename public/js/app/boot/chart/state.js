@@ -159,7 +159,7 @@ export function createBootContext(overrides) {
     el,
     datafeed: null,
     settingsStore,
-    loader: createAppLoader(document.querySelector(".tv-app")),
+    loader: createAppLoader(document.querySelector(".tv-stage")),
     symbol,
     resolution,
     symbolInfo,

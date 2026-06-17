@@ -154,6 +154,14 @@ export function attachPaneHelpers(ctx) {
       : 0;
   }
 
+  function getIndicatorCountForPane(index) {
+    return ctx.indicatorController?.getCountForPane?.(index) ?? 0;
+  }
+
+  function removeIndicatorsForPane(index) {
+    ctx.indicatorController?.clearForPane?.(index);
+  }
+
   Object.assign(ctx, {
     getActivePane,
     getAllChartPanes,
@@ -172,6 +180,8 @@ export function attachPaneHelpers(ctx) {
     switchActivePane,
     activatePaneIndex,
     getDrawingCountForPane,
+    getIndicatorCountForPane,
+    removeIndicatorsForPane,
     syncLayoutCrosshairFrom,
   });
 }

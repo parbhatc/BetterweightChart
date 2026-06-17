@@ -149,6 +149,23 @@ export function priceFormatFromPrecisionSetting(setting, symbolInfo) {
 }
 
 /**
+ * Price format for indicator axis labels — display decimals only, not instrument tick size.
+ * TradingView shows values like 30348.24 even when the symbol tick is 0.25.
+ * @param {string | undefined} setting
+ * @param {object} [symbolInfo]
+ */
+export function indicatorPriceFormatFromSetting(setting, symbolInfo) {
+  const precision = displayPrecisionFromSetting(setting, symbolInfo);
+  if (precision <= 0) return { type: "price", precision: 0, minMove: 1 };
+  return { type: "price", precision, minMove: 10 ** -precision };
+}
+
+/** @param {string | undefined} setting @param {object} [symbolInfo] */
+export function indicatorDisplayPrecision(setting, symbolInfo) {
+  return displayPrecisionFromSetting(setting, symbolInfo);
+}
+
+/**
  * @param {string | undefined} setting
  * @param {object} [symbolInfo]
  */

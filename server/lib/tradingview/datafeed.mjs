@@ -1,14 +1,7 @@
 import { fetchTradingViewBars } from "./client.mjs";
 import { logoUrlFor, searchTradingViewSymbols } from "./search.mjs";
 import { chartConfig } from "../fakeBars.mjs";
-
-const RESOLUTIONS = [
-  { id: "1", label: "1m", sec: 60 },
-  { id: "5", label: "5m", sec: 300 },
-  { id: "15", label: "15m", sec: 900 },
-  { id: "60", label: "1h", sec: 3600 },
-  { id: "D", label: "1D", sec: 86400 },
-];
+import { CHART_RESOLUTIONS, isSymbolResolutionSupported, resolutionSec } from "../resolutions.mjs";
 
 /** @type {Map<string, object>} */
 const symbolCache = new Map();
@@ -16,10 +9,10 @@ const symbolCache = new Map();
 export function tradingViewDatafeedConfig() {
   const { themes } = chartConfig();
   return {
-    supported_resolutions: RESOLUTIONS.map((r) => r.id),
-    resolutions: RESOLUTIONS,
+    supported_resolutions: CHART_RESOLUTIONS.map((r) => r.id),
+    resolutions: CHART_RESOLUTIONS,
     default_symbol: "CME_MINI:NQ1!",
-    default_resolution: "5",
+    default_resolution: "1",
     exchanges: [],
     symbols_types: [],
     supports_search: true,
@@ -53,7 +46,19 @@ export async function tradingViewResolve(symbol) {
  */
 export async function tradingViewHistory(opts) {
   const countBack = opts.countback ?? 500;
-  const resSec = RESOLUTIONS.find((r) => r.id === opts.resolution)?.sec ?? 60;
+  const resSec = resolutionSec(opts.resolution);
+  const cached = symbolCache.get(opts.symbol);
+  if (cached && !isSymbolResolutionSupported(cached, opts.resolution)) {
+    return {
+      s: "no_data",
+      bars: [],
+      meta: {
+        invalidResolution: opts.resolution,
+        noData: true,
+        reason: "unsupported_resolution",
+      },
+    };
+  }
   /** @type {{ from?: number, to?: number } | null} */
   let range = null;
   if (opts.to != null) {

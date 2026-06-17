@@ -2,6 +2,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { WebSocketServer } from "ws";
 import { chartConfig } from "./lib/fakeBars.mjs";
 import {
   allSymbols,
@@ -267,8 +268,19 @@ function handleRequest(req, res) {
   });
 }
 
-http.createServer(handleRequest).listen(PORT, () => {
+const server = http.createServer(handleRequest);
+
+const wss = new WebSocketServer({ server, path: "/ws/ping" });
+wss.on("connection", (ws) => {
+  ws.on("message", (data, isBinary) => {
+    if (isBinary) return;
+    if (String(data) === "ping") ws.send("pong");
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`Chart UI:  http://127.0.0.1:${PORT}/`);
   console.log(`Embed:     http://127.0.0.1:${PORT}/embed?symbol=NQ&theme=dark`);
   console.log(`Datafeed:  http://127.0.0.1:${PORT}/datafeed/config`);
+  console.log(`WS ping:   ws://127.0.0.1:${PORT}/ws/ping`);
 });

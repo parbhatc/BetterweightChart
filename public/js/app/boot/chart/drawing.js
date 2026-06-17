@@ -1,5 +1,6 @@
 import { precisionFromSettings } from "../../../chart/timezone/list.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { nearestBarIndex } from "../../../chart/pane/hoverBar.js";
 import { measureVisiblePriceRange, snapTimeToNearestBar } from "../../../chart/coords/timeScale.js";
 import { formatChartTimeLabel } from "../../../chart/time/labelFormat.js";
 import { createMultiPaneDrawingHub } from "../../../drawings/multi/paneHub.js";
@@ -102,8 +103,10 @@ export function attachDrawingBoot(ctx) {
       onValuesTooltipBarChange: (paneIndex, bar, prev) => {
         const pane = ctx.chartPanes.get(paneIndex);
         if (!pane) return;
+        const bars = pane.bars ?? [];
         pane.hoverBar = bar;
         pane.hoverPrev = prev ?? undefined;
+        pane.hoverBarIndex = bar ? nearestBarIndex(bars, bar.time) : undefined;
         const activeIdx = ctx.layoutManager?.getActivePaneIndex() ?? 0;
         if (paneIndex === activeIdx) {
           ctx.ui.hoverBar = bar;
@@ -111,7 +114,10 @@ export function attachDrawingBoot(ctx) {
           ctx.applySymbolLineStyleLocal();
         }
         ctx.scheduleStatusLine(pane);
+        ctx.refreshIndicatorLegends?.();
       },
+      getIndicatorCountForPane: (idx) => ctx.indicatorController?.getCountForPane?.(idx) ?? 0,
+      removeIndicatorsForPane: (idx) => ctx.indicatorController?.clearForPane?.(idx),
     });
     ctx.drawing = ctx.drawingHub.facade;
     attachPaneDrawings(ctx.chartPanes.get(0));

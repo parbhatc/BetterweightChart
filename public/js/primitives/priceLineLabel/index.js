@@ -7,6 +7,11 @@ const COUNTDOWN_ROW_H = 16;
 const FONT =
   "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
 
+/** @param {boolean} [showCountdown] */
+export function symbolPriceLabelHeight(showCountdown = false) {
+  return PRICE_ROW_H + (showCountdown ? COUNTDOWN_ROW_H : 0);
+}
+
 /**
  * @param {CanvasRenderingContext2D} ctx
  * @param {number} x

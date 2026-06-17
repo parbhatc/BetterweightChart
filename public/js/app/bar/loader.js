@@ -76,6 +76,9 @@ export function createBarLoader(opts) {
     setPrimaryBars,
     onPaneBarUpdate,
     onHistoryPrepended,
+    syncPaneEmptyState,
+    ensurePanePriceScaleForPan,
+    finishPaneViewportAfterLoad,
   } = opts;
 
   /** @type {Map<number, string>} */
@@ -339,7 +342,9 @@ export function createBarLoader(opts) {
     if (pane.index === 0) setPrimaryBars(pane);
     if (pane.index === getActivePaneIndex()) {
       setHoverState(undefined, undefined);
-      if (pane.bars.length) scrollPaneToLatest(pane);
+    }
+    if (pane.bars.length) {
+      finishPaneViewportAfterLoad?.(pane);
     }
     return pane.bars.at(-1);
   }
@@ -384,9 +389,11 @@ export function createBarLoader(opts) {
   function clearPaneBarState(pane) {
     pane._historyExhausted = false;
     pane._firstDataRequest = true;
+    pane._emptyStateMeta = null;
     pane.bars = [];
     pane.futureWhitespaceBars = null;
     invalidatePaneChartView(pane);
+    syncPaneEmptyState?.(pane, { show: false });
   }
 
   /** Burst load when panning near the left edge or into a gap. */
@@ -449,6 +456,7 @@ export function createBarLoader(opts) {
         fallback: countBack,
         ...periodParams,
       });
+      const wasFirstRequest = firstDataRequest;
       const result = await fetchBarsShared(pane, pane.symbolInfo, periodParams);
       pane._firstDataRequest = false;
       pane.bars = result.bars.slice();
@@ -456,6 +464,13 @@ export function createBarLoader(opts) {
       invalidatePaneChartView(pane);
       pane._historyExhausted = Boolean(result.noData);
       pane._historyErrorUntil = null;
+      if (wasFirstRequest && !pane.bars.length && result.noData) {
+        pane._emptyStateMeta = result.meta ?? null;
+        syncPaneEmptyState?.(pane, { show: true, meta: pane._emptyStateMeta });
+      } else if (pane.bars.length) {
+        pane._emptyStateMeta = null;
+        syncPaneEmptyState?.(pane, { show: false });
+      }
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });
       return await finishPaneAfterBarsLoaded(pane);
     });

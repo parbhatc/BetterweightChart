@@ -12,6 +12,7 @@
 @import "./drawings/settings/confirm.css";
 @import "./drawings/settings/dialog.css";
 @import "./chart.css";
+@import "./chart/emptyState.css";
 @import "./market/status.css";
 @import "./context/menu.css";
 @import "./settings.css";
@@ -19,3 +20,6 @@
 @import "./timezone/clock.css";
 @import "./responsive.css";
 @import "./debug/hud.css";
+@import "./indicators/dialog.css";
+@import "./indicators/legend.css";
+@import "./indicators/studyPaneLegend.css";

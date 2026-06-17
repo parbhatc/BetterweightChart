@@ -23,6 +23,8 @@ export function wirePaneContextMenus(opts) {
     ui,
     getDrawing,
     getDrawingCount,
+    getIndicatorCount,
+    removeIndicators,
     resetChartView,
     resetTimeScale,
   } = opts;
@@ -41,6 +43,7 @@ export function wirePaneContextMenus(opts) {
       price: ui.crosshairPrice,
       priceText: formatPrice(ui.crosshairPrice),
       drawingCount: getDrawingCount(pane.index),
+      indicatorCount: getIndicatorCount(pane.index),
       lockCursorByTime: ui.lockCursorByTime,
       canPaste: Boolean(getDrawing()?.hasDrawingClipboard?.()) || true,
       hasSelectedDrawing: Boolean(getDrawing()?.getSelectedDrawing?.()),
@@ -85,6 +88,7 @@ export function wirePaneContextMenus(opts) {
         }
       },
       removeDrawings: () => getDrawing()?.clearAll(),
+      removeIndicators: () => removeIndicators(pane.index),
       openSettings: () => getChartSettings().open(),
     },
   });

@@ -29,6 +29,8 @@ export function createControllerState(opts) {
     container: opts.container,
     getContext: opts.getContext,
     onValuesTooltipBarChange: opts.onValuesTooltipBarChange,
+    getIndicatorCount: opts.getIndicatorCount ?? (() => 0),
+    removeIndicators: opts.removeIndicators ?? (() => {}),
     primitive,
 
     drawings: /** @type {import("../types.js").UserDrawing[]} */ ([]),

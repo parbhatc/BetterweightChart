@@ -34,6 +34,14 @@
     display: none;
   }
 
+  .tv-chart-tools__label {
+    display: none;
+  }
+
+  .tv-chart-tools__btn--text {
+    padding: 0 var(--space-1);
+  }
+
   .tv-header-tools {
     gap: var(--space-2);
   }

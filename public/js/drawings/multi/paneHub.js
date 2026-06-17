@@ -24,17 +24,18 @@ const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "ed
 
  * @param {() => boolean} [opts.getSyncDrawings]
  * @param {() => boolean} [opts.getSyncCrosshair]
-
+ * @param {(paneIndex: number) => number} [opts.getIndicatorCountForPane]
+ * @param {(paneIndex: number) => void} [opts.removeIndicatorsForPane]
  */
-
 export function createMultiPaneDrawingHub(opts) {
-
   const {
     toolbarEl,
     getContextForPane,
     getSyncDrawings = () => false,
     getSyncCrosshair = () => false,
     onValuesTooltipBarChange,
+    getIndicatorCountForPane = () => 0,
+    removeIndicatorsForPane = () => {},
   } = opts;
 
 
@@ -358,6 +359,10 @@ export function createMultiPaneDrawingHub(opts) {
 
       onValuesTooltipBarChange: (bar, prev) => onValuesTooltipBarChange?.(paneIndex, bar, prev),
 
+      getIndicatorCount: () => getIndicatorCountForPane(paneIndex),
+
+      removeIndicators: () => removeIndicatorsForPane(paneIndex),
+
     });
 
 
@@ -448,7 +453,9 @@ export function createMultiPaneDrawingHub(opts) {
 
     getLockedCount: () => getActive()?.getLockedCount() ?? 0,
 
-    getIndicatorCount: () => 0,
+    getIndicatorCount: () => getIndicatorCountForPane(activeIndex),
+
+    removeIndicators: () => removeIndicatorsForPane(activeIndex),
 
     setMagnetMode: (mode) => broadcast("setMagnetMode", mode),
 

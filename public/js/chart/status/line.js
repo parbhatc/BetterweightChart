@@ -69,8 +69,26 @@ export function renderStatusLine(el, opts) {
   const sl = settings.statusLine ?? {};
   const precision = precisionFromSettings(settings, symbolInfo);
 
+  let mainEl = el.querySelector(".status-line__main");
+  let studiesEl = el.querySelector(".status-line__studies");
+  if (!mainEl) {
+    const preservedStudies = el.querySelector(".status-line__studies");
+    el.textContent = "";
+    mainEl = document.createElement("div");
+    mainEl.className = "status-line__main";
+    studiesEl = preservedStudies ?? document.createElement("div");
+    studiesEl.className = "status-line__studies";
+    el.append(mainEl, studiesEl);
+  } else if (!studiesEl) {
+    studiesEl = document.createElement("div");
+    studiesEl.className = "status-line__studies";
+    el.appendChild(studiesEl);
+  } else if (!el.contains(studiesEl)) {
+    el.appendChild(studiesEl);
+  }
+
   if (!bar) {
-    el.innerHTML = "";
+    mainEl.innerHTML = "";
     return;
   }
 
@@ -159,6 +177,6 @@ export function renderStatusLine(el, opts) {
     parts.push(`<div class="status-line__row status-line__row--tail">${tailRowParts.join("")}</div>`);
   }
 
-  el.innerHTML = parts.join("");
+  mainEl.innerHTML = parts.join("");
   applyStatusLineAppearance(el, settings);
 }

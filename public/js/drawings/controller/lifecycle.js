@@ -233,6 +233,7 @@ export function buildControllerApi(ctx) {
     setAlwaysRemoveLocked: (...args) => ctx.setAlwaysRemoveLocked(...args),
     getAlwaysRemoveLocked: () => ctx.getAlwaysRemoveLocked(),
     removeDrawings: (...args) => ctx.removeDrawings(...args),
+    removeIndicators: () => ctx.removeIndicators(),
     getSelectedId: () => ctx.selectedId,
     getSelectedDrawing: () => ctx.getSelectedDrawing(),
     selectDrawing: (...args) => ctx.selectDrawing(...args),

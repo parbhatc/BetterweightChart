@@ -7,7 +7,7 @@ import {
   resolvePriceScalePlacement,
 } from "../scale/settings.js";
 import { invalidateChartTimeCache } from "../timezone/chartTime.js";
-import { priceFormatFromPrecisionSetting } from "../timezone/list.js";
+import { priceFormatFromPrecisionSetting, resolveTimezone } from "../timezone/list.js";
 import {
   formatAxisDateTick,
   formatAxisMonthTick,
@@ -118,11 +118,21 @@ export function applySettingsToChart(opts) {
     mode: priceScaleModeFromSettings(sc),
     invertScale: sc.invertScale,
     autoScale: sc.lockPriceToBarRatio ? false : sc.autoScale,
-    scaleMargins: {
-      top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
-      bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
-    },
+    scaleMargins: (() => {
+      const manualScale = !sc.lockPriceToBarRatio && sc.autoScale === false;
+      if (manualScale) {
+        const existing = targetSeries.priceScale().options().scaleMargins;
+        if (existing && Number.isFinite(existing.top) && Number.isFinite(existing.bottom)) {
+          return { top: existing.top, bottom: existing.bottom };
+        }
+      }
+      return {
+        top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
+        bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
+      };
+    })(),
   };
+  targetSeries.priceScale().applyOptions(scaleOpts);
   targetChart.priceScale(activePriceScaleId()).applyOptions(scaleOpts);
 
   targetSeries.applyOptions({
@@ -141,14 +151,69 @@ export function applySettingsToChart(opts) {
 }
 
 /**
+ * Stable key for settings that require rebuilding chart bar times / candle series data.
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {object | null | undefined} symbolInfo
+ */
+export function chartDataRefreshKey(settingsStore, symbolInfo) {
+  const sym = settingsStore.get().symbol ?? {};
+  const perBar = Boolean(sym.colorBarsOnPrevClose);
+  const parts = [
+    resolveTimezone(sym.timezone, symbolInfo),
+    sym.session ?? "electronic",
+    perBar ? "1" : "0",
+  ];
+  if (perBar) {
+    parts.push(
+      sym.bodyVisible,
+      sym.bodyUpColor,
+      sym.bodyDownColor,
+      sym.bordersVisible,
+      sym.bordersUpColor,
+      sym.bordersDownColor,
+      sym.wickVisible,
+      sym.wickUpColor,
+      sym.wickDownColor,
+    );
+  }
+  return parts.join("\0");
+}
+
+/**
  * @param {object} opts
  * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} opts.settingsStore
  * @param {object} opts.symbolInfo
+ * @param {() => void} [opts.refreshCandleData]
+ * @param {object} [opts.tzClock]
+ * @param {(setting: string | undefined, info: object) => string} opts.resolveTimezone
+ * @param {string | undefined} [opts.previousTimezone]
+ * @param {string | undefined} [opts.previousDataKey]
+ * @returns {{ timezone: string, dataKey: string, dataChanged: boolean }}
  */
 export function applyChartTimezone(opts) {
-  const { settingsStore, symbolInfo, tzClock, refreshCandleData, resolveTimezone } = opts;
+  const {
+    settingsStore,
+    symbolInfo,
+    tzClock,
+    refreshCandleData,
+    resolveTimezone: resolveTz,
+    previousTimezone,
+    previousDataKey,
+  } = opts;
   const sym = settingsStore.get().symbol ?? {};
-  invalidateChartTimeCache(resolveTimezone(sym.timezone, symbolInfo));
-  refreshCandleData?.();
+  const timezone = resolveTz(sym.timezone, symbolInfo);
+  const dataKey = chartDataRefreshKey(settingsStore, symbolInfo);
+  const dataChanged = previousDataKey !== undefined && dataKey !== previousDataKey;
+
+  if (previousTimezone !== undefined && timezone !== previousTimezone) {
+    invalidateChartTimeCache(previousTimezone);
+    invalidateChartTimeCache(timezone);
+  }
+
+  if (dataChanged) {
+    refreshCandleData?.();
+  }
+
   tzClock?.update();
+  return { timezone, dataKey, dataChanged };
 }

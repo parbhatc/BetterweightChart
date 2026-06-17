@@ -5,6 +5,7 @@ import {
   listSymbols,
   searchSymbols,
 } from "./fakeBars.mjs";
+import { resolutionSec, tickToMinmovPricescale } from "./resolutions.mjs";
 
 export function datafeedConfig() {
   const cfg = chartConfig();
@@ -48,26 +49,31 @@ export function resolveSymbol(symbol) {
   if (!meta) return null;
 
   const tick = meta.tick ?? 0.01;
-  const pricescale = Math.round(1 / tick);
+  const { minmov, pricescale } = tickToMinmovPricescale(tick);
+  const exchange = meta.exchange ?? "CME";
+  const isCrypto = meta.type === "crypto";
 
   return {
     name: sym,
     ticker: sym,
     description: meta.name,
     type: meta.type,
-    exchange: meta.exchange,
-    listed_exchange: meta.exchange,
-    session: "24x7",
-    timezone: "Etc/UTC",
-    minmov: 1,
+    exchange,
+    listed_exchange: exchange,
+    session: isCrypto ? "24x7" : "1700-1600",
+    timezone: isCrypto ? "Etc/UTC" : exchange === "CME" || exchange === "CBOT" ? "America/Chicago" : "America/New_York",
+    minmov,
     pricescale,
-    tick,
+    tick: minmov / pricescale,
+    minTick: minmov / pricescale,
+    pipSize: minmov / pricescale,
     has_intraday: true,
     has_daily: true,
     has_weekly_and_monthly: true,
     supported_resolutions: RESOLUTIONS.map((r) => r.id),
     volume_precision: 0,
-    data_status: meta.type === "crypto" ? "streaming" : "delayed",
+    data_status: isCrypto ? "streaming" : "delayed",
+    currency_code: "USD",
   };
 }
 
@@ -87,7 +93,7 @@ export function historyBars(params) {
   let countback = params.countback != null ? Number(params.countback) : 500;
 
   if (from != null && to != null && !params.countback) {
-    const resSec = RESOLUTIONS.find((r) => r.id === resolution)?.sec ?? 60;
+    const resSec = resolutionSec(resolution);
     countback = Math.min(Math.max(Math.ceil((to - from) / resSec), 10), 5000);
   }
 

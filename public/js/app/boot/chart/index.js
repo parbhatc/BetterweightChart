@@ -26,10 +26,13 @@ import { attachBarLoader } from "./barLoader.js";
 import { wireLayoutChrome } from "./layoutChrome.js";
 import { wireKeyboardShortcuts } from "./keyboard.js";
 import { wireSymbolAndTimeframePickers } from "./pickers.js";
+import { mountChartToolbarTools } from "../../../ui/header/chartTools.js";
+import { attachIndicatorsBoot } from "./indicatorsBoot.js";
 import {
   createFeatureFlags,
   setBootFeatureFlags,
 } from "../../../chart/features.js";
+import { mergeWithCustomResolutions, CHART_RESOLUTIONS } from "../../../chart/resolutions.js";
 
 export { readPageOptions };
 
@@ -63,7 +66,7 @@ export async function bootChart(overrides = {}) {
     ctx.cfg.themes?.[ctx.currentTheme] ??
     ctx.cfg.themes?.dark ??
     chartThemeFallback(ctx.currentTheme);
-  ctx.resolutions = ctx.cfg.resolutions ?? [{ id: "1", label: "1m" }];
+  ctx.resolutions = mergeWithCustomResolutions(ctx.cfg.resolutions ?? CHART_RESOLUTIONS);
   initSymbolResolution(ctx, ctx.cfg);
 
   attachLayoutPersistence(ctx);
@@ -99,6 +102,7 @@ export async function bootChart(overrides = {}) {
       clearTimeout(ctx.layoutAutosaveTimer);
       ctx.layoutAutosaveTimer = null;
     }
+    ctx.flushViewportSnapshot?.();
     ctx.persistPaneSymbols();
     if (ctx.layoutManager?.getAutoSave()) {
       ctx.saveLayoutToLibrary();
@@ -129,6 +133,12 @@ export async function bootChart(overrides = {}) {
 
   await wireSymbolAndTimeframePickers(ctx);
 
+  if (ctx.opts.chrome && ctx.chromeEl) {
+    const toolbarLeft = ctx.chromeEl.querySelector(".tv-toolbar__left");
+    if (toolbarLeft) ctx.chartToolbarTools = mountChartToolbarTools(toolbarLeft);
+  }
+  attachIndicatorsBoot(ctx);
+
   ctx.symbolInfo = await ctx.datafeed.resolveSymbol(ctx.symbol);
   const primaryPane = ctx.chartPanes.get(0);
   if (primaryPane) primaryPane.symbolInfo = ctx.symbolInfo;
@@ -137,6 +147,7 @@ export async function bootChart(overrides = {}) {
 
   try {
     const last = await chartDebugTimeAsync("boot", "loadBars", () => ctx.loadBars());
+    ctx.refreshIndicators?.();
     ctx.setOverlayLoaderEnabled(false);
     ctx.persistPaneSymbols();
     if (debugOn) {
@@ -145,6 +156,7 @@ export async function bootChart(overrides = {}) {
         resolution: ctx.resolution,
         barCount: ctx.bars.length,
         panes: ctx.getAllChartPanes().length,
+        viewportHint: "window.__BWC_VIEWPORT__.dump() — use ?debug=viewport",
       });
     }
     const widget = createChartWidgetApi({

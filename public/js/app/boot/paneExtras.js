@@ -3,6 +3,8 @@ import { getMarketStatusDetails } from "../../chart/market/status.js";
 import { precisionFromSettings } from "../../chart/timezone/list.js";
 import { isScaleVisible, resolvePriceScalePlacement } from "../../chart/scale/settings.js";
 import { rafThrottle, trackChartPanning } from "../../chart/pan/perf.js";
+import { timeToBarIndex } from "../../chart/coords/timeScale.js";
+import { nearestBarIndex, normalizeHoverBar, resolveUtcBarTime } from "../../chart/pane/hoverBar.js";
 import { SessionBackgroundPrimitive } from "../../primitives/session/background.js";
 import { attachPriceLineLabelPrimitive } from "../../primitives/priceLineLabel/index.js";
 import {
@@ -47,11 +49,41 @@ export function createPaneExtras(deps) {
     return pane.timeAdapter?.index.utcBarByUtcTime(utcTime) ?? barsForPane(pane).find((b) => b.time === utcTime);
   }
 
+  /** @param {object} pane @param {object | undefined} bar @param {number} idx */
+  function setPaneHoverBar(pane, bar, idx, isActive) {
+    if (!bar) {
+      pane.hoverBar = undefined;
+      pane.hoverPrev = undefined;
+      pane.hoverBarIndex = undefined;
+      if (isActive) {
+        ui.hoverBar = undefined;
+        ui.hoverPrev = undefined;
+      }
+      return false;
+    }
+    const normalized = normalizeHoverBar(pane, bar, barsForPane) ?? bar;
+    const bars = barsForPane(pane);
+    const utcTime = resolveUtcBarTime(pane.timeAdapter, normalized.time ?? bar.time);
+    const resolvedIdx = nearestBarIndex(bars, utcTime);
+    const barChanged = pane.hoverBar?.time !== normalized.time;
+    pane.hoverBar = normalized;
+    pane.hoverBarIndex = resolvedIdx;
+    pane.hoverPrev = resolvedIdx > 0 ? bars[resolvedIdx - 1] : undefined;
+    if (isActive) {
+      ui.hoverBar = pane.hoverBar;
+      ui.hoverPrev = pane.hoverPrev;
+      if (barChanged) applySymbolLineStyleLocal();
+    }
+    return barChanged;
+  }
+
   /** @param {object} pane */
   function refreshPaneStatusLine(pane) {
     if (!pane.statusEl) return;
     if (ui.barsLoading || !pane.bars.length) {
-      pane.statusEl.innerHTML = "";
+      const main = pane.statusEl.querySelector(".status-line__main");
+      if (main) main.innerHTML = "";
+      else pane.statusEl.innerHTML = "";
       return;
     }
     const visible = barsForPane(pane);
@@ -83,10 +115,6 @@ export function createPaneExtras(deps) {
   };
 
   const scheduleStatusLine = rafThrottle((/** @type {object} */ pane) => {
-    if (ui.chartPanning) {
-      pendingStatusPanes.set(pane.index, pane);
-      return;
-    }
     refreshPaneStatusLine(pane);
   });
 
@@ -142,16 +170,72 @@ export function createPaneExtras(deps) {
     });
   }
 
+  /** @param {object} pane @param {import("lightweight-charts").MouseEventParams} param @returns {{ bar: object | undefined, prev: object | undefined, idx: number }} */
+  function barFromCrosshairParam(pane, param) {
+    const empty = { bar: undefined, prev: undefined, idx: -1 };
+    if (!param?.time) return empty;
+
+    const ta = pane.timeAdapter;
+    const chartBars = pane._chartView?.chartBars ?? [];
+    const barSec = barSecForPane(pane, resolutions);
+
+    const seriesBar = param.seriesData?.get(pane.series);
+    const seriesOhlc = seriesBar && "open" in seriesBar ? seriesBar : null;
+    if (seriesOhlc?.time != null) {
+      const utcTime = ta?.time.toUtc(seriesOhlc.time) ?? seriesOhlc.time;
+      const bar = statusBarAtTime(pane, utcTime);
+      if (bar) return { bar, prev: undefined, idx: -1 };
+    }
+
+    if (ta) {
+      let idx = ta.index.chart(param.time);
+      if ((idx == null || idx < 0) && chartBars.length) {
+        idx = timeToBarIndex(param.time, chartBars, barSec);
+      }
+      if (idx != null && idx >= 0) {
+        const bar = ta.index.utcBar(idx);
+        if (bar) return { bar, prev: undefined, idx: -1 };
+      }
+    }
+
+    return empty;
+  }
+
+  /** @param {object} pane @param {import("lightweight-charts").MouseEventParams} param @param {boolean} isActive @returns {boolean} */
+  function applyCrosshairBar(pane, param, isActive) {
+    if (!param?.time) {
+      pane.lastCrosshairChartTime = undefined;
+      if (isActive) applySymbolLineStyleLocal();
+      return setPaneHoverBar(pane, undefined, -1, isActive);
+    }
+
+    pane.lastCrosshairChartTime = param.time;
+    const { bar: nextBar, idx } = barFromCrosshairParam(pane, param);
+    if (!nextBar) return false;
+    return setPaneHoverBar(pane, nextBar, idx, isActive);
+  }
+
+  /** @param {object} pane @param {number} chartTime @param {boolean} isActive */
+  function refreshHoverBarFromChartTime(pane, chartTime, isActive) {
+    if (chartTime == null || !pane.timeAdapter) return;
+    applyCrosshairBar(pane, { time: chartTime, seriesData: new Map() }, isActive);
+  }
+
   /** @param {object} pane */
   function wirePaneCrosshair(pane) {
     pane.chart.subscribeCrosshairMove((param) => {
+      const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
+
+      applyCrosshairBar(pane, param, isActive);
+
       if (ui.chartPanning) {
         chartDebugCount("crosshair", "skippedPan");
+        scheduleStatusLine(pane);
         return;
       }
       chartDebugCount("crosshair", "move");
 
-      if (!ui.chartPanning && pane.bars.length) {
+      if (pane.bars.length) {
         const hub = getDrawingHub?.();
         if (hub?.shouldUseGlobalCrosshair?.()) {
           const ctrl = hub.getController?.(pane.index);
@@ -162,8 +246,6 @@ export function createPaneExtras(deps) {
           syncLayoutCrosshairFrom(pane.chart, pane.series, param);
         }
       }
-
-      const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
 
       if (isActive && ui.lockCursorByTime && ui.lockedCrosshairTime != null && param?.point) {
         const price = pane.series.coordinateToPrice(param.point.y);
@@ -181,37 +263,6 @@ export function createPaneExtras(deps) {
         }
       }
 
-      const seriesBar = param.seriesData?.get(pane.series);
-      const seriesOhlc = seriesBar && "open" in seriesBar ? seriesBar : null;
-
-      if (!param?.time) {
-        pane.hoverBar = undefined;
-        pane.hoverPrev = undefined;
-        if (isActive) {
-          ui.hoverBar = undefined;
-          ui.hoverPrev = undefined;
-          applySymbolLineStyleLocal();
-        }
-        scheduleStatusLine(pane);
-        return;
-      }
-
-      const idx = pane.timeAdapter?.index.chart(param.time);
-      let nextBar = pane.timeAdapter?.index.utcBarByChartTime(param.time);
-      let prevBar = idx != null && idx > 0 ? pane.timeAdapter?.index.utcBar(idx - 1) : undefined;
-      if (!nextBar) {
-        nextBar = seriesOhlc ?? undefined;
-        if (!nextBar) return;
-      }
-
-      const barChanged = pane.hoverBar?.time !== nextBar.time;
-      pane.hoverBar = nextBar;
-      pane.hoverPrev = prevBar;
-      if (isActive) {
-        ui.hoverBar = pane.hoverBar;
-        ui.hoverPrev = pane.hoverPrev;
-        if (barChanged) applySymbolLineStyleLocal();
-      }
       scheduleStatusLine(pane);
     });
   }
@@ -226,8 +277,14 @@ export function createPaneExtras(deps) {
       onEnd: () => {
         ui.chartPanning = false;
         panFps.stop();
-        flushPendingStatusLines();
         const active = getActivePane();
+        const activeIdx = active?.index ?? 0;
+        for (const p of getAllChartPanes()) {
+          if (p.lastCrosshairChartTime != null) {
+            refreshHoverBarFromChartTime(p, p.lastCrosshairChartTime, p.index === activeIdx);
+          }
+        }
+        flushPendingStatusLines();
         if (active) scheduleStatusLine(active);
         if (deferWhitespacePane) {
           const p = deferWhitespacePane;
@@ -305,6 +362,11 @@ export function createPaneExtras(deps) {
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
       if (ui.barsLoading) return;
+      if (pane.lastCrosshairChartTime != null) {
+        const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
+        refreshHoverBarFromChartTime(pane, pane.lastCrosshairChartTime, isActive);
+        scheduleStatusLine(pane);
+      }
       chartDebugCount("perf", "visibleRange");
       chartDebugTime("perf", `visibleRangeHandler pane ${pane.index}`, () => {
         if (pane.index === 0) {
