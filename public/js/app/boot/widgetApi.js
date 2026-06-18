@@ -33,6 +33,7 @@ export function createChartWidgetApi(ctx) {
     barTimeLabel,
     mountChartSettingsUi,
     layoutManager,
+    drawing,
     lastBar,
     countBack,
   } = ctx;
@@ -172,6 +173,18 @@ export function createChartWidgetApi(ctx) {
 
     openSettings: (section) => mountChartSettingsUi().open(section),
     setTheme: (mode) => applyThemeMode(mode),
+    /**
+     * Programmatically add a drawing.
+     * @param {string} shape e.g. "trendline", "trend-line", "rectangle", "rect"
+     * @param {{ time: number, price: number }[]} points
+     * @param {{ paneIndex?: number, locked?: boolean, props?: object }} [opts]
+     */
+    drawShape(shape, points, opts = {}) {
+      if (!drawing?.drawShape) {
+        throw new Error("Drawing API is not available");
+      }
+      return drawing.drawShape(shape, points, opts);
+    },
     barTimeLabel,
   };
 }

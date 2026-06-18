@@ -8,6 +8,13 @@ import { mountEditToolbar } from "../toolbars/edit/index.js";
 
 const HUB_EVENTS = ["toolChange", "change", "selectionChange", "dragChange", "editText", "placementChange"];
 
+const SHAPE_ALIASES = {
+  trendline: "trend-line",
+  trendLine: "trend-line",
+  rectangle: "rectangle",
+  rect: "rectangle",
+};
+
 
 
 /**
@@ -516,6 +523,23 @@ export function createMultiPaneDrawingHub(opts) {
     updateDrawing: (id, patch, opts) => getActive()?.updateDrawing(id, patch, opts),
 
     removeDrawingById: (id) => getActive()?.removeDrawingById(id),
+    drawShape: (shape, points, opts = {}) => {
+      const type = SHAPE_ALIASES[shape] ?? shape;
+      const targetIndex =
+        opts.paneIndex != null && Number.isInteger(opts.paneIndex) ? opts.paneIndex : activeIndex;
+      const ctrl = controllers.get(targetIndex);
+      if (!ctrl) throw new Error(`Pane ${targetIndex} is not attached`);
+      const drawing = ctrl.addDrawing(type, points, {
+        locked: opts.locked,
+        props: opts.props,
+      });
+      if (getSyncDrawings()) {
+        syncDrawingsFrom(targetIndex);
+        syncPlacementFrom(targetIndex);
+      }
+      emit("change");
+      return drawing;
+    },
 
     getDrawingScreenAnchor: (drawing) => getActive()?.getDrawingScreenAnchor(drawing) ?? null,
 

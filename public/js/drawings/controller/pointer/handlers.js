@@ -289,6 +289,7 @@ export function createPointerHandlers(api) {
       if (idx >= 0) {
         api.swallowChartPointer(ev);
         const drawing = api.getDrawings()[idx];
+        if (drawing.locked) return;
         api.selectDrawing(drawing.id);
         if (!drawing.locked && drawing.type !== "regression-trend") {
           const p0 = drawing.points[0];
@@ -358,6 +359,7 @@ export function createPointerHandlers(api) {
     ev.preventDefault();
     ev.stopImmediatePropagation();
     const drawing = api.getDrawings()[idx];
+    if (drawing.locked) return;
     api.selectDrawing(drawing.id);
     api.emitEditText(drawing);
   }

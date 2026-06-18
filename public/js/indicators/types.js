@@ -46,15 +46,40 @@
  */
 
 /**
- * @typedef {object} InputDef
+ * @typedef {object} InputFieldDef
  * @property {string} id
- * @property {"int"|"float"|"source"|"select"|"bool"|"timeframe"} type
+ * @property {"int"|"float"|"source"|"select"|"bool"|"timeframe"|"text"|"color"} type
  * @property {string} title
  * @property {*} [defval]
- * @property {string} [section]
+ * @property {boolean} [inline] Group with adjacent inline fields on one row (legacy flat schema)
  * @property {{ id: string, label: string }[]} [options]
  * @property {(inputs: object) => boolean} [disabled]
  * @property {boolean} [affectsStyle]
+ * @property {string} [opacityKey] For `color` — opacity stored under this key (default `${id}Opacity`)
+ * @property {"inputs"|"style"} [store="inputs"] Where color values are stored
+ * @property {boolean} [showInStatusLine=true] Show this input's value in the legend status line after the study title
+ */
+
+/**
+ * Checkbox + field on one row (e.g. enable timeframe + timeframe select).
+ * @typedef {object} InputRowDef
+ * @property {"row"} type
+ * @property {string} [section]
+ * @property {InputFieldDef[]} fields
+ */
+
+/**
+ * Two fields side by side (e.g. Bullish | Bearish colors, FVG | iFVG labels).
+ * @typedef {object} InputInlinePairDef
+ * @property {"inlinePair"} type
+ * @property {string} [section]
+ * @property {string} [header] — title row above left/right cells (e.g. "FVG Box Color")
+ * @property {InputFieldDef} left
+ * @property {InputFieldDef} right
+ */
+
+/**
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef} InputDef
  */
 
 /**
@@ -67,6 +92,14 @@
  * @property {number} [paneIndex]
  * @property {boolean} [band]
  * @property {(inputs: object, style?: object) => boolean} [when]
+ */
+
+/**
+ * @typedef {object} GraphicObjectDef
+ * @property {string} styleKey — `instance.style` toggle key
+ * @property {string} label — Settings dialog checkbox label
+ * @property {boolean} [default=true]
+ * @property {string} [overlay] — overlay primitive id this toggle gates (`labels`, `lines`, …). Omit to gate all overlays on the study.
  */
 
 /**

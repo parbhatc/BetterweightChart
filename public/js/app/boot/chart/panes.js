@@ -42,6 +42,8 @@ export function attachPaneHelpers(ctx) {
     getLayoutCharts,
     getLayoutPanes,
     isBarsLoading: () => Boolean(ctx.ui?.barsLoading),
+    isHistoryRestorePending: () =>
+      getAllChartPanes().some((p) => p._historyRestorePending),
   });
   ctx.syncLayoutDateRangeFrom = syncLayoutDateRangeFrom;
   ctx.wireLayoutPaneSync = wireLayoutPaneSync;
@@ -84,10 +86,10 @@ export function attachPaneHelpers(ctx) {
     savePaneSymbols(getAllChartPanes().map((p) => ({ index: p.index, symbol: p.symbol })));
   }
 
-  function refreshPaneCandleData(pane) {
+  function refreshPaneCandleData(pane, opts = {}) {
     refreshPaneCandles(pane, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions, (p) => {
       if (p.index === 0) ctx.timeAdapter = p.timeAdapter;
-    });
+    }, opts);
   }
 
   function refreshCandleData() {

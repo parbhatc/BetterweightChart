@@ -102,7 +102,6 @@ export async function bootChart(overrides = {}) {
       clearTimeout(ctx.layoutAutosaveTimer);
       ctx.layoutAutosaveTimer = null;
     }
-    ctx.flushViewportSnapshot?.();
     ctx.persistPaneSymbols();
     if (ctx.layoutManager?.getAutoSave()) {
       ctx.saveLayoutToLibrary();
@@ -156,7 +155,6 @@ export async function bootChart(overrides = {}) {
         resolution: ctx.resolution,
         barCount: ctx.bars.length,
         panes: ctx.getAllChartPanes().length,
-        viewportHint: "window.__BWC_VIEWPORT__.dump() — use ?debug=viewport",
       });
     }
     const widget = createChartWidgetApi({
@@ -187,6 +185,7 @@ export async function bootChart(overrides = {}) {
       barTimeLabel: (bar) => barTimeLabel(bar),
       mountChartSettingsUi: ctx.mountChartSettingsUi,
       layoutManager: ctx.layoutManager,
+      drawing: ctx.drawing,
       lastBar: last,
       countBack: ctx.opts.countBack,
     });

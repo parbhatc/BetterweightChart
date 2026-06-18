@@ -74,6 +74,18 @@ export function defaultStyleFromSchema(plots, fills) {
   return style;
 }
 
+/** @param {InputDef[]} inputs @returns {import("./types.js").InputFieldDef[]} */
+export function flattenInputFields(inputs) {
+  /** @type {import("./types.js").InputFieldDef[]} */
+  const fields = [];
+  for (const input of inputs) {
+    if (input.type === "row") fields.push(...input.fields);
+    else if (input.type === "inlinePair") fields.push(input.left, input.right);
+    else fields.push(input);
+  }
+  return fields;
+}
+
 /**
  * @param {InputDef[]} inputs
  * @returns {object}
@@ -81,8 +93,79 @@ export function defaultStyleFromSchema(plots, fills) {
 export function defaultInputsFromSchema(inputs) {
   /** @type {Record<string, unknown>} */
   const out = {};
-  for (const input of inputs) {
+  for (const input of flattenInputFields(inputs)) {
     out[input.id] = input.defval;
+    if (input.type === "color") {
+      const opacityKey = input.opacityKey ?? `${input.id}Opacity`;
+      if (input.defval != null && typeof input.defval === "object") {
+        out[input.id] = input.defval.color ?? "#2962ff";
+        out[opacityKey] = input.defval.opacity ?? 10;
+      } else if (out[opacityKey] === undefined) {
+        out[opacityKey] = 10;
+      }
+    }
   }
   return out;
+}
+
+/**
+ * @param {import("./types.js").InputFieldDef} field
+ */
+function shouldShowInputInStatusLine(field) {
+  if (field.showInStatusLine === false) return false;
+  if (field.type === "bool" || field.type === "color") {
+    return field.showInStatusLine === true;
+  }
+  return true;
+}
+
+/**
+ * @param {import("./types.js").InputFieldDef} field
+ * @param {*} value
+ */
+export function formatInputStatusLineValue(field, value) {
+  if (value == null || value === "") return null;
+
+  switch (field.type) {
+    case "bool":
+      return value ? String(field.title || "true") : null;
+    case "select": {
+      const opt = field.options?.find((o) => o.id === value);
+      return opt?.label ?? String(value);
+    }
+    case "timeframe":
+      return value === "chart" ? null : String(value);
+    case "source":
+      return String(value);
+    case "int":
+    case "float": {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return null;
+      return Number.isInteger(n) ? n.toLocaleString() : String(n);
+    }
+    case "text":
+      return String(value);
+    case "color":
+      return null;
+    default:
+      return String(value);
+  }
+}
+
+/**
+ * Build status-line chips from input schema (TradingView-style inputs in status line).
+ * @param {InputDef[]} inputs
+ * @param {import("./types.js").IndicatorInstance} instance
+ * @returns {string[]}
+ */
+export function inputStatusLineParams(inputs, instance) {
+  /** @type {string[]} */
+  const params = [];
+  for (const field of flattenInputFields(inputs)) {
+    if (!shouldShowInputInStatusLine(field)) continue;
+    const store = field.store === "style" ? instance.style : instance.inputs;
+    const formatted = formatInputStatusLineValue(field, store[field.id]);
+    if (formatted != null && formatted !== "") params.push(formatted);
+  }
+  return params;
 }

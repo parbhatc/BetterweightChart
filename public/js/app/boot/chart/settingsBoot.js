@@ -4,7 +4,6 @@ import {
   resolveTimezone,
 } from "../../../chart/timezone/list.js";
 import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes } from "../../../chart/settings/applier.js";
-import { ensurePanePriceScaleForPan, resetPanePriceScalePanReady } from "../../../chart/price/panScale.js";
 import { mountChartSettings } from "../../../ui/chart/settings.js";
 import { loadShowMobilePlacementBar, saveShowMobilePlacementBar } from "../../../drawings/toolbars/utility/settings/store.js";
 import { applyCanvasPresetForTheme } from "../themes.js";
@@ -145,14 +144,6 @@ export function attachSettingsBoot(ctx) {
       pane.priceLineLabel?.requestRefresh();
     }
 
-    for (const pane of ctx.getAllChartPanes()) {
-      if (!pane.bars?.length) continue;
-      if (sc.autoScale || sc.lockPriceToBarRatio) {
-        resetPanePriceScalePanReady(pane);
-      } else {
-        ensurePanePriceScaleForPan(pane, sc, ctx.activePriceScaleId);
-      }
-    }
   }
 
   function applySymbolFormat(info) {

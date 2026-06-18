@@ -76,15 +76,9 @@ export function wireLayoutChrome(ctx) {
       ctx.layoutManager.setToolDefaultsSnapshot(item.toolDefaults ?? null);
       setLayoutDrawingTemplates(item.drawingTemplates);
       ctx.layoutManager.setDrawingTemplatesSnapshot(item.drawingTemplates ?? null);
-      ctx.layoutManager.setViewportsSnapshot(item.viewports ?? null);
       ctx.drawingHub?.setDrawingsByPane?.(item.drawings);
       ctx.indicatorController?.setIndicatorsByPane?.(item.indicators ?? null);
       ctx.layoutManager.setIndicatorsSnapshot(item.indicators ?? null);
-      for (const pane of ctx.getAllChartPanes()) {
-        if (item.viewports?.[String(pane.index)] && pane.bars?.length) {
-          ctx.applyPendingViewportForPane?.(pane, item.viewports[String(pane.index)]);
-        }
-      }
       ctx.refreshIndicators?.();
       ctx.refreshIndicatorLegends?.();
     },
@@ -145,7 +139,6 @@ export function wireLayoutChrome(ctx) {
   ctx._layoutRestorePending = true;
   try {
     ctx.restoreLayoutChartSettings();
-    ctx.restoreLayoutViewports();
     ctx.restoreLayoutToolDefaults();
     ctx.restoreLayoutDrawingTemplates();
     ctx.restoreLayoutDrawings();

@@ -286,7 +286,7 @@ controller.on("change", () => console.log(controller.getDrawings()));
 | Timescale marks / chart marks | Not implemented |
 | Server time (`getServerTime`) | Not implemented |
 | Symbol info fields (expiry, units, etc.) | Partial — basics only |
-| Studies / indicators API | Not implemented (drawings only) |
+| Studies / indicators | Built-in + custom JS indicators — see [docs/indicators.md](docs/indicators.md) |
 | Full UDF symbol group / currency | Partial |
 
 Your `getBars` handler receives `{ from, to, countBack, firstDataRequest }`. Return `{ bars, noData?: true }`.
@@ -359,6 +359,18 @@ await bootChart({
 ```
 
 Whitespace is controlled only at chart creation — there is no settings toggle.
+
+## Indicators
+
+Built-in studies: **EMA**, **Volume**, **RSI**, **MACD**, **Pivot Points High Low** (Pivots HL — local pivot labels on the chart), and **FVG** (Fair Value Gap boxes with multi-timeframe support).
+
+- Open **Indicators** (ƒx) in the toolbar → pick a study.
+- Click the legend row to edit **Inputs**, **Style**, and **Visibility**.
+- Indicators save with layouts.
+
+**Custom indicators:** use `defineIndicator()` in `definitions/`, add to `definitions/index.js`. Full guide + Pine → JS mapping: **[docs/indicators.md](docs/indicators.md)**.
+
+Built-in studies (EMA, MACD, RSI, Volume, Pivots HL, FVG) all use the same `defineIndicator()` pattern. Shared math (EMA, RSI, MACD) lives in `math/`; study-specific logic stays in the definition file.
 
 ## Chart settings
 

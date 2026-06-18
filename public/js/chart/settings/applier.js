@@ -114,24 +114,29 @@ export function applySettingsToChart(opts) {
     },
   });
 
+  const defaultMargins = {
+    top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
+    bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
+  };
+  const autoScale = sc.lockPriceToBarRatio ? false : sc.autoScale;
+
+  /** @type {import("lightweight-charts").PriceScaleOptions} */
   const scaleOpts = {
     mode: priceScaleModeFromSettings(sc),
     invertScale: sc.invertScale,
-    autoScale: sc.lockPriceToBarRatio ? false : sc.autoScale,
-    scaleMargins: (() => {
-      const manualScale = !sc.lockPriceToBarRatio && sc.autoScale === false;
-      if (manualScale) {
-        const existing = targetSeries.priceScale().options().scaleMargins;
-        if (existing && Number.isFinite(existing.top) && Number.isFinite(existing.bottom)) {
-          return { top: existing.top, bottom: existing.bottom };
-        }
-      }
-      return {
-        top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
-        bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
-      };
-    })(),
   };
+
+  if (autoScale) {
+    pane._manualScaleLocked = false;
+    scaleOpts.autoScale = true;
+    scaleOpts.scaleMargins = defaultMargins;
+  } else if (sc.lockPriceToBarRatio) {
+    scaleOpts.autoScale = false;
+    scaleOpts.scaleMargins = defaultMargins;
+  }
+  // Manual scale (autoScale: false): do not re-apply here — LWC tutorial sets this once
+  // after data exists. Re-applying on every settings/layout restore breaks the axis.
+
   targetSeries.priceScale().applyOptions(scaleOpts);
   targetChart.priceScale(activePriceScaleId()).applyOptions(scaleOpts);
 
@@ -148,6 +153,38 @@ export function applySettingsToChart(opts) {
     priceFormat: priceFormatFromPrecisionSetting(sym.precision, paneSymbolInfo),
     title: pane.index === 0 && sc.symbolLabelName ? pane.symbol : "",
   });
+}
+
+/**
+ * Lock manual price scale once after bars exist (LWC customization guide pattern).
+ * @param {object} pane
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {() => "left" | "right"} activePriceScaleId
+ */
+export function ensureManualPriceScaleAfterLoad(pane, settingsStore, activePriceScaleId) {
+  const sc = settingsStore.get().scales ?? {};
+  if (sc.autoScale || sc.lockPriceToBarRatio) {
+    pane._manualScaleLocked = false;
+    return;
+  }
+  if (!pane?.chart || !pane?.series || !pane.bars?.length || pane._manualScaleLocked) return;
+
+  const cv = settingsStore.get().canvas ?? {};
+  const marginTop = Number(cv.marginTop);
+  const marginBottom = Number(cv.marginBottom);
+  const margins = {
+    top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
+    bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
+  };
+
+  pane._manualScaleLocked = true;
+  const priceScaleId = activePriceScaleId();
+  pane.series.priceScale().applyOptions({ autoScale: false, scaleMargins: margins });
+  try {
+    pane.chart.priceScale(priceScaleId).applyOptions({ autoScale: false, scaleMargins: margins });
+  } catch {
+    /* ignore */
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
-import { FUTURE_RIGHT_OFFSET } from "../../chart/view/index.js";
 import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
+import { captureVisibleViewport, restoreViewportAfterPrepend } from "../../chart/pane/viewport.js";
 import { normalizeBar } from "../../datafeed/custom.js";
 import {
   chartDebug,
@@ -68,6 +68,7 @@ export function createBarLoader(opts) {
     refreshPaneCandleData,
     applyLiveBarToPane,
     updateFormingBarOnPane,
+    appendNewBarOnPane,
     getBarSecForPane,
     setBarsLoading,
     refreshStatusLine,
@@ -76,9 +77,9 @@ export function createBarLoader(opts) {
     setPrimaryBars,
     onPaneBarUpdate,
     onHistoryPrepended,
+    onPaneHistoryDataUpdated,
     syncPaneEmptyState,
-    ensurePanePriceScaleForPan,
-    finishPaneViewportAfterLoad,
+    finishPaneAfterLoad,
   } = opts;
 
   /** @type {Map<number, string>} */
@@ -91,6 +92,22 @@ export function createBarLoader(opts) {
   /** @type {Promise<unknown> | null} */
   let loadBarsForPanesPromise = null;
   let overlayLoaderEnabled = true;
+
+  /** @type {Map<number, ReturnType<typeof setTimeout>>} */
+  const historyNotifyTimerByPane = new Map();
+
+  /** Debounce indicator refresh when multiple history chunks land in one pan. */
+  function notifyHistoryPrependedDebounced(pane) {
+    const prev = historyNotifyTimerByPane.get(pane.index);
+    if (prev != null) clearTimeout(prev);
+    historyNotifyTimerByPane.set(
+      pane.index,
+      setTimeout(() => {
+        historyNotifyTimerByPane.delete(pane.index);
+        onHistoryPrepended?.(pane);
+      }, 48),
+    );
+  }
 
   function setBarsLoadingState(active) {
     barsLoadingCount = Math.max(0, barsLoadingCount + (active ? 1 : -1));
@@ -154,20 +171,20 @@ export function createBarLoader(opts) {
       }
 
       const updated = pane.bars[pane.bars.length - 1];
+      const appended = isNewBar && appendNewBarOnPane?.(pane, updated);
       const patched = !isNewBar && updateFormingBarOnPane?.(pane, updated);
-      if (!patched) {
+      if (!appended && !patched) {
         chartDebugCount("tick", "setData");
         applyLiveBarToPane(pane);
       } else {
-        chartDebugCount("tick", "update");
+        chartDebugCount("tick", appended ? "append" : "update");
       }
 
       if (pane.index === 0) setPrimaryBars(pane);
-      onPaneBarUpdate?.(pane);
+      onPaneBarUpdate?.(pane, { isNewBar });
 
       if (pane.index === getActivePaneIndex()) {
         refreshStatusLine();
-        if (isNewBar) scrollPaneToLatest(pane);
       }
     });
   }
@@ -185,19 +202,6 @@ export function createBarLoader(opts) {
     );
   }
 
-  function scrollPaneToLatest(pane) {
-    if (!pane.bars.length) return;
-    const ts = pane.chart.timeScale();
-    const range = ts.getVisibleLogicalRange();
-    if (!range) return;
-    const width = range.to - range.from;
-    const offset = ts.options().rightOffset ?? FUTURE_RIGHT_OFFSET;
-    ts.setVisibleLogicalRange({
-      from: pane.bars.length - width + offset * 0.35,
-      to: pane.bars.length + offset,
-    });
-  }
-
   /**
    * @param {object} pane
    * @param {object[]} olderBars
@@ -209,28 +213,47 @@ export function createBarLoader(opts) {
     const relevant = olderBars.filter((b) => b.time < firstTime);
     if (!relevant.length) return 0;
 
-    const ts = pane.chart.timeScale();
-    const range = ts.getVisibleLogicalRange();
     const beforeLen = pane.bars.length;
     pane.bars = mergeBarsDeduped(relevant, pane.bars);
     const added = pane.bars.length - beforeLen;
     if (added <= 0) return 0;
 
+    const captured = captureVisibleViewport(pane.chart);
+    /** @type {{ from: number, to: number } | null} */
+    let capturedLogical = null;
+    try {
+      capturedLogical = pane.chart.timeScale().getVisibleLogicalRange();
+    } catch {
+      /* chart not ready */
+    }
+
+    pane._historyRestorePending = true;
     invalidatePaneChartView(pane);
     pane._historyExhausted = false;
-    refreshPaneCandleData(pane);
+    refreshPaneCandleData(pane, { deferSessionBg: true });
+    restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
     if (pane.index === 0) setPrimaryBars(pane);
     publishResolutionCache(pane);
-    onHistoryPrepended?.(pane, added);
+
+    const finishPrepend = () => {
+      pane._historyRestorePending = false;
+      pane.sessionBg?.requestRefresh();
+      onPaneHistoryDataUpdated?.(pane);
+      notifyHistoryPrependedDebounced(pane);
+    };
+
+    requestAnimationFrame(() => {
+      restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
+      requestAnimationFrame(() => {
+        restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
+        finishPrepend();
+      });
+    });
     chartDebug("data", opts.reason ?? "history merged", {
       pane: pane.index,
       added,
       total: pane.bars.length,
     });
-
-    if (opts.adjustViewport !== false && range) {
-      ts.setVisibleLogicalRange({ from: range.from + added, to: range.to + added });
-    }
     return added;
   }
 
@@ -334,9 +357,9 @@ export function createBarLoader(opts) {
     return hasLeadingGap(pane.bars, barSec);
   }
 
-  async function finishPaneAfterBarsLoaded(pane) {
+  async function finishPaneAfterBarsLoaded(pane, loadOpts = {}) {
     await ensurePaneSymbolInfo(pane);
-    refreshPaneCandleData(pane);
+    refreshPaneCandleData(pane, loadOpts);
     subscribePane(pane);
     publishResolutionCache(pane);
     if (pane.index === 0) setPrimaryBars(pane);
@@ -344,12 +367,12 @@ export function createBarLoader(opts) {
       setHoverState(undefined, undefined);
     }
     if (pane.bars.length) {
-      finishPaneViewportAfterLoad?.(pane);
+      finishPaneAfterLoad?.(pane, loadOpts);
     }
     return pane.bars.at(-1);
   }
 
-  async function tryLoadPaneFromResolutionCache(pane, reason) {
+  async function tryLoadPaneFromResolutionCache(pane, reason, loadOpts = {}) {
     if (!tryRestorePaneResolutionCache(pane)) return null;
     chartDebug("data", "loadPaneBars restored from cache", {
       pane: pane.index,
@@ -358,7 +381,7 @@ export function createBarLoader(opts) {
       bars: pane.bars.length,
       reason,
     });
-    return finishPaneAfterBarsLoaded(pane);
+    return finishPaneAfterBarsLoaded(pane, loadOpts);
   }
 
   /**
@@ -429,7 +452,8 @@ export function createBarLoader(opts) {
       if (opts.force) {
         unsubscribePane(pane.index);
         pane._historyErrorUntil = null;
-        const restored = await tryLoadPaneFromResolutionCache(pane, "force");
+        const loadOpts = { scrollToLatest: false };
+        const restored = await tryLoadPaneFromResolutionCache(pane, "force", loadOpts);
         if (restored) return restored;
         clearPaneBarState(pane);
       } else if (!pane.bars?.length) {
@@ -457,6 +481,9 @@ export function createBarLoader(opts) {
         ...periodParams,
       });
       const wasFirstRequest = firstDataRequest;
+      const loadOpts = {
+        scrollToLatest: !opts.force && wasFirstRequest,
+      };
       const result = await fetchBarsShared(pane, pane.symbolInfo, periodParams);
       pane._firstDataRequest = false;
       pane.bars = result.bars.slice();
@@ -472,7 +499,7 @@ export function createBarLoader(opts) {
         syncPaneEmptyState?.(pane, { show: false });
       }
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });
-      return await finishPaneAfterBarsLoaded(pane);
+      return await finishPaneAfterBarsLoaded(pane, loadOpts);
     });
 
     loadInFlightByPane.set(pane.index, task);

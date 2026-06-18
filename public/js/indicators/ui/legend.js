@@ -32,7 +32,7 @@ export function mountIndicatorLegend(statusEl, opts) {
   /** @param {object[]} values */
   function valuesHtml(values) {
     return values
-      .filter((v) => !v.hidden)
+      .filter((v) => !v.hidden && v.value != null)
       .map(
         (v) =>
           `<span class="study-legend__value${v.value == null ? " is-empty" : ""}" style="color:${v.color}" title="${v.title}">${v.value ?? "∅"}</span>`,
@@ -58,7 +58,7 @@ export function mountIndicatorLegend(statusEl, opts) {
     const params = s.params?.length
       ? `<span class="study-legend__params">${s.params.map((p) => `<span class="study-legend__param">${p}</span>`).join("")}</span>`
       : "";
-    const visibleValues = (s.values ?? []).filter((v) => !v.hidden);
+    const visibleValues = (s.values ?? []).filter((v) => !v.hidden && v.value != null);
     const values = visibleValues.length ? `<span class="study-legend__values">${valuesHtml(s.values)}</span>` : "";
     const actions = `<span class="study-legend__actions">
       <button type="button" class="study-legend__action" data-action="toggle" data-id="${s.instanceId}" aria-label="${s.hidden ? "Show" : "Hide"}" title="${s.hidden ? "Show" : "Hide"}">${s.hidden ? ICON_EYE_OFF : ICON_EYE}</button>
@@ -99,7 +99,7 @@ export function mountIndicatorLegend(statusEl, opts) {
         toggleBtn.title = s.hidden ? "Show" : "Hide";
       }
 
-      const visibleValues = (s.values ?? []).filter((v) => !v.hidden);
+      const visibleValues = (s.values ?? []).filter((v) => !v.hidden && v.value != null);
       let valuesEl = item.querySelector(".study-legend__values");
       const tail = item.querySelector(".study-legend__tail");
 

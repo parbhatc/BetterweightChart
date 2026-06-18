@@ -1,11 +1,10 @@
 import {
   applyLiveBarToPaneSeries,
   updateFormingBarOnPaneSeries,
+  appendNewBarOnPaneSeries,
 } from "../../../chart/pane/data.js";
 import { createBarLoader } from "../../bar/loader.js";
 import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
-import { ensurePanePriceScaleForPan } from "../../../chart/price/panScale.js";
-
 /**
  * @param {import("./state.js").BootContext} ctx
  */
@@ -22,6 +21,8 @@ export function attachBarLoader(ctx) {
       applyLiveBarToPaneSeries(pane, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     updateFormingBarOnPane: (pane, bar) =>
       updateFormingBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
+    appendNewBarOnPane: (pane, bar) =>
+      appendNewBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     getBarSecForPane: (pane) => ctx.barSecForPaneLocal(pane),
     setBarsLoading: (v) => {
       ctx.barsLoading = v;
@@ -37,15 +38,30 @@ export function attachBarLoader(ctx) {
       ctx.bars = pane.bars;
       ctx.futureWhitespaceBars = pane.futureWhitespaceBars;
     },
-    onPaneBarUpdate: (pane) => {
+    onPaneBarUpdate: (pane, meta = {}) => {
       pane.priceLineLabel?.requestRefresh();
-      ctx.refreshIndicators?.(pane.index);
+      if (meta.isNewBar) {
+        if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
+          ctx.refreshIndicatorsImmediate?.(pane.index);
+        } else {
+          ctx.refreshOverlaysImmediate?.(pane.index);
+        }
+      }
     },
     onHistoryPrepended: (pane) => {
+      pane.priceLineLabel?.requestRefresh();
+      if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
+        ctx.refreshIndicatorsImmediate?.(pane.index);
+      } else {
+        ctx.refreshOverlaysImmediate?.(pane.index);
+      }
       if (!ctx.layoutManager?.getSync().dateRange) return;
       const panes = ctx.getAllChartPanes();
       const source = panes.reduce((best, p) => (p.bars.length > best.bars.length ? p : best), pane);
       ctx.syncLayoutDateRangeFrom(source.chart);
+    },
+    onPaneHistoryDataUpdated: (pane) => {
+      ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
     },
     syncPaneEmptyState: (pane, state) =>
       syncPaneEmptyState(pane, {
@@ -53,9 +69,7 @@ export function attachBarLoader(ctx) {
         onChangeSymbol: () => ctx.symbolSearchUi?.open?.(),
         onChangeInterval: () => ctx.tfPickerUi?.openPanel?.(),
       }),
-    ensurePanePriceScaleForPan: (pane) =>
-      ensurePanePriceScaleForPan(pane, ctx.settingsStore.get().scales ?? {}, ctx.activePriceScaleId),
-    finishPaneViewportAfterLoad: (pane) => ctx.finishPaneViewportAfterLoad?.(pane),
+    finishPaneAfterLoad: (pane, opts) => ctx.finishPaneAfterLoad?.(pane, opts),
   });
 
   ctx.viewportDeps.maintainLockedRatio = ctx.maintainLockedRatio;

@@ -101,6 +101,20 @@ function putEntry(symbol, resolution, snapshot, opts = {}) {
 }
 
 /**
+ * Read published bars for symbol+resolution (e.g. reuse 15m if user switched from 15m chart).
+ * @param {string} symbol
+ * @param {string} resolution
+ * @returns {object[] | null}
+ */
+export function getResolutionCacheBars(symbol, resolution) {
+  const entry = entries.get(seriesCacheKey(symbol, resolution));
+  if (!entry) return null;
+  const ageMs = Date.now() - entry.updatedAt;
+  if (entry.timer && ageMs > RESOLUTION_CACHE_TTL_MS) return null;
+  return entry.snapshot.bars.slice();
+}
+
+/**
  * Publish loaded bars so other panes with the same symbol + interval can reuse them.
  * @param {object} pane
  */

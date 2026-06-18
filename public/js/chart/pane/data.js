@@ -13,6 +13,7 @@ import {
   invalidatePaneChartView,
   patchFormingBarInView,
   rebuildPaneChartView,
+  appendNewBarInView,
   utcBarsForPane,
 } from "./viewCache.js";
 
@@ -129,12 +130,13 @@ export function ensureFutureWhitespace(opts) {
  * @param {object | null} symbolInfo
  * @param {{ id: string, sec?: number }[]} resolutions
  * @param {(pane: object) => void} [onPrimaryPane]
+ * @param {{ deferSessionBg?: boolean }} [opts]
  */
-export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutions, onPrimaryPane) {
+export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutions, onPrimaryPane, opts = {}) {
   chartDebugTime("data", `refreshPaneCandleData pane ${pane.index}`, () => {
     invalidatePaneChartView(pane);
     applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions);
-    pane.sessionBg?.requestRefresh();
+    if (!opts.deferSessionBg) pane.sessionBg?.requestRefresh();
     onPrimaryPane?.(pane);
   });
 }
@@ -160,12 +162,54 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
     }
 
     pane.series.setData(view.seriesData);
+
     chartDebugCount("data", "setData");
     chartDebug("data", "setData live", {
       pane: pane.index,
       bars: view.utcBars.length,
       ws: view.futureWhitespace,
     });
+  });
+}
+
+/**
+ * Append a new closed candle via series.update (no full setData).
+ * @returns {boolean}
+ */
+export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo, resolutions) {
+  return chartDebugTime("data", `append bar pane ${pane.index}`, () => {
+    const batch = appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, resolutions);
+    if (!batch) return false;
+
+    try {
+      if (batch.viewSynced) {
+        if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
+        pane.series.update(batch.newCandle, true);
+      } else if (batch.whitespace.length) {
+        pane.series.setData(pane._chartView.seriesData);
+      } else {
+        if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
+        pane.series.update(batch.newCandle, true);
+      }
+      pane.timeAdapter = pane._chartView?.timeAdapter ?? pane.timeAdapter;
+      delete pane.utcTimeToIdx;
+      delete pane.chartTimeToIdx;
+      delete pane.timeToIdx;
+      chartDebugCount("data", "append");
+      chartDebug("data", "append bar", {
+        pane: pane.index,
+        time: utcBar.time,
+        close: utcBar.close,
+        ws: batch.whitespace.length,
+        mode: batch.whitespace.length ? "setData" : "update",
+      });
+      return true;
+    } catch (err) {
+      chartDebugCount("data", "appendFail");
+      chartDebug("data", "append bar failed", { pane: pane.index, err: String(err) });
+      invalidatePaneChartView(pane);
+      return false;
+    }
   });
 }
 

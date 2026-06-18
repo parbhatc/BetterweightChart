@@ -1,0 +1,25 @@
+import { EmaIndicator } from "./EmaIndicator.js";
+import { VolumeIndicator } from "./VolumeIndicator.js";
+import { RsiIndicator } from "./RsiIndicator.js";
+import { MacdIndicator } from "./MacdIndicator.js";
+import { PivotPointsHlIndicator } from "./PivotPointsHlIndicator.js";
+import { FvgIndicator } from "./FvgIndicator.js";
+
+/** Add your indicator here after creating its file. */
+export const ALL_INDICATORS = [
+  EmaIndicator,
+  VolumeIndicator,
+  RsiIndicator,
+  MacdIndicator,
+  PivotPointsHlIndicator,
+  FvgIndicator,
+];
+
+export {
+  EmaIndicator,
+  VolumeIndicator,
+  RsiIndicator,
+  MacdIndicator,
+  PivotPointsHlIndicator,
+  FvgIndicator,
+};

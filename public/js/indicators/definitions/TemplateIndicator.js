@@ -1,36 +1,31 @@
 /**
- * Copy this file to add a new indicator. Register it in catalog.js.
+ * Copy this file, set enabled: true, add to definitions/index.js — reload.
+ * @see docs/indicators.md
  */
-import { BaseIndicator } from "../BaseIndicator.js";
+import { defineIndicator } from "../defineIndicator.js";
 
-/** @typedef {import("../types.js").IndicatorInstance} IndicatorInstance */
+export const TemplateIndicator = defineIndicator(class TemplateIndicator {
+  constructor() {}
 
-export class TemplateIndicator extends BaseIndicator {
   static id = "My Indicator@tv-basicstudies";
   static type = "my_indicator";
   static title = "My Indicator";
   static shortTitle = "MY";
   static enabled = false;
-  static primaryPlotKey = "main";
-
-  static plots = [
-    { id: "main", title: "Main line", color: "#2962ff", priceLine: true },
-  ];
 
   static inputs = [
     { id: "length", type: "int", title: "Length", defval: 14 },
     { id: "source", type: "source", title: "Source", defval: "close" },
   ];
 
-  /** @param {object[]} bars @param {IndicatorInstance} instance */
-  static compute(bars, instance) {
-    void bars;
-    void instance;
-    return { main: [] };
+  static plots = [{ id: "main", title: "Main line", color: "#2962ff", priceLine: true }];
+
+  onBar(bar) {
+    const src = this.math.source(bar, this.inputs.source);
+    this.plot("main", src);
   }
 
-  /** @param {IndicatorInstance} instance */
   static legendParams(instance) {
     return [String(instance.inputs.length ?? 14)];
   }
-}
+});

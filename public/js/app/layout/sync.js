@@ -35,6 +35,7 @@ export function createLayoutSync(deps) {
     const layoutManager = deps.getLayoutManager?.() ?? deps.layoutManager;
     if (suppressLayoutSync || !layoutManager?.getSync().dateRange) return;
     if (deps.isBarsLoading?.()) return;
+    if (deps.isHistoryRestorePending?.()) return;
 
     const sourcePane = layoutPanes().find((p) => p.chart === sourceChart);
     if (!sourcePane?.bars?.length) return;

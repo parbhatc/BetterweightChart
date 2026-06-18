@@ -292,7 +292,7 @@ export function createPaneExtras(deps) {
           ensurePaneFutureWhitespace(p);
         }
         const r = pane.chart.timeScale().getVisibleLogicalRange();
-        if (r && r.from < HISTORY_EDGE_BARS && viewportDeps?.ensureHistoryNearEdge) {
+        if (r && r.from < HISTORY_EDGE_BARS && viewportDeps?.ensureHistoryNearEdge && !pane._loadingHistory && !pane._historyRestorePending) {
           void viewportDeps.ensureHistoryNearEdge(pane);
         }
       },
@@ -361,7 +361,7 @@ export function createPaneExtras(deps) {
     let historyScheduled = false;
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-      if (ui.barsLoading) return;
+      if (ui.barsLoading || pane._loadingHistory || pane._historyRestorePending) return;
       if (pane.lastCrosshairChartTime != null) {
         const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
         refreshHoverBarFromChartTime(pane, pane.lastCrosshairChartTime, isActive);

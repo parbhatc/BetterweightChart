@@ -1,18 +1,10 @@
-import { EmaIndicator } from "./definitions/EmaIndicator.js";
-import { VolumeIndicator } from "./definitions/VolumeIndicator.js";
-import { RsiIndicator } from "./definitions/RsiIndicator.js";
-import { MacdIndicator } from "./definitions/MacdIndicator.js";
+import { ALL_INDICATORS } from "./definitions/index.js";
 
 /** @typedef {typeof import("./BaseIndicator.js").BaseIndicator} IndicatorClass */
 /** @typedef {import("./types.js").IndicatorInstance} IndicatorInstance */
 
 /** @type {Map<string, IndicatorClass>} */
-const registry = new Map([
-  [EmaIndicator.id, EmaIndicator],
-  [VolumeIndicator.id, VolumeIndicator],
-  [RsiIndicator.id, RsiIndicator],
-  [MacdIndicator.id, MacdIndicator],
-]);
+const registry = new Map(ALL_INDICATORS.map((Indicator) => [Indicator.id, Indicator]));
 
 /** @returns {IndicatorClass[]} */
 export function listIndicators() {

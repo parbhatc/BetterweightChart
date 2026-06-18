@@ -6,6 +6,7 @@ import {
   buildBandFillSegments,
   defaultStyleFromSchema,
   defaultInputsFromSchema,
+  inputStatusLineParams,
 } from "./schema.js";
 
 /** @typedef {import("./types.js").IndicatorInstance} IndicatorInstance */
@@ -86,6 +87,45 @@ export class BaseIndicator {
   /** @type {number} Height in px when {@link studyPaneIndex} is used */
   static studyPaneHeight = 120;
 
+  /** @type {string | null} Canvas overlay primitive (`labels`, etc.) — no LWC series plots */
+  static overlayPrimitive = null;
+
+  /** @type {import("./types.js").GraphicObjectDef[]} Style-tab Graphic objects toggles */
+  static graphicObjects = [];
+
+  /**
+   * Style keys that gate a given overlay primitive.
+   * @param {string} overlayKind
+   * @returns {string[]}
+   */
+  static graphicStyleKeysForOverlay(overlayKind) {
+    const objs = this.graphicObjects;
+    if (!objs.length) return [];
+    return objs
+      .filter((g) => !g.overlay || g.overlay === overlayKind)
+      .map((g) => g.styleKey);
+  }
+
+  /**
+   * @param {IndicatorInstance} instance
+   * @param {string} overlayKind
+   */
+  static overlayGraphicsVisible(instance, overlayKind) {
+    const keys = this.graphicStyleKeysForOverlay(overlayKind);
+    if (!keys.length) return true;
+    return keys.every((k) => instance.style[k] !== false);
+  }
+
+  /** @param {object} style */
+  static mergeGraphicObjectDefaults(style) {
+    for (const obj of this.graphicObjects) {
+      if (style[obj.styleKey] === undefined) {
+        style[obj.styleKey] = obj.default !== false;
+      }
+    }
+    return style;
+  }
+
   /** @returns {InputDef[]} */
   static inputSchema() {
     return this.inputs;
@@ -160,8 +200,8 @@ export class BaseIndicator {
    * @param {IndicatorInstance} _instance
    * @returns {string[]}
    */
-  static legendParams(_instance) {
-    return [];
+  static legendParams(instance) {
+    return inputStatusLineParams(this.inputs, instance);
   }
 
   /**
@@ -240,6 +280,7 @@ export class BaseIndicator {
 
   /** @param {object} style @param {object} [inputValues] */
   static mergeStyleDefaults(style, inputValues = {}) {
+    this.mergeGraphicObjectDefaults(style);
     const defs = this.defaultStyle();
     for (const [key, val] of Object.entries(defs)) {
       if (style[key] === undefined) style[key] = val;

@@ -12,7 +12,9 @@ import { createColorPicker, applyColorOpacity } from "../../ui/color/picker.js";
 import { ICON_CLOSE } from "./icons.js";
 import { openIndicatorPlotTypeMenu, LINE_PLOT_TYPES, VOLUME_PLOT_TYPES, plotTypeIcon } from "./plotTypeMenu.js";
 import { PRECISION_OPTIONS } from "./constants.js";
-import { renderDefaultStyleSections } from "./defaultStyleSections.js";
+import { renderDefaultStyleSections, renderGraphicStudyStyleSections } from "./defaultStyleSections.js";
+import { renderInputsPanelHtml, renderInputColorField } from "./inputPanel.js";
+import { flattenInputFields } from "../schema.js";
 
 /**
  * @param {object} opts
@@ -88,6 +90,37 @@ export function createIndicatorSettingsDialog(opts) {
   /** @type {{ inputs: object, style: object, visibility: object } | null} */
   let baseline = null;
   let activeTab = "inputs";
+  /** @type {((ev: PointerEvent) => void) | null} */
+  let outsideDismissListener = null;
+
+  function disarmOutsideDismiss() {
+    if (!outsideDismissListener) return;
+    document.removeEventListener("pointerdown", outsideDismissListener, true);
+    outsideDismissListener = null;
+  }
+
+  function armOutsideDismiss() {
+    disarmOutsideDismiss();
+    outsideDismissListener = (ev) => {
+      if (root.hidden) return;
+      const target = ev.target;
+      if (!(target instanceof Element)) return;
+      if (root.contains(target)) return;
+      if (
+        target.closest(
+          ".status-line__studies, .study-pane-legends, .tv-cpicker, .tv-menu-popover, .tv-ind-source-menu, .tv-ind-plot-menu",
+        )
+      ) {
+        return;
+      }
+      close();
+    };
+    setTimeout(() => {
+      if (outsideDismissListener) {
+        document.addEventListener("pointerdown", outsideDismissListener, true);
+      }
+    }, 0);
+  }
 
   function timeframeOptions() {
     return [{ id: "chart", label: "Chart" }, ...getTimeframes()];
@@ -113,57 +146,35 @@ export function createIndicatorSettingsDialog(opts) {
     return [];
   }
 
-  function renderInputField(input) {
-    const value = draft.inputs[input.id];
-    const disabled = input.disabled?.(draft.inputs) ?? false;
-    switch (input.type) {
-      case "source":
-        return propSelect(input.id, input.title, value, PRICE_SOURCES);
-      case "select":
-        return propSelect(input.id, input.title, value, input.options ?? []);
-      case "timeframe":
-        return propSelect(input.id, input.title, value, timeframeOptions());
-      case "bool":
-        return propCheck(input.id, input.title, value);
-      case "float":
-      case "int":
-      default:
-        return propNumber(input.id, input.title, value, disabled);
-    }
+  function renderInputsPanel() {
+    inputsPanel.innerHTML = renderInputsPanelHtml(getInputSchema(), draft.inputs, draft.style, {
+      propNumber,
+      propSelect,
+      propCheck,
+      propCheckOnly,
+      propText,
+      propInputColor: (field, store) => renderInputColorField(field, store),
+      priceSources: PRICE_SOURCES,
+      timeframeOptions,
+    });
+    syncInputSwatches();
   }
 
-  function renderInputsPanel() {
-    const schema = getInputSchema();
-    if (!schema.length) {
-      inputsPanel.innerHTML = `<div class="tv-set__section"><div class="tv-set__section-body">No inputs</div></div>`;
-      return;
+  function syncInputSwatches() {
+    for (const field of flattenInputFields(getInputSchema())) {
+      if (field.type !== "color") continue;
+      const store = field.store === "style" ? draft.style : draft.inputs;
+      const color = String(store[field.id] ?? "#2962ff");
+      const opacityKey = field.opacityKey ?? `${field.id}Opacity`;
+      const opacity =
+        store[opacityKey] !== undefined && store[opacityKey] !== null
+          ? Number(store[opacityKey])
+          : 10;
+      const swatch = inputsPanel.querySelector(`[data-input-swatch="${field.id}"]`);
+      if (swatch instanceof HTMLElement) {
+        swatch.style.background = applyColorOpacity(color, opacity);
+      }
     }
-
-    /** @type {Map<string, import("../types.js").InputDef[]>} */
-    const sections = new Map();
-    for (const input of schema) {
-      const key = input.section ?? "";
-      if (!sections.has(key)) sections.set(key, []);
-      sections.get(key)?.push(input);
-    }
-
-    inputsPanel.innerHTML = [...sections.entries()]
-      .map(([title, fields]) => {
-        const head = title
-          ? `<div class="tv-set__section-head">${title}</div>`
-          : "";
-        const bodyClass =
-          fields.some((f) => f.type === "bool") && fields.length === 1
-            ? "tv-set__section-body"
-            : "tv-set__section-body tv-set__section-body--fields";
-        return `<div class="tv-set__section">
-          ${head}
-          <div class="${bodyClass}">
-            ${fields.map((input) => renderInputField(input)).join("")}
-          </div>
-        </div>`;
-      })
-      .join("");
   }
 
   function getStylePlotRows() {
@@ -195,6 +206,10 @@ export function createIndicatorSettingsDialog(opts) {
         return styleHistogramColorRow(row);
       case "separator":
         return `<div class="tv-ind-settings__style-separator" role="separator"></div>`;
+      case "section":
+        return `<div class="tv-set__section-head tv-ind-settings__style-section-head">${row.label ?? ""}</div>`;
+      case "dualColor":
+        return styleDualColorRow(row);
       case "line":
       default:
         return styleRowFromPlot(row);
@@ -202,8 +217,16 @@ export function createIndicatorSettingsDialog(opts) {
   }
 
   function renderStylePanel() {
-    const plotRows = getStylePlotRows().map((row) => renderStyleRow(row)).join("");
+    const Indicator = getActiveIndicator();
+    const graphicObjects = Indicator?.graphicObjects ?? [];
+    const isGraphicStudy = graphicObjects.length > 0;
 
+    if (isGraphicStudy) {
+      stylePanel.innerHTML = renderGraphicStudyStyleSections(draft, graphicObjects, propCheck);
+      return;
+    }
+
+    const plotRows = getStylePlotRows().map((row) => renderStyleRow(row)).join("");
     stylePanel.innerHTML = `
       <div class="tv-set__section">
         <div class="tv-set__section-body tv-ind-settings__plot-rows">
@@ -214,19 +237,30 @@ export function createIndicatorSettingsDialog(opts) {
     syncStyleSwatches();
   }
 
-  function propNumber(key, label, value, disabled = false) {
-    return `<div class="tv-set__field-row${disabled ? " is-disabled" : ""}">
+  function propNumber(key, label, value, disabled = false, compact = false, store = "inputs") {
+    const compactClass = compact ? " tv-ind-settings__inline-field" : "";
+    return `<div class="tv-set__field-row${disabled ? " is-disabled" : ""}${compactClass}">
       <span class="tv-set__field-label">${label}</span>
-      <input type="text" class="tv-drawing-settings__input" data-field="${key}" value="${value ?? ""}" inputmode="numeric"${disabled ? ' disabled aria-disabled="true" tabindex="-1"' : ""} />
+      <input type="text" class="tv-drawing-settings__input" data-field="${key}" data-store="${store}" value="${value ?? ""}" inputmode="numeric"${disabled ? ' disabled aria-disabled="true" tabindex="-1"' : ""} />
     </div>`;
   }
 
-  function propSelect(key, label, value, options) {
+  function propText(key, label, value, disabled = false, store = "inputs") {
+    const labelOnly = label
+      ? `<span class="tv-set__field-label">${label}</span>`
+      : "";
+    return `<div class="tv-set__field-row${disabled ? " is-disabled" : ""}${label ? "" : " tv-set__field-row--value-only"}">
+      ${labelOnly}
+      <input type="text" class="tv-drawing-settings__input" data-field="${key}" data-store="${store}" value="${value ?? ""}"${disabled ? ' disabled aria-disabled="true" tabindex="-1"' : ""} />
+    </div>`;
+  }
+
+  function propSelect(key, label, value, options, store = "inputs") {
     const current = options.find((o) => o.id === value)?.label ?? value;
     return `<div class="tv-set__field-row">
       <span class="tv-set__field-label">${label}</span>
       <div class="tv-set__select-wrap">
-        <button type="button" class="tv-drawing-settings__menu-btn" data-field="${key}" data-value="${value}" aria-haspopup="listbox">
+        <button type="button" class="tv-drawing-settings__menu-btn" data-field="${key}" data-store="${store}" data-value="${value}" aria-haspopup="listbox">
           <span data-select-label="${key}">${current}</span>
           <span class="tv-set__select-chev">${MENU_CHEVRON}</span>
         </button>
@@ -234,14 +268,21 @@ export function createIndicatorSettingsDialog(opts) {
     </div>`;
   }
 
-  function propCheck(key, label, checked) {
+  function propCheck(key, label, checked, store = "inputs") {
     const on = Boolean(checked);
     return `<div class="tv-set__check-row">
-      <button type="button" class="tv-set__check${on ? " tv-set__check--on" : ""}" data-field="${key}" role="checkbox" aria-checked="${on ? "true" : "false"}" aria-label="${label}">
+      <button type="button" class="tv-set__check${on ? " tv-set__check--on" : ""}" data-field="${key}" data-store="${store}" role="checkbox" aria-checked="${on ? "true" : "false"}" aria-label="${label}">
         <span class="tv-set__check-box">${on ? CHECK_SVG : ""}</span>
       </button>
       <span class="tv-set__check-label">${label}</span>
     </div>`;
+  }
+
+  function propCheckOnly(key, checked, store = "inputs") {
+    const on = Boolean(checked);
+    return `<button type="button" class="tv-set__check${on ? " tv-set__check--on" : ""}" data-field="${key}" data-store="${store}" role="checkbox" aria-checked="${on ? "true" : "false"}" aria-label="Enable">
+      <span class="tv-set__check-box">${on ? CHECK_SVG : ""}</span>
+    </button>`;
   }
 
   function styleRowFromPlot(row) {
@@ -334,6 +375,23 @@ export function createIndicatorSettingsDialog(opts) {
   }
 
   /** @param {{ visibleKey: string, label: string, colorKey: string, opacityKey?: string }} row */
+  /** @param {{ label: string, textColorKey: string, labelColorKey: string }} row */
+  function styleDualColorRow(row) {
+    const textColor = draft.style[row.textColorKey] ?? "#000000";
+    const labelColor = draft.style[row.labelColorKey] ?? "#ffffff";
+    return `<div class="tv-ind-settings__dual-color-row">
+      <span class="tv-ind-settings__dual-color-label">${row.label}</span>
+      <div class="tv-ind-settings__dual-color-swatches">
+        <button type="button" class="tv-drawing-settings__color-btn tv-drawing-settings__color-btn--compact" data-color-pick="${row.textColorKey}||" aria-label="${row.label} text color" title="Text color">
+          <span class="tv-drawing-settings__color-swatch" data-swatch="${row.textColorKey}" style="background:${textColor}"></span>
+        </button>
+        <button type="button" class="tv-drawing-settings__color-btn tv-drawing-settings__color-btn--compact" data-color-pick="${row.labelColorKey}||" aria-label="${row.label} label color" title="Label color">
+          <span class="tv-drawing-settings__color-swatch" data-swatch="${row.labelColorKey}" style="background:${labelColor}"></span>
+        </button>
+      </div>
+    </div>`;
+  }
+
   function styleFillRow(row) {
     const { visibleKey, label, colorKey, opacityKey = "fillOpacity" } = row;
     const color = draft.style[colorKey] ?? "#4caf50";
@@ -400,15 +458,17 @@ export function createIndicatorSettingsDialog(opts) {
       if (!(el instanceof HTMLElement)) return;
       const key = el.dataset.field;
       if (!key) return;
+      const dest = el.dataset.store === "style" ? draft.style : target;
       if (el.classList.contains("tv-set__check")) {
-        target[key] = el.classList.contains("tv-set__check--on");
+        dest[key] = el.classList.contains("tv-set__check--on");
         return;
       }
       if (el instanceof HTMLInputElement) {
         const n = Number(el.value);
-        target[key] = Number.isFinite(n) ? n : el.value;
+        const isNumeric = el.getAttribute("inputmode") === "numeric";
+        dest[key] = isNumeric && Number.isFinite(n) ? n : el.value;
       } else if (el.dataset.value) {
-        target[key] = el.dataset.value;
+        dest[key] = el.dataset.value;
       }
     });
   }
@@ -462,9 +522,11 @@ export function createIndicatorSettingsDialog(opts) {
     dialog.style.transform = "none";
     root.hidden = false;
     centerDialogIfNeeded(dialog);
+    armOutsideDismiss();
   }
 
   function close() {
+    disarmOutsideDismiss();
     root.hidden = true;
     instanceId = null;
     baseline = null;
@@ -496,7 +558,7 @@ export function createIndicatorSettingsDialog(opts) {
   function optionsForInputField(field) {
     if (field === "timeframe") return timeframeOptions();
     if (field === "source") return PRICE_SOURCES.map((s) => ({ id: s.id, label: s.label }));
-    const input = getInputSchema().find((i) => i.id === field);
+    const input = flattenInputFields(getInputSchema()).find((i) => i.id === field);
     if (input?.type === "select") return input.options ?? [];
     return selectOptions.get(field) ?? [];
   }
@@ -547,12 +609,15 @@ export function createIndicatorSettingsDialog(opts) {
       if (!(item instanceof HTMLElement)) return;
       const val = item.dataset.opt;
       if (!val) return;
-      if (field in draft.inputs) draft.inputs[field] = val;
+      const btn = anchor instanceof HTMLElement ? anchor : null;
+      const storeKey = btn?.dataset.store === "style" ? "style" : "inputs";
+      if (field in draft[storeKey]) draft[storeKey][field] = val;
+      else if (field in draft.inputs) draft.inputs[field] = val;
       else draft.style[field] = val;
-      if (field in draft.inputs) onInputFieldChange(field);
+      if (field in draft.inputs || storeKey === "inputs") onInputFieldChange(field);
       if (activeTab === "inputs") renderInputsPanel();
       else renderStylePanel();
-      if (field in draft.inputs && getInputSchema().find((i) => i.id === field)?.affectsStyle) {
+      if (field in draft.inputs && flattenInputFields(getInputSchema()).find((i) => i.id === field)?.affectsStyle) {
         renderStylePanel();
       }
       applyDraft();
@@ -594,14 +659,22 @@ export function createIndicatorSettingsDialog(opts) {
       return;
     }
     const checkRow = target.closest(".tv-set__check-row");
-    if (checkRow instanceof HTMLElement && !target.closest("[data-color-pick], [data-plot-type-pick], [data-fill-pick]")) {
+    if (checkRow instanceof HTMLElement && !target.closest("[data-color-pick], [data-plot-type-pick], [data-fill-pick], [data-input-fill-pick]")) {
       const fieldCheck = checkRow.querySelector("[data-field].tv-set__check");
       if (fieldCheck instanceof HTMLElement) {
         setTvCheck(fieldCheck, !fieldCheck.classList.contains("tv-set__check--on"));
         applyDraft();
         if (activeTab === "style") renderStylePanel();
+        else if (activeTab === "inputs") renderInputsPanel();
         return;
       }
+    }
+    const leadCheck = target.closest(".tv-ind-settings__tv-row-lead .tv-set__check[data-field]");
+    if (leadCheck instanceof HTMLElement) {
+      setTvCheck(leadCheck, !leadCheck.classList.contains("tv-set__check--on"));
+      applyDraft();
+      renderInputsPanel();
+      return;
     }
     const selectBtn = target.closest(".tv-drawing-settings__menu-btn[data-field]");
     if (selectBtn instanceof HTMLElement && selectBtn.dataset.field) {
@@ -655,20 +728,26 @@ export function createIndicatorSettingsDialog(opts) {
       });
       return;
     }
-    const fillPick = target.closest("[data-fill-pick]");
-    if (fillPick instanceof HTMLElement && fillPick.dataset.fillPick) {
-      const [colorKey, opacityKey] = fillPick.dataset.fillPick.split("|");
+    const fillPick = target.closest("[data-fill-pick], [data-input-fill-pick]");
+    if (fillPick instanceof HTMLElement) {
+      const pickAttr = fillPick.dataset.fillPick ?? fillPick.dataset.inputFillPick ?? "";
+      const [colorKey, opacityKey] = pickAttr.split("|");
+      const storeKey = fillPick.dataset.store === "style" ? draft.style : draft.inputs;
       colorPicker.openSwatch(
         fillPick,
         {
-          color: String(draft.style[colorKey] ?? "#4caf50"),
-          opacity: Number(draft.style[opacityKey]) || 10,
+          color: String(storeKey[colorKey] ?? "#4caf50"),
+          opacity:
+            storeKey[opacityKey] !== undefined && storeKey[opacityKey] !== null
+              ? Number(storeKey[opacityKey])
+              : 10,
         },
         {
           onChange: ({ color, opacity }) => {
-            draft.style[colorKey] = color;
-            draft.style[opacityKey] = opacity;
+            storeKey[colorKey] = color;
+            storeKey[opacityKey] = opacity;
             syncStyleSwatches();
+            syncInputSwatches();
             applyDraft();
           },
         },

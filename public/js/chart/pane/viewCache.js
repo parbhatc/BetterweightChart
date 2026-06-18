@@ -139,3 +139,80 @@ export function patchFormingBarInView(pane, utcBar, settingsStore, symbolInfo, r
   const sym = settingsStore.get().symbol ?? {};
   return buildCandleSeriesData([chartBar], sym)[0] ?? null;
 }
+
+/**
+ * Extend cached view by one real bar (O(1) — avoids full setData on new candle).
+ * @returns {{ newCandle: object, prevCandle: object | null, whitespace: object[] } | null}
+ */
+export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, resolutions) {
+  const sym = settingsStore.get().symbol ?? {};
+  const session = sym.session ?? "electronic";
+  const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
+  const allUtc = utcBarsForPane(pane, settingsStore, symbolInfo);
+  if (allUtc.at(-1)?.time !== utcBar.time) return null;
+
+  let view = pane._chartView;
+  if (!view?.utcBars?.length || view.timezone !== tz || view.session !== session) {
+    view = getPaneChartView(pane, settingsStore, symbolInfo, resolutions);
+  }
+  if (!view?.utcBars?.length) return null;
+
+  // pane.bars already includes utcBar — view may have been rebuilt to match.
+  if (view.utcBars.length === allUtc.length && view.utcBars.at(-1)?.time === utcBar.time) {
+    const seriesData = view.seriesData;
+    const newCandle = seriesData[seriesData.length - 1];
+    const prevCandle = seriesData.length >= 2 ? seriesData[seriesData.length - 2] : null;
+    pane.mapBars = view.mapBars;
+    pane.shiftedBars = view.chartBars;
+    pane._shiftedKey = view.utcKey;
+    return { newCandle, prevCandle, whitespace: [], viewSynced: true };
+  }
+
+  if (view.utcBars.length !== allUtc.length - 1) return null;
+
+  const prevUtc = view.utcBars.at(-1);
+  if (!prevUtc || utcBar.time <= prevUtc.time) return null;
+
+  view.utcBars.push(utcBar);
+  const chartBar = shiftBarsToChartTime([utcBar], tz)[0];
+  view.chartBars.push(chartBar);
+
+  const ws = view.futureWhitespace;
+  const barSec = view.barSec;
+  if (ws > 0) {
+    view.mapBars.length -= ws;
+    view.seriesData.length -= ws;
+  }
+
+  const candles = buildCandleSeriesData(view.chartBars, sym);
+  const newCandle = candles[candles.length - 1];
+  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+
+  view.seriesData.push(newCandle);
+  view.mapBars.push({ time: chartBar.time });
+
+  /** @type {object[]} */
+  const whitespace = [];
+  if (ws > 0) {
+    const lastChartTime = chartBar.time;
+    for (let i = 0; i < ws; i += 1) {
+      const pt = { time: lastChartTime + (i + 1) * barSec };
+      whitespace.push(pt);
+      view.mapBars.push(pt);
+      view.seriesData.push(pt);
+    }
+  }
+
+  view.utcKey = utcBarsKey(allUtc, session);
+  pane.mapBars = view.mapBars;
+  pane.shiftedBars = view.chartBars;
+  pane._shiftedKey = view.utcKey;
+  view.timeAdapter = createTimeAdapter({
+    utcBars: view.utcBars,
+    chartBars: view.chartBars,
+    mapBars: view.mapBars,
+    barSec,
+  });
+
+  return { newCandle, prevCandle, whitespace };
+}

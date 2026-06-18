@@ -3,6 +3,8 @@ import { createPointerHandlers } from "./pointer/handlers.js";
 import { createTooltipOverlay } from "./tooltip/overlay.js";
 import { resolvePriceOffset } from "../tools/channel/parallel.js";
 import { resolveFlatPrice } from "../tools/channel/flatTopBottom.js";
+import { SUPPORTED_DRAW_TOOLS } from "../catalog/tools.js";
+import { newDrawing } from "./factory/index.js";
 import { COARSE_POINTER_MQ } from "./state.js";
 
 /** @param {import("./state.js").ControllerState} ctx */
@@ -204,6 +206,32 @@ export function destroyController(ctx) {
 
 /** @param {import("./state.js").ControllerState} ctx */
 export function buildControllerApi(ctx) {
+  /**
+   * @param {string} type
+   * @param {{ time: number, price: number }[]} points
+   * @param {{ locked?: boolean, props?: object }} [opts]
+   */
+  function addDrawing(type, points, opts = {}) {
+    if (!SUPPORTED_DRAW_TOOLS.has(type)) {
+      throw new Error(`Unsupported drawing type: ${type}`);
+    }
+    if (!Array.isArray(points) || points.length === 0) {
+      throw new Error("addDrawing requires at least one point");
+    }
+    const normalized = points.map((p) => ({
+      time: Number(p.time),
+      price: Number(p.price),
+    }));
+    if (!normalized.every((p) => Number.isFinite(p.time) && Number.isFinite(p.price))) {
+      throw new Error("addDrawing points must have finite time and price");
+    }
+    const drawing = newDrawing(type, normalized);
+    if (opts.props && typeof opts.props === "object") Object.assign(drawing, opts.props);
+    if (opts.locked != null) drawing.locked = Boolean(opts.locked);
+    ctx.commitDrawing(drawing);
+    return structuredClone(drawing);
+  }
+
   return {
     setActiveTool: (...args) => ctx.setActiveTool(...args),
     armChartPlacementSuppress: (...args) => ctx.armChartPlacementSuppress(...args),
@@ -239,6 +267,7 @@ export function buildControllerApi(ctx) {
     selectDrawing: (...args) => ctx.selectDrawing(...args),
     updateDrawing: (...args) => ctx.updateDrawing(...args),
     removeDrawingById: (...args) => ctx.removeDrawingById(...args),
+    addDrawing: (...args) => addDrawing(...args),
     replaceDrawings: (...args) => ctx.replaceDrawings(...args),
     getPlacementSyncSnapshot: () => ctx.getPlacementSyncSnapshot(),
     applyPlacementSyncSnapshot: (...args) => ctx.applyPlacementSyncSnapshot(...args),

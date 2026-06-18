@@ -1,11 +1,10 @@
+import { defineIndicator } from "../defineIndicator.js";
 import { BaseIndicator } from "../BaseIndicator.js";
 import { SMOOTHING_TYPES } from "../math/ema.js";
 import { computeRsiIndicator } from "../math/rsi.js";
 import { sourceLabel } from "../math/source.js";
 import { plotStyleKeys, fillStyleKeys, buildBandFillSegments } from "../schema.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
-
-/** @typedef {import("../types.js").IndicatorInstance} IndicatorInstance */
 
 export const RSI_TV_COLORS = {
   rsi: "#7e57c2",
@@ -15,13 +14,14 @@ export const RSI_TV_COLORS = {
 
 export const RSI_SMOOTHING_TYPES = SMOOTHING_TYPES.filter((t) => t.id !== "sma_bb");
 
-export class RsiIndicator extends BaseIndicator {
+export const RsiIndicator = defineIndicator(class RsiIndicator {
+  constructor() {}
+
   static id = "RSI@tv-basicstudies";
   static type = "rsi";
   static title = "RSI";
   static shortTitle = "RSI";
-  static enabled = true;
-  static primaryPlotKey = "rsi";
+  static primaryPlot = "rsi";
   static studyPaneOrder = 0;
   static studyPaneHeight = 100;
   static studyPaneScale = { min: 0, max: 100 };
@@ -81,13 +81,9 @@ export class RsiIndicator extends BaseIndicator {
     },
   ];
 
-  /** @returns {object} */
   static defaultStyle() {
     return {
-      precision: "default",
-      labelsOnScale: true,
-      valuesInStatusLine: true,
-      inputsInStatusLine: true,
+      ...BaseIndicator.defaultStyle(),
       rsiVisible: true,
       rsiColor: RSI_TV_COLORS.rsi,
       rsiWidth: 1,
@@ -127,12 +123,10 @@ export class RsiIndicator extends BaseIndicator {
     };
   }
 
-  /** @param {object[]} bars @param {IndicatorInstance} instance */
-  static compute(bars, instance) {
-    return computeRsiIndicator(bars, instance.inputs, instance.style);
+  static compute(bars, inputs, style) {
+    return computeRsiIndicator(bars, inputs, style);
   }
 
-  /** @param {string} plotKey @param {number} raw @returns {string | null} */
   static formatPlotValue(plotKey, raw) {
     if (plotKey === "rsi" || plotKey === "smoothed") {
       if (raw == null || !Number.isFinite(raw)) return null;
@@ -141,7 +135,6 @@ export class RsiIndicator extends BaseIndicator {
     return null;
   }
 
-  /** @param {IndicatorInstance} instance */
   static legendParams(instance) {
     return [
       String(instance.inputs.length ?? 14),
@@ -149,7 +142,6 @@ export class RsiIndicator extends BaseIndicator {
     ];
   }
 
-  /** @param {IndicatorInstance} instance */
   static valueLabels(instance) {
     /** @type {{ key: string, title: string }[]} */
     const labels = [{ key: "rsi", title: "RSI" }];
@@ -159,9 +151,7 @@ export class RsiIndicator extends BaseIndicator {
     return labels;
   }
 
-  /** @param {object} inputValues @param {object} style */
-  static stylePlotRows(inputValues, style) {
-    void style;
+  static stylePlotRows(inputValues, _style) {
     const rsiKeys = plotStyleKeys("rsi");
     const smoothKeys = plotStyleKeys("smoothed");
     const upperKeys = plotStyleKeys("upper");
@@ -169,9 +159,7 @@ export class RsiIndicator extends BaseIndicator {
     const lowerKeys = plotStyleKeys("lower");
     const fillKeys = fillStyleKeys("rsiBgFill");
     /** @type {object[]} */
-    const rows = [
-      { type: "line", plotKey: "rsi", label: "RSI", ...rsiKeys },
-    ];
+    const rows = [{ type: "line", plotKey: "rsi", label: "RSI", ...rsiKeys }];
     if (inputValues.smoothingType !== "none") {
       rows.push({ type: "line", plotKey: "smoothed", label: "RSI-based MA", ...smoothKeys });
     }
@@ -184,7 +172,6 @@ export class RsiIndicator extends BaseIndicator {
     return rows;
   }
 
-  /** @param {IndicatorInstance} instance @param {{ time: number }[]} chartBars */
   static getBandFills(instance, chartBars) {
     if (instance.hidden || !instance.lastPlots) return [];
     const keys = fillStyleKeys("rsiBgFill");
@@ -209,11 +196,9 @@ export class RsiIndicator extends BaseIndicator {
     ];
   }
 
-  /** @param {object} inputValues @param {object} style @param {string} changedKey */
   static handleInputChange(inputValues, style, changedKey) {
-    if (changedKey === "smoothingType") {
-      if (inputValues.smoothingType !== "none") style.smoothedVisible = true;
+    if (changedKey === "smoothingType" && inputValues.smoothingType !== "none") {
+      style.smoothedVisible = true;
     }
-    super.handleInputChange(inputValues, style, changedKey);
   }
-}
+});

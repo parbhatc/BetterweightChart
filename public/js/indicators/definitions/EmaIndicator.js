@@ -1,10 +1,7 @@
-import { BaseIndicator } from "../BaseIndicator.js";
+import { defineIndicator } from "../defineIndicator.js";
 import { computeEmaIndicator, SMOOTHING_TYPES } from "../math/ema.js";
 import { sourceLabel } from "../math/source.js";
 
-/** @typedef {import("../types.js").IndicatorInstance} IndicatorInstance */
-
-/** TradingView default plot colors for EMA study */
 export const EMA_TV_COLORS = {
   ema: "#2962ff",
   smoothed: "#fdd835",
@@ -12,13 +9,14 @@ export const EMA_TV_COLORS = {
   bbFill: "#4caf50",
 };
 
-export class EmaIndicator extends BaseIndicator {
+export const EmaIndicator = defineIndicator(class EmaIndicator {
+  constructor() {}
+
   static id = "Moving Average Exponential@tv-basicstudies";
   static type = "ema";
   static title = "Moving Average Exponential";
   static shortTitle = "EMA";
-  static enabled = true;
-  static primaryPlotKey = "ema";
+  static primaryPlot = "ema";
 
   static plots = [
     { id: "ema", title: "EMA", color: EMA_TV_COLORS.ema, priceLine: false },
@@ -96,12 +94,10 @@ export class EmaIndicator extends BaseIndicator {
     },
   ];
 
-  /** @param {object[]} bars @param {IndicatorInstance} instance */
-  static compute(bars, instance) {
-    return computeEmaIndicator(bars, instance.inputs);
+  static compute(bars, inputs) {
+    return computeEmaIndicator(bars, inputs);
   }
 
-  /** @param {IndicatorInstance} instance */
   static legendParams(instance) {
     return [
       String(instance.inputs.length ?? 9),
@@ -109,9 +105,7 @@ export class EmaIndicator extends BaseIndicator {
     ];
   }
 
-  /** @param {object} style @param {object} inputs */
   static mergeStyleDefaults(style, inputs = {}) {
-    super.mergeStyleDefaults(style, inputs);
     const defs = this.defaultStyle();
     if (inputs.smoothingType === "sma_bb") {
       if (style.upperColor === undefined || style.upperColor === defs.smoothedColor) {
@@ -125,7 +119,6 @@ export class EmaIndicator extends BaseIndicator {
     return style;
   }
 
-  /** @param {object} inputs @param {object} style @param {string} changedKey */
   static handleInputChange(inputs, style, changedKey) {
     if (changedKey === "smoothingType") {
       if (inputs.smoothingType !== "none") style.smoothedVisible = true;
@@ -135,6 +128,5 @@ export class EmaIndicator extends BaseIndicator {
         style.bbFillVisible = true;
       }
     }
-    super.handleInputChange(inputs, style, changedKey);
   }
-}
+});

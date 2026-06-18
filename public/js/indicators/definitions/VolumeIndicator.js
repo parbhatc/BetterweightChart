@@ -1,8 +1,7 @@
+import { defineIndicator } from "../defineIndicator.js";
 import { BaseIndicator } from "../BaseIndicator.js";
 import { plotStyleKeys } from "../schema.js";
 import { computeVolumeIndicator } from "../math/volume.js";
-
-/** @typedef {import("../types.js").IndicatorInstance} IndicatorInstance */
 
 export const VOL_TV_COLORS = {
   growing: "#26a69a",
@@ -10,13 +9,14 @@ export const VOL_TV_COLORS = {
   ma: "#2962ff",
 };
 
-export class VolumeIndicator extends BaseIndicator {
+export const VolumeIndicator = defineIndicator(class VolumeIndicator {
+  constructor() {}
+
   static id = "Volume@tv-basicstudies";
   static type = "volume";
   static title = "Volume";
   static shortTitle = "Vol";
-  static enabled = true;
-  static primaryPlotKey = "vol";
+  static primaryPlot = "vol";
   static studyPaneIndex = null;
   static volumeScaleId = "volume-overlay";
 
@@ -50,13 +50,9 @@ export class VolumeIndicator extends BaseIndicator {
     },
   ];
 
-  /** @returns {object} */
   static defaultStyle() {
     return {
-      precision: "default",
-      labelsOnScale: true,
-      valuesInStatusLine: true,
-      inputsInStatusLine: true,
+      ...BaseIndicator.defaultStyle(),
       volVisible: true,
       volPriceLine: false,
       volPlotType: "columns",
@@ -73,12 +69,10 @@ export class VolumeIndicator extends BaseIndicator {
     };
   }
 
-  /** @param {object[]} bars @param {IndicatorInstance} instance */
-  static compute(bars, instance) {
-    return computeVolumeIndicator(bars, instance.inputs, instance.style);
+  static compute(bars, inputs, style) {
+    return computeVolumeIndicator(bars, inputs, style);
   }
 
-  /** @param {string} plotKey @param {number} raw @returns {string | null} */
   static formatPlotValue(plotKey, raw) {
     if (plotKey !== "vol" || raw == null || !Number.isFinite(raw)) return null;
     const n = Number(raw);
@@ -87,17 +81,10 @@ export class VolumeIndicator extends BaseIndicator {
     return String(Math.round(n));
   }
 
-  /** @param {IndicatorInstance} instance */
   static legendParams(instance) {
     return [String(instance.inputs.maLength ?? 20)];
   }
 
-  /** @param {string} plotKey */
-  static getPlotDef(plotKey) {
-    return this.plots.find((p) => p.id === plotKey) ?? null;
-  }
-
-  /** @param {IndicatorInstance} instance @param {string} plotKey */
   static plotStyle(instance, plotKey) {
     if (plotKey === "vol") {
       return {
@@ -110,14 +97,13 @@ export class VolumeIndicator extends BaseIndicator {
       };
     }
     const plot = this.getPlotDef(plotKey);
-    if (!plot || plot.type !== "line") return this.hiddenPlot();
-    return this.linePlotStyle(instance, plotKey, {
+    if (!plot || plot.type !== "line") return BaseIndicator.hiddenPlot();
+    return BaseIndicator.linePlotStyle(instance, plotKey, {
       ...plotStyleKeys("ma"),
       label: plot.title,
     });
   }
 
-  /** @param {IndicatorInstance} instance */
   static valueLabels(instance) {
     /** @type {{ key: string, title: string }[]} */
     const labels = [{ key: "vol", title: "Volume" }];
@@ -127,9 +113,7 @@ export class VolumeIndicator extends BaseIndicator {
     return labels;
   }
 
-  /** @param {object} inputValues @param {object} style */
-  static stylePlotRows(inputValues, style) {
-    void inputValues;
+  static stylePlotRows(_inputValues, _style) {
     const maKeys = plotStyleKeys("ma");
     return [
       { type: "toggle", visibleKey: "volVisible", label: "Volume" },
@@ -157,11 +141,4 @@ export class VolumeIndicator extends BaseIndicator {
       },
     ];
   }
-
-  /** @param {object} inputValues @param {object} style @param {string} changedKey */
-  static handleInputChange(inputValues, style, changedKey) {
-    void inputValues;
-    void style;
-    void changedKey;
-  }
-}
+});

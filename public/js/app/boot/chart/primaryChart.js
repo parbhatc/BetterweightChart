@@ -3,7 +3,6 @@ import {
   enforcePriceBarRatio,
   enforcePriceBarRatioOnPriceZoom,
 } from "../../../chart/price/barRatio.js";
-import { resetPanePriceScalePanReady, attachChartBodyVerticalPan } from "../../../chart/price/panScale.js";
 import { ensureDebugHud } from "../../../debug/chart/hud.js";
 import { createPanFpsMonitor } from "../../../debug/chart/index.js";
 
@@ -29,6 +28,7 @@ export function initPrimaryChart(ctx) {
   function maintainLockedRatio() {
     const target = lockedRatioTarget();
     if (target == null || ratioLockBusy) return;
+    if ([...ctx.chartPanes.values()].some((p) => p._historyRestorePending)) return;
     ratioLockBusy = true;
     try {
       enforcePriceBarRatio(chart, series, ctx.activePriceScaleId(), target);
@@ -65,20 +65,6 @@ export function initPrimaryChart(ctx) {
     true,
   );
 
-  attachChartBodyVerticalPan(ctx.el, chart, series, {
-    priceScaleId: () => ctx.activePriceScaleId(),
-    isRatioLocked: () => Boolean(ctx.settingsStore.get().scales?.lockPriceToBarRatio),
-    isBlocked: () => ctx.drawing?.shouldBlockChartPan?.() ?? false,
-    onManualScaleLock: () => {
-      const sc = ctx.settingsStore.get().scales ?? {};
-      if (sc.autoScale !== false) ctx.settingsStore.set("scales", "autoScale", false);
-    },
-    onViewportChange: () => {
-      ctx.flushViewportSnapshot?.();
-      ctx.scheduleAutosaveLayout?.();
-    },
-  });
-
   chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
     if (ctx._layoutRestorePending) return;
     ctx.scheduleAutosaveLayout?.();
@@ -99,11 +85,11 @@ export function initPrimaryChart(ctx) {
   });
 
   ctx.resetChartView = () => {
-    resetPanePriceScalePanReady(ctx.chartPanes.get(0));
-    chart.priceScale(ctx.activePriceScaleId()).applyOptions({
-      autoScale: true,
-      scaleMargins: { top: 0.08, bottom: 0.12 },
-    });
+    const primary = ctx.chartPanes.get(0);
+    if (primary) primary._manualScaleLocked = false;
+    const margins = { top: 0.08, bottom: 0.12 };
+    series.priceScale().applyOptions({ autoScale: true, scaleMargins: margins });
+    chart.priceScale(ctx.activePriceScaleId()).applyOptions({ autoScale: true, scaleMargins: margins });
     if (ctx.bars.length) scrollToLatest(ctx.bars.length);
   };
 

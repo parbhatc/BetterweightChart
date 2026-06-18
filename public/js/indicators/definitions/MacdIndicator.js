@@ -1,9 +1,8 @@
+import { defineIndicator } from "../defineIndicator.js";
 import { BaseIndicator } from "../BaseIndicator.js";
 import { computeMacdIndicator } from "../math/macd.js";
 import { sourceLabel } from "../math/source.js";
 import { plotStyleKeys } from "../schema.js";
-
-/** @typedef {import("../types.js").IndicatorInstance} IndicatorInstance */
 
 export const MACD_TV_COLORS = {
   hist0: "#26a69a",
@@ -22,13 +21,14 @@ export const MACD_MA_TYPES = [
   { id: "wma", label: "WMA" },
 ];
 
-export class MacdIndicator extends BaseIndicator {
+export const MacdIndicator = defineIndicator(class MacdIndicator {
+  constructor() {}
+
   static id = "MACD@tv-basicstudies";
   static type = "macd";
   static title = "MACD";
   static shortTitle = "MACD";
-  static enabled = true;
-  static primaryPlotKey = "macd";
+  static primaryPlot = "macd";
   static studyPaneOrder = 1;
   static studyPaneHeight = 110;
 
@@ -73,13 +73,9 @@ export class MacdIndicator extends BaseIndicator {
     },
   ];
 
-  /** @returns {object} */
   static defaultStyle() {
     return {
-      precision: "default",
-      labelsOnScale: true,
-      valuesInStatusLine: true,
-      inputsInStatusLine: true,
+      ...BaseIndicator.defaultStyle(),
       histogramVisible: true,
       histogramPlotType: "columns",
       histColor0: MACD_TV_COLORS.hist0,
@@ -112,19 +108,16 @@ export class MacdIndicator extends BaseIndicator {
     };
   }
 
-  /** @param {object[]} bars @param {IndicatorInstance} instance */
-  static compute(bars, instance) {
-    return computeMacdIndicator(bars, instance.inputs, instance.style);
+  static compute(bars, inputs, style) {
+    return computeMacdIndicator(bars, inputs, style);
   }
 
-  /** @param {string} plotKey @param {number} raw @returns {string | null} */
   static formatPlotValue(plotKey, raw) {
     if (plotKey === "zero") return null;
     if (raw == null || !Number.isFinite(raw)) return null;
     return Number(raw).toFixed(2);
   }
 
-  /** @param {IndicatorInstance} instance */
   static legendParams(instance) {
     return [
       sourceLabel(instance.inputs.source ?? "close").toLowerCase(),
@@ -134,7 +127,6 @@ export class MacdIndicator extends BaseIndicator {
     ];
   }
 
-  /** @param {IndicatorInstance} instance */
   static valueLabels(instance) {
     /** @type {{ key: string, title: string }[]} */
     const labels = [];
@@ -145,7 +137,6 @@ export class MacdIndicator extends BaseIndicator {
     return labels;
   }
 
-  /** @param {IndicatorInstance} instance @param {string} plotKey */
   static plotStyle(instance, plotKey) {
     if (plotKey === "histogram") {
       return {
@@ -157,13 +148,10 @@ export class MacdIndicator extends BaseIndicator {
         title: "",
       };
     }
-    return super.plotStyle(instance, plotKey);
+    return BaseIndicator.plotStyle(instance, plotKey);
   }
 
-  /** @param {object} inputValues @param {object} style */
-  static stylePlotRows(inputValues, style) {
-    void inputValues;
-    void style;
+  static stylePlotRows(_inputValues, _style) {
     const macdKeys = plotStyleKeys("macd");
     const signalKeys = plotStyleKeys("signal");
     const zeroKeys = plotStyleKeys("zero");
@@ -186,4 +174,4 @@ export class MacdIndicator extends BaseIndicator {
       { type: "band", plotKey: "zero", label: "Zero", levelKey: "zeroLevel", ...zeroKeys },
     ];
   }
-}
+});
