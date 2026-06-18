@@ -142,7 +142,10 @@ function boxesEqual(a, b) {
       x.labelTime !== y.labelTime ||
       Boolean(x.extendRight) !== Boolean(y.extendRight) ||
       x.priceTop !== y.priceTop ||
-      x.priceBottom !== y.priceBottom
+      x.priceBottom !== y.priceBottom ||
+      Boolean(x.showLabel) !== Boolean(y.showLabel) ||
+      x.label !== y.label ||
+      x.textColor !== y.textColor
     ) {
       return false;
     }

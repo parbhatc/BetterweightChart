@@ -15,6 +15,10 @@ import { PRECISION_OPTIONS } from "./constants.js";
 import { renderDefaultStyleSections, renderGraphicStudyStyleSections } from "./defaultStyleSections.js";
 import { renderInputsPanelHtml, renderInputColorField } from "./inputPanel.js";
 import { appendSizeRuleRow, readSizeFilterRulesFromPanel } from "./symbolSizeRulesPanel.js";
+import {
+  appendFvgTimeframeRow,
+  readFvgTimeframesFromPanel,
+} from "./fvgTimeframesPanel.js";
 import { flattenInputFields } from "../schema.js";
 import { openSymbolSearchPopover } from "../../ui/symbol/popover.js";
 import { symbolTicker } from "../../app/symbol/ticker.js";
@@ -511,9 +515,15 @@ export function createIndicatorSettingsDialog(opts) {
     readFieldsFromPanel(inputsPanel, draft.inputs);
     readFieldsFromPanel(stylePanel, draft.style);
     for (const input of getInputSchema()) {
-      if (input.type !== "symbolSizeRules") continue;
-      const rules = readSizeFilterRulesFromPanel(inputsPanel, input.id);
-      if (rules) draft.inputs[input.id] = rules;
+      if (input.type === "symbolSizeRules") {
+        const rules = readSizeFilterRulesFromPanel(inputsPanel, input.id);
+        if (rules) draft.inputs[input.id] = rules;
+        continue;
+      }
+      if (input.type === "fvgTimeframes") {
+        const rows = readFvgTimeframesFromPanel(inputsPanel, input.id);
+        if (rows) draft.inputs[input.id] = rows;
+      }
     }
     visibilityList.querySelectorAll("[data-vis-btn]").forEach((btn) => {
       if (!(btn instanceof HTMLElement)) return;
@@ -605,11 +615,9 @@ export function createIndicatorSettingsDialog(opts) {
   function openSelectMenu(anchor, field) {
     const options = optionsForInputField(field);
     const currentVal = field in draft.inputs ? draft.inputs[field] : draft.style[field];
-    const isSource = field === "source";
-
-    const menu = document.createElement("div");
-    menu.className = isSource ? "tv-ind-source-menu" : "tv-menu-popover";
-    if (isSource) {
+    if (field === "source") {
+      const menu = document.createElement("div");
+      menu.className = "tv-ind-source-menu";
       menu.setAttribute("role", "listbox");
       menu.innerHTML = `<div class="tv-ind-source-menu__list">${options
         .map((o) => {
@@ -619,19 +627,70 @@ export function createIndicatorSettingsDialog(opts) {
           </button>`;
         })
         .join("")}</div>`;
-    } else {
-      menu.innerHTML = `<div class="tv-menu-popover__inner">${options
-        .map(
-          (o) =>
-            `<button type="button" class="tv-menu-popover__item${currentVal === o.id ? " is-active" : ""}" data-opt="${o.id}">${o.label}</button>`,
-        )
-        .join("")}</div>`;
+      document.body.appendChild(menu);
+      const rect = anchor.getBoundingClientRect();
+      menu.style.left = `${rect.left}px`;
+      menu.style.top = `${rect.bottom + 4}px`;
+      menu.style.minWidth = `${Math.max(rect.width, 220)}px`;
+      function cleanup() {
+        menu.remove();
+        document.removeEventListener("click", onDoc, true);
+      }
+      function onDoc(ev) {
+        if (menu.contains(ev.target)) return;
+        cleanup();
+      }
+      menu.addEventListener("click", (ev) => {
+        const item = ev.target.closest("[data-opt]");
+        if (!(item instanceof HTMLElement)) return;
+        const val = item.dataset.opt;
+        if (!val) return;
+        draft.inputs[field] = val;
+        onInputFieldChange(field);
+        if (activeTab === "inputs") renderInputsPanel();
+        else renderStylePanel();
+        applyDraft();
+        cleanup();
+      });
+      setTimeout(() => document.addEventListener("click", onDoc, true), 0);
+      return;
     }
+    openOptionsMenu(anchor, options, currentVal, (val) => {
+      const btn = anchor instanceof HTMLElement ? anchor : null;
+      const storeKey = btn?.dataset.store === "style" ? "style" : "inputs";
+      if (field in draft[storeKey]) draft[storeKey][field] = val;
+      else if (field in draft.inputs) draft.inputs[field] = val;
+      else draft.style[field] = val;
+      if (field in draft.inputs || storeKey === "inputs") onInputFieldChange(field);
+      if (activeTab === "inputs") renderInputsPanel();
+      else renderStylePanel();
+      if (field in draft.inputs && flattenInputFields(getInputSchema()).find((i) => i.id === field)?.affectsStyle) {
+        renderStylePanel();
+      }
+      applyDraft();
+    });
+  }
+
+  /**
+   * @param {HTMLElement} anchor
+   * @param {{ id: string, label: string }[]} options
+   * @param {string} currentVal
+   * @param {(val: string) => void} onPick
+   */
+  function openOptionsMenu(anchor, options, currentVal, onPick) {
+    const menu = document.createElement("div");
+    menu.className = "tv-menu-popover";
+    menu.innerHTML = `<div class="tv-menu-popover__inner">${options
+      .map(
+        (o) =>
+          `<button type="button" class="tv-menu-popover__item${currentVal === o.id ? " is-active" : ""}" data-opt="${o.id}">${o.label}</button>`,
+      )
+      .join("")}</div>`;
     document.body.appendChild(menu);
     const rect = anchor.getBoundingClientRect();
     menu.style.left = `${rect.left}px`;
     menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.minWidth = `${Math.max(rect.width, isSource ? 220 : rect.width)}px`;
+    menu.style.minWidth = `${Math.max(rect.width, 120)}px`;
 
     function cleanup() {
       menu.remove();
@@ -648,18 +707,7 @@ export function createIndicatorSettingsDialog(opts) {
       if (!(item instanceof HTMLElement)) return;
       const val = item.dataset.opt;
       if (!val) return;
-      const btn = anchor instanceof HTMLElement ? anchor : null;
-      const storeKey = btn?.dataset.store === "style" ? "style" : "inputs";
-      if (field in draft[storeKey]) draft[storeKey][field] = val;
-      else if (field in draft.inputs) draft.inputs[field] = val;
-      else draft.style[field] = val;
-      if (field in draft.inputs || storeKey === "inputs") onInputFieldChange(field);
-      if (activeTab === "inputs") renderInputsPanel();
-      else renderStylePanel();
-      if (field in draft.inputs && flattenInputFields(getInputSchema()).find((i) => i.id === field)?.affectsStyle) {
-        renderStylePanel();
-      }
-      applyDraft();
+      onPick(val);
       cleanup();
     });
 
@@ -669,7 +717,7 @@ export function createIndicatorSettingsDialog(opts) {
   root.addEventListener("input", (ev) => {
     const target = ev.target;
     if (!(target instanceof HTMLInputElement)) return;
-    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max]")) {
+    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max], [data-tf-label]")) {
       applyDraft();
       return;
     }
@@ -752,6 +800,55 @@ export function createIndicatorSettingsDialog(opts) {
       }
       readDraftFromUi();
       applyDraft();
+      return;
+    }
+    const tfAdd = target.closest("[data-tf-add]");
+    if (tfAdd instanceof HTMLElement && !tfAdd.hasAttribute("disabled")) {
+      const rootEl = tfAdd.closest("[data-tf-rules-root]");
+      const list = rootEl?.querySelector("[data-tf-rules-list]");
+      if (list instanceof HTMLElement) {
+        appendFvgTimeframeRow(list, { enabled: true, label: "FVG", timeframe: "chart" }, timeframeOptions());
+        readDraftFromUi();
+        applyDraft();
+      }
+      return;
+    }
+    const tfRemove = target.closest("[data-tf-remove]");
+    if (tfRemove instanceof HTMLElement && !tfRemove.hasAttribute("disabled")) {
+      const row = tfRemove.closest("[data-tf-rule-row]");
+      const list = row?.parentElement;
+      row?.remove();
+      if (list instanceof HTMLElement && !list.querySelector("[data-tf-rule-row]")) {
+        const empty = document.createElement("div");
+        empty.className = "tv-ind-settings__tf-rules-empty";
+        empty.textContent = "No timeframes — add one to show FVG layers.";
+        list.appendChild(empty);
+      }
+      readDraftFromUi();
+      applyDraft();
+      renderInputsPanel();
+      return;
+    }
+    const tfEnabled = target.closest("[data-tf-enabled]");
+    if (tfEnabled instanceof HTMLElement && !tfEnabled.hasAttribute("disabled")) {
+      setTvCheck(tfEnabled, !tfEnabled.classList.contains("tv-set__check--on"));
+      readDraftFromUi();
+      applyDraft();
+      renderInputsPanel();
+      return;
+    }
+    const tfPick = target.closest("[data-tf-timeframe]");
+    if (tfPick instanceof HTMLElement && !tfPick.hasAttribute("disabled")) {
+      const current = tfPick.dataset.value ?? "chart";
+      openOptionsMenu(tfPick, timeframeOptions(), current, (val) => {
+        tfPick.dataset.value = val;
+        const label = timeframeOptions().find((o) => o.id === val)?.label ?? val;
+        const labelEl = tfPick.querySelector("[data-tf-timeframe-label]");
+        if (labelEl) labelEl.textContent = label;
+        readDraftFromUi();
+        applyDraft();
+        renderInputsPanel();
+      });
       return;
     }
     const symbolPick = target.closest("[data-symbol-pick]");

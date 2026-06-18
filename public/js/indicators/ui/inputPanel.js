@@ -1,6 +1,7 @@
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { symbolTicker } from "../../app/symbol/ticker.js";
 import { renderSymbolSizeRulesPanel } from "./symbolSizeRulesPanel.js";
+import { renderFvgTimeframesPanel } from "./fvgTimeframesPanel.js";
 
 /**
  * @param {import("../types.js").InputFieldDef} field
@@ -55,6 +56,11 @@ export function renderInputsPanelHtml(schema, draftInputs, draftStyle, helpers) 
             chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
             continue;
           }
+          if (item.type === "fvgTimeframes") {
+            flushInline();
+            chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
+            continue;
+          }
           if (item.type !== "row" && item.type !== "inlinePair" && "inline" in item && item.inline) {
             inlineBatch.push(item);
             continue;
@@ -96,6 +102,9 @@ function renderInputItem(input, draftInputs, draftStyle, helpers) {
   }
   if (input.type === "symbolSizeRules") {
     return renderSymbolSizeRulesPanel(input, draftInputs);
+  }
+  if (input.type === "fvgTimeframes") {
+    return renderFvgTimeframesPanel(input, draftInputs, helpers.timeframeOptions);
   }
   return renderInputField(input, draftInputs, draftStyle, helpers);
 }

@@ -11,16 +11,13 @@ import {
   fvgZonePassesSizeFilter,
   resolveFvgSizeFilterLimits,
 } from "../ui/symbolSizeRulesPanel.js";
+import {
+  DEFAULT_FVG_TIMEFRAMES,
+  resolveFvgLayers,
+  resolveFvgTimeframeRows,
+} from "../ui/fvgTimeframesPanel.js";
 
 const LABEL_DISTANCE_BARS = 10;
-
-const TF_LAYER_DEFS = [
-  { on: "tf1On", tf: "tf1", label: "tf1Label", title: "Timeframe #1", defTf: "chart", defLabel: "FVG", defaultOn: true },
-  { on: "tf2On", tf: "tf2", label: "tf2Label", title: "Timeframe #2", defTf: "15", defLabel: "15m FVG" },
-  { on: "tf3On", tf: "tf3", label: "tf3Label", title: "Timeframe #3", defTf: "60", defLabel: "1h FVG" },
-  { on: "tf4On", tf: "tf4", label: "tf4Label", title: "Timeframe #4", defTf: "240", defLabel: "4h FVG" },
-  { on: "tf5On", tf: "tf5", label: "tf5Label", title: "Timeframe #5", defTf: "D", defLabel: "D FVG" },
-];
 
 /** @param {string} color @param {number} opacity */
 function rgba(color, opacity) {
@@ -104,18 +101,14 @@ function zoneInvertTime(zone, series) {
 /** @returns {import("../types.js").InputDef[]} */
 function buildInputs() {
   /** @type {import("../types.js").InputDef[]} */
-  const inputs = [];
-
-  for (const row of TF_LAYER_DEFS) {
-    inputs.push({
-      type: "row",
+  const inputs = [
+    {
+      type: "fvgTimeframes",
+      id: "fvgTimeframes",
       section: "Timeframes",
-      fields: [
-        { id: row.on, type: "bool", title: "", defval: row.defaultOn ?? false },
-        { id: row.tf, type: "timeframe", title: row.title, defval: row.defTf },
-      ],
-    });
-  }
+      defval: DEFAULT_FVG_TIMEFRAMES,
+    },
+  ];
 
   inputs.push(
     { id: "hideLowerTf", type: "bool", title: "Hide FVGs lower than enabled timeframes", defval: true, section: "FVG settings" },
@@ -290,16 +283,6 @@ function buildInputs() {
     },
   );
 
-  for (const row of TF_LAYER_DEFS) {
-    inputs.push({
-      id: row.label,
-      type: "text",
-      title: row.title,
-      defval: row.defLabel,
-      section: "Label Settings",
-    });
-  }
-
   inputs.push(
     { id: "deleteOnFill", type: "bool", title: "Delete Boxes after fill", defval: true, section: "Box Settings" },
     { id: "extendBoxes", type: "bool", title: "Extend Boxes", defval: false, section: "Box Settings" },
@@ -366,20 +349,12 @@ function buildInputs() {
 /** @param {object} inputs @param {string} [chartResolution] @returns {{ tfId: string, tfSec: number }[]} */
 export function fvgEnabledHtfResolutions(inputs, chartResolution) {
   const chartSec = resolutionSec(chartResolution ?? "1");
-  /** @type {{ tfId: string, tfSec: number }[]} */
-  const out = [];
-  for (const def of TF_LAYER_DEFS) {
-    const enabled = def.defaultOn ? inputs[def.on] !== false : Boolean(inputs[def.on]);
-    if (!enabled) continue;
-    const tfId = inputs[def.tf] ?? def.defTf;
-    const tfSec = tfId === "chart" ? chartSec : resolutionSec(tfId);
-    if (tfSec > chartSec) out.push({ tfId, tfSec });
-  }
+  let out = resolveFvgLayers(inputs, chartSec).filter((l) => l.tfSec > chartSec);
   if (inputs.hideLowerTf !== false && out.length) {
     const maxSec = Math.max(...out.map((l) => l.tfSec));
-    return out.filter((l) => l.tfSec === maxSec);
+    out = out.filter((l) => l.tfSec === maxSec);
   }
-  return out;
+  return out.map(({ tfId, tfSec }) => ({ tfId, tfSec }));
 }
 
 /** HTF bar count needed for maxBarsBack (not chart bars). */
@@ -523,19 +498,20 @@ function compareFvgKindAtConfirmTime(compareSeries, confirmTime, tfSec) {
  */
 export function fvgCorrelatedTfOptions(inputs, chartResolution = "1") {
   /** @type {{ id: string, label: string }[]} */
-  const options = [{ id: "all", label: "All" }];
-  const seen = new Set(["all"]);
+  const options = [
+    { id: "all", label: "All" },
+    { id: "chart", label: `Chart (${resolutionDisplayTitle(chartResolution)})` },
+  ];
+  const seen = new Set(["all", "chart"]);
 
-  for (const def of TF_LAYER_DEFS) {
-    const enabled = def.defaultOn ? inputs[def.on] !== false : Boolean(inputs[def.on]);
-    if (!enabled) continue;
-    const tfId = inputs[def.tf] ?? def.defTf;
-    const key = tfId === "chart" ? "chart" : normalizeResolutionId(tfId);
+  for (const row of resolveFvgTimeframeRows(inputs)) {
+    if (!row.enabled) continue;
+    const tfId = row.timeframe ?? "chart";
+    if (tfId === "chart") continue;
+    const key = normalizeResolutionId(tfId);
     if (seen.has(key)) continue;
     seen.add(key);
-    const label =
-      key === "chart" ? resolutionDisplayTitle(chartResolution) : resolutionDisplayTitle(tfId);
-    options.push({ id: key, label });
+    options.push({ id: key, label: resolutionDisplayTitle(tfId) });
   }
   return options;
 }
@@ -837,20 +813,20 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
 
   static overlayPrimitive = "boxes";
   static graphicObjects = [
-    { styleKey: "graphicBoxes", label: "FVG boxes", overlay: "boxes" },
-    { styleKey: "graphicForming", label: "Live forming FVG", overlay: "boxes" },
-    { styleKey: "graphicIfvg", label: "IFVG boxes", overlay: "boxes" },
+    { styleKey: "graphicBoxes", label: "Boxes", overlay: "boxes" },
     { styleKey: "graphicLabels", label: "Labels", overlay: "labels" },
   ];
 
   static inputs = buildInputs();
 
   static mergeStyleDefaults(style) {
+    const boxesVisible =
+      style.graphicBoxes !== false &&
+      style.graphicForming !== false &&
+      style.graphicIfvg !== false;
     return {
       ...style,
-      graphicBoxes: style.graphicBoxes ?? true,
-      graphicForming: style.graphicForming ?? true,
-      graphicIfvg: style.graphicIfvg ?? true,
+      graphicBoxes: style.graphicBoxes ?? boxesVisible,
       graphicLabels: style.graphicLabels ?? true,
     };
   }
@@ -876,9 +852,7 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
     if (instance.inputs.sizeFilterOn === true) {
       extra += `|sf:${instance.inputs.sizeFilterUnit}|${instance.inputs.sizeFilterMin}|${instance.inputs.sizeFilterMax}|${JSON.stringify(instance.inputs.sizeFilterRules ?? [])}`;
     }
-    if (instance.inputs.showSizeOnLabel === true || instance.inputs.showFvgNameOnLabel === false) {
-      extra += `|lbl:${instance.inputs.showSizeOnLabel}|${instance.inputs.showFvgNameOnLabel}|${instance.inputs.sizeLabelFormat}`;
-    }
+    extra += `|lbl:${instance.inputs.showLabels}|${instance.style?.graphicLabels}|${instance.inputs.showSizeOnLabel}|${instance.inputs.showFvgNameOnLabel}|${instance.inputs.sizeLabelFormat}`;
     if (instance.inputs.requireCorrelatedFvg !== true) return extra;
     const compare = resolveSmtCompareSymbol(instance.inputs, ctx.primarySymbol ?? ctx.symbol);
     const cmp = ctx.getCompareBars?.(compare, ctx.chartResolution);
@@ -895,7 +869,7 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
 
     if (
       (inputs.showFvg === false && inputs.showIfvg === false) ||
-      (style.graphicBoxes === false && style.graphicIfvg === false)
+      style.graphicBoxes === false
     ) {
       this.state.skip = true;
       return;
@@ -907,11 +881,12 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
     const extendBoxes = Boolean(inputs.extendBoxes);
     const boxLen = Math.max(1, Number(inputs.boxLength) || 20);
     const fillType = inputs.filledType === "wick" ? "wick" : "close";
+    const boxesVisible = style.graphicBoxes !== false;
     const showLabels = inputs.showLabels !== false && style.graphicLabels !== false;
-    const showFvg = inputs.showFvg !== false && style.graphicBoxes !== false;
+    const showFvg = inputs.showFvg !== false && boxesVisible;
     const showLiveForming =
-      inputs.showLiveForming !== false && style.graphicForming !== false && showFvg;
-    const showIfvg = inputs.showIfvg !== false && style.graphicIfvg !== false;
+      inputs.showLiveForming !== false && boxesVisible && showFvg;
+    const showIfvg = inputs.showIfvg !== false && boxesVisible;
     const maxFvgZones = Math.max(
       0,
       inputs.maxFvgZones != null && inputs.maxFvgZones !== ""
@@ -949,14 +924,7 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
     }
 
     /** @type {{ tfSec: number, tfId: string, label: string }[]} */
-    let layers = [];
-    for (const def of TF_LAYER_DEFS) {
-      const enabled = def.defaultOn ? inputs[def.on] !== false : Boolean(inputs[def.on]);
-      if (!enabled) continue;
-      const tfId = inputs[def.tf] ?? def.defTf;
-      const tfSec = tfId === "chart" ? chartSec : resolutionSec(tfId);
-      layers.push({ tfSec, tfId, label: String(inputs[def.label] ?? def.defLabel) });
-    }
+    let layers = resolveFvgLayers(inputs, chartSec);
     if (!layers.length) {
       this.state.skip = true;
       return;

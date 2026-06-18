@@ -91,7 +91,17 @@
  */
 
 /**
- * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef} InputDef
+ * @typedef {object} FvgTimeframesInputDef
+ * @property {"fvgTimeframes"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {{ enabled: boolean, label: string, timeframe: string }[]} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef} InputDef
  */
 
 /**

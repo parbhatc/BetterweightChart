@@ -82,6 +82,7 @@ export function flattenInputFields(inputs) {
     if (input.type === "row") fields.push(...input.fields);
     else if (input.type === "inlinePair") fields.push(input.left, input.right);
     else if (input.type === "symbolSizeRules") continue;
+    else if (input.type === "fvgTimeframes") continue;
     else fields.push(input);
   }
   return fields;
@@ -101,6 +102,8 @@ export function defaultInputsFromSchema(inputs) {
       assignField(out, input.left);
       assignField(out, input.right);
     } else if (input.type === "symbolSizeRules") {
+      out[input.id] = input.defval ?? [];
+    } else if (input.type === "fvgTimeframes") {
       out[input.id] = input.defval ?? [];
     } else {
       assignField(out, input);

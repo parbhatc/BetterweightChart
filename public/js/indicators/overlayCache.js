@@ -5,7 +5,7 @@ export function overlayLineSignature(line) {
 
 /** @param {object} box */
 export function overlayBoxSignature(box) {
-  return `${box.timeStart}|${box.timeEnd}|${Boolean(box.extendRight)}|${box.priceTop}|${box.priceBottom}|${box.label ?? ""}|${box.fillColor ?? ""}|${box.isIfvg ? 1 : 0}|${box.isPartial ? 1 : 0}|${box.isForming ? 1 : 0}`;
+  return `${box.timeStart}|${box.timeEnd}|${Boolean(box.extendRight)}|${box.priceTop}|${box.priceBottom}|${box.label ?? ""}|${Boolean(box.showLabel)}|${box.fillColor ?? ""}|${box.isIfvg ? 1 : 0}|${box.isPartial ? 1 : 0}|${box.isForming ? 1 : 0}`;
 }
 
 /** @param {object[] | null | undefined} items */
