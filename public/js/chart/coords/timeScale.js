@@ -306,7 +306,9 @@ export function safeTimeToX(ts, time) {
   if (time == null || !Number.isFinite(Number(time))) return null;
   try {
     const x = ts?.timeToCoordinate?.(Number(time));
-    return x != null && Number.isFinite(x) ? x : null;
+    // LWC returns 0 for many out-of-range times — treat as a miss.
+    if (x != null && Number.isFinite(x) && x > 0) return x;
+    return null;
   } catch {
     return null;
   }

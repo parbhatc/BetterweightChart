@@ -4,6 +4,7 @@ import { RsiIndicator } from "./RsiIndicator.js";
 import { MacdIndicator } from "./MacdIndicator.js";
 import { PivotPointsHlIndicator } from "./PivotPointsHlIndicator.js";
 import { FvgIndicator } from "./FvgIndicator.js";
+import { SmtIndicator } from "./SmtIndicator.js";
 
 /** Add your indicator here after creating its file. */
 export const ALL_INDICATORS = [
@@ -13,6 +14,7 @@ export const ALL_INDICATORS = [
   MacdIndicator,
   PivotPointsHlIndicator,
   FvgIndicator,
+  SmtIndicator,
 ];
 
 export {
@@ -22,4 +24,5 @@ export {
   MacdIndicator,
   PivotPointsHlIndicator,
   FvgIndicator,
+  SmtIndicator,
 };

@@ -80,6 +80,7 @@ const HOOK_KEYS = [
   "valueLabels",
   "plotStyle",
   "getBandFills",
+  "overlayRecomputeExtra",
 ];
 
 /**
@@ -150,7 +151,7 @@ export function defineIndicator(configOrClass) {
   const primaryKey = config.primaryPlot ?? plots[0]?.id ?? "main";
   const plotIds = plots.map((p) => p.id);
 
-  function runOnBar(utcBars, chartBars, instance, symbolInfo, collect) {
+  function runOnBar(utcBars, chartBars, instance, symbolInfo, collect, overlayCtx) {
     return runBarScript({
       utcBars,
       chartBars,
@@ -158,10 +159,19 @@ export function defineIndicator(configOrClass) {
       style: instance.style,
       plotIds,
       symbolInfo,
+      overlayCtx: overlayCtx ?? null,
+      instance,
       init: config.init,
       onBar: config.onBar,
       collect,
     });
+  }
+
+  function overlayCollectKind() {
+    const kind = config.overlayPrimitive;
+    if (kind === "boxes") return "boxes";
+    if (kind === "lines") return "lines";
+    return "labels";
   }
 
   class DefinedIndicator extends BaseIndicator {
@@ -180,6 +190,7 @@ export function defineIndicator(configOrClass) {
     static studyPaneIndex = config.studyPaneIndex ?? null;
     static volumeScaleId = config.volumeScaleId ?? null;
     static studyPaneHeight = config.studyPaneHeight ?? 120;
+    static hasBarInit = Boolean(config.init);
 
     /** @returns {object} */
     static defaultStyle() {
@@ -228,15 +239,22 @@ export function defineIndicator(configOrClass) {
      */
     static computeOverlay(utcBars, chartBars, instance, ctx = {}) {
       if (config.onBar && config.overlayPrimitive) {
-        return runOnBar(utcBars, chartBars, instance, ctx.symbolInfo ?? null, "labels");
+        return runOnBar(
+          utcBars,
+          chartBars,
+          instance,
+          ctx.symbolInfo ?? null,
+          overlayCollectKind(),
+          ctx,
+        );
       }
       const overlayFn = config.overlay ?? this.overlay;
       return overlayFn?.(utcBars, chartBars, instance.inputs, instance.style, ctx) ?? [];
     }
 
-    /** @param {IndicatorInstance} instance */
-    static legendParams(instance) {
-      if (config.legendParams) return config.legendParams(instance);
+    /** @param {IndicatorInstance} instance @param {{ primarySymbol?: string }} [ctx] */
+    static legendParams(instance, ctx = {}) {
+      if (config.legendParams) return config.legendParams(instance, ctx);
       return inputStatusLineParams(this.inputs, instance);
     }
 

@@ -1,12 +1,21 @@
-/** @param {object} box */
-export function overlayBoxSignature(box) {
-  return `${box.timeStart}|${box.timeEnd}|${Boolean(box.extendRight)}|${box.priceTop}|${box.priceBottom}|${box.label ?? ""}|${box.fillColor ?? ""}`;
+/** @param {object} line */
+export function overlayLineSignature(line) {
+  return `${line.timeStart}|${line.timeEnd}|${line.priceStart}|${line.priceEnd}|${line.color ?? ""}|${line.kind ?? ""}|${line.label ?? ""}|${line.labelBg ?? ""}|${line.labelTextColor ?? ""}|${line.width ?? ""}`;
 }
 
-/** @param {object[] | null | undefined} boxes */
-export function overlayGeometryKey(boxes) {
-  if (!boxes?.length) return "0";
-  return boxes.map(overlayBoxSignature).join(";");
+/** @param {object} box */
+export function overlayBoxSignature(box) {
+  return `${box.timeStart}|${box.timeEnd}|${Boolean(box.extendRight)}|${box.priceTop}|${box.priceBottom}|${box.label ?? ""}|${box.fillColor ?? ""}|${box.isIfvg ? 1 : 0}|${box.isPartial ? 1 : 0}|${box.isForming ? 1 : 0}`;
+}
+
+/** @param {object[] | null | undefined} items */
+export function overlayGeometryKey(items) {
+  if (!items?.length) return "0";
+  const first = items[0];
+  if (first?.timeStart != null && first?.priceStart != null) {
+    return items.map(overlayLineSignature).join(";");
+  }
+  return items.map(overlayBoxSignature).join(";");
 }
 
 /** @param {object[]} a @param {object[]} b */

@@ -55,6 +55,16 @@ export function createRefresh(deps) {
   }
 
   /** @param {number} paneIndex */
+  function paneHasOverlayIndicators(paneIndex) {
+    for (const inst of getInstances().values()) {
+      if (inst.paneIndex !== paneIndex || inst.hidden) continue;
+      const Indicator = getIndicatorClass(inst.defId);
+      if (Indicator?.overlayPrimitive) return true;
+    }
+    return false;
+  }
+
+  /** @param {number} paneIndex */
   function paneHasPlotSeriesIndicators(paneIndex) {
     for (const inst of getInstances().values()) {
       if (inst.paneIndex !== paneIndex || inst.hidden) continue;
@@ -163,6 +173,7 @@ export function createRefresh(deps) {
     refreshOverlaysImmediate,
     refreshOverlaysForPane,
     paneHasPlotSeriesIndicators,
+    paneHasOverlayIndicators,
     resyncStudyPaneScales,
     resyncStudyPaneHeights,
     refreshStudyPaneLegends,

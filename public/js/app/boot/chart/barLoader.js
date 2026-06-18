@@ -46,9 +46,15 @@ export function attachBarLoader(ctx) {
         } else {
           ctx.refreshOverlaysImmediate?.(pane.index);
         }
+      } else if (ctx.indicatorController?.paneHasOverlayIndicators?.(pane.index)) {
+        ctx.indicatorController.refreshOverlaysForPane?.(pane.index);
       }
     },
     onHistoryPrepended: (pane) => {
+      ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
+      ctx.ensureSmtCompare?.();
+      ctx.ensureFvgHistory?.();
+      ctx.ensureFvgCompare?.();
       pane.priceLineLabel?.requestRefresh();
       if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
         ctx.refreshIndicatorsImmediate?.(pane.index);

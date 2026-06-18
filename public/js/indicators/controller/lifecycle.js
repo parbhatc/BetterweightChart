@@ -10,6 +10,7 @@ import { clearOverlayInstanceCache } from "../overlayCache.js";
  * @param {(instance: IndicatorInstance) => void} deps.destroySeries
  * @param {(instance: IndicatorInstance) => void} deps.refreshInstance
  * @param {(paneIndex?: number) => void} deps.refreshPaneImmediate
+ * @param {(paneIndex?: number) => void} deps.refreshOverlaysImmediate
  * @param {(pane: object) => void} deps.syncPaneVolumeMargins
  * @param {(pane: object) => void} deps.rebuildStudyScaleLocks
  * @param {(chart: import("lightweight-charts").IChartApi, chartPaneIndex: number) => void} deps.collapseEmptyStudyPanes
@@ -25,6 +26,7 @@ export function createLifecycle(deps) {
     destroySeries,
     refreshInstance,
     refreshPaneImmediate,
+    refreshOverlaysImmediate,
     syncPaneVolumeMargins,
     rebuildStudyScaleLocks,
     collapseEmptyStudyPanes,
@@ -40,6 +42,10 @@ export function createLifecycle(deps) {
     if (!inst) return null;
     /** @type {IndicatorInstance & { series: Map<string, import("lightweight-charts").ISeriesApi> }} */
     const entry = { ...inst, series: new Map() };
+    const Indicator = getIndicatorClass(defId);
+    if (Indicator?.overlayPrimitive && Indicator.hasBarInit) {
+      entry._initPending = true;
+    }
     getInstances().set(entry.instanceId, entry);
     setSelectedId(entry.instanceId);
     refreshInstance(entry);
@@ -92,6 +98,10 @@ export function createLifecycle(deps) {
     inst._overlayAppliedGeomKey = undefined;
     refreshInstance(inst);
     refreshPaneImmediate(inst.paneIndex);
+    const Indicator = getIndicatorClass(inst.defId);
+    if (Indicator?.overlayPrimitive) {
+      refreshOverlaysImmediate(inst.paneIndex);
+    }
     emit();
   }
 

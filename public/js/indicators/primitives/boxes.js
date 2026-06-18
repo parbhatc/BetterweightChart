@@ -81,7 +81,15 @@ function drawBox(ctx, box, timeToX, priceToY, rightX) {
     }
 
     ctx.textAlign = textAlign;
-    ctx.fillText(String(box.label), labelX, midY);
+    const lines = String(box.label).split("\n");
+    const lineHeight = 13;
+    const blockH = (lines.length - 1) * lineHeight;
+    const startY = midY - blockH / 2;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      ctx.fillText(line, labelX, startY + i * lineHeight);
+    }
   }
   ctx.restore();
 }

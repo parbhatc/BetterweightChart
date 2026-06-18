@@ -232,6 +232,7 @@ export function createBarLoader(opts) {
     pane._historyExhausted = false;
     refreshPaneCandleData(pane, { deferSessionBg: true });
     restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
+    onPaneHistoryDataUpdated?.(pane);
     if (pane.index === 0) setPrimaryBars(pane);
     publishResolutionCache(pane);
 

@@ -81,6 +81,7 @@ export function flattenInputFields(inputs) {
   for (const input of inputs) {
     if (input.type === "row") fields.push(...input.fields);
     else if (input.type === "inlinePair") fields.push(input.left, input.right);
+    else if (input.type === "symbolSizeRules") continue;
     else fields.push(input);
   }
   return fields;
@@ -93,19 +94,36 @@ export function flattenInputFields(inputs) {
 export function defaultInputsFromSchema(inputs) {
   /** @type {Record<string, unknown>} */
   const out = {};
-  for (const input of flattenInputFields(inputs)) {
-    out[input.id] = input.defval;
-    if (input.type === "color") {
-      const opacityKey = input.opacityKey ?? `${input.id}Opacity`;
-      if (input.defval != null && typeof input.defval === "object") {
-        out[input.id] = input.defval.color ?? "#2962ff";
-        out[opacityKey] = input.defval.opacity ?? 10;
-      } else if (out[opacityKey] === undefined) {
-        out[opacityKey] = 10;
-      }
+  for (const input of inputs) {
+    if (input.type === "row") {
+      for (const field of input.fields) assignField(out, field);
+    } else if (input.type === "inlinePair") {
+      assignField(out, input.left);
+      assignField(out, input.right);
+    } else if (input.type === "symbolSizeRules") {
+      out[input.id] = input.defval ?? [];
+    } else {
+      assignField(out, input);
     }
   }
   return out;
+}
+
+/**
+ * @param {Record<string, unknown>} out
+ * @param {import("./types.js").InputFieldDef} input
+ */
+function assignField(out, input) {
+  out[input.id] = input.defval;
+  if (input.type === "color") {
+    const opacityKey = input.opacityKey ?? `${input.id}Opacity`;
+    if (input.defval != null && typeof input.defval === "object") {
+      out[input.id] = input.defval.color ?? "#2962ff";
+      out[opacityKey] = input.defval.opacity ?? 10;
+    } else if (out[opacityKey] === undefined) {
+      out[opacityKey] = 10;
+    }
+  }
 }
 
 /**
@@ -144,6 +162,7 @@ export function formatInputStatusLineValue(field, value) {
       return Number.isInteger(n) ? n.toLocaleString() : String(n);
     }
     case "text":
+    case "symbol":
       return String(value);
     case "color":
       return null;

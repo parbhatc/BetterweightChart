@@ -14,15 +14,20 @@ import { openIndicatorPlotTypeMenu, LINE_PLOT_TYPES, VOLUME_PLOT_TYPES, plotType
 import { PRECISION_OPTIONS } from "./constants.js";
 import { renderDefaultStyleSections, renderGraphicStudyStyleSections } from "./defaultStyleSections.js";
 import { renderInputsPanelHtml, renderInputColorField } from "./inputPanel.js";
+import { appendSizeRuleRow, readSizeFilterRulesFromPanel } from "./symbolSizeRulesPanel.js";
 import { flattenInputFields } from "../schema.js";
+import { openSymbolSearchPopover } from "../../ui/symbol/popover.js";
+import { symbolTicker } from "../../app/symbol/ticker.js";
 
 /**
  * @param {object} opts
  * @param {import("../controller.js").ReturnType<typeof import("../controller.js").createIndicatorController>} opts.controller
+ * @param {import("../../datafeed/types.js").DatafeedApi} [opts.datafeed]
  * @param {() => { id: string, label: string }[]} opts.getTimeframes
+ * @param {(inst: import("../types.js").IndicatorInstance | null) => string} [opts.getPaneResolution]
  */
 export function createIndicatorSettingsDialog(opts) {
-  const { controller, getTimeframes } = opts;
+  const { controller, getTimeframes, datafeed, getPaneResolution } = opts;
   const colorPicker = createColorPicker();
 
   const root = document.createElement("div");
@@ -108,7 +113,7 @@ export function createIndicatorSettingsDialog(opts) {
       if (root.contains(target)) return;
       if (
         target.closest(
-          ".status-line__studies, .study-pane-legends, .tv-cpicker, .tv-menu-popover, .tv-ind-source-menu, .tv-ind-plot-menu",
+          ".status-line__studies, .study-pane-legends, .tv-cpicker, .tv-menu-popover, .tv-ind-source-menu, .tv-ind-plot-menu, .tv-symbol-popover",
         )
       ) {
         return;
@@ -140,8 +145,10 @@ export function createIndicatorSettingsDialog(opts) {
   /** @returns {import("../types.js").InputDef[]} */
   function getInputSchema() {
     const Indicator = getActiveIndicator();
+    const inst = instanceId ? controller.getInstance(instanceId) : null;
     if (Indicator && typeof Indicator.inputSchema === "function") {
-      return Indicator.inputSchema();
+      const chartResolution = getPaneResolution?.(inst) ?? "1";
+      return Indicator.inputSchema(draft.inputs, chartResolution);
     }
     return [];
   }
@@ -153,6 +160,7 @@ export function createIndicatorSettingsDialog(opts) {
       propCheck,
       propCheckOnly,
       propText,
+      propSymbol,
       propInputColor: (field, store) => renderInputColorField(field, store),
       priceSources: PRICE_SOURCES,
       timeframeOptions,
@@ -237,11 +245,13 @@ export function createIndicatorSettingsDialog(opts) {
     syncStyleSwatches();
   }
 
-  function propNumber(key, label, value, disabled = false, compact = false, store = "inputs") {
+  function propNumber(key, label, value, disabled = false, compact = false, store = "inputs", min = null) {
     const compactClass = compact ? " tv-ind-settings__inline-field" : "";
+    const minAttr =
+      min != null && Number.isFinite(min) ? ` data-min="${min}" data-uint="1"` : "";
     return `<div class="tv-set__field-row${disabled ? " is-disabled" : ""}${compactClass}">
       <span class="tv-set__field-label">${label}</span>
-      <input type="text" class="tv-drawing-settings__input" data-field="${key}" data-store="${store}" value="${value ?? ""}" inputmode="numeric"${disabled ? ' disabled aria-disabled="true" tabindex="-1"' : ""} />
+      <input type="text" class="tv-drawing-settings__input" data-field="${key}" data-store="${store}" value="${value ?? ""}" inputmode="numeric" pattern="[0-9]*"${minAttr}${disabled ? ' disabled aria-disabled="true" tabindex="-1"' : ""} />
     </div>`;
   }
 
@@ -255,12 +265,26 @@ export function createIndicatorSettingsDialog(opts) {
     </div>`;
   }
 
+  function propSymbol(key, label, value, disabled = false, store = "inputs") {
+    const ticker = symbolTicker(String(value ?? "")) || String(value ?? "");
+    return `<div class="tv-set__field-row${disabled ? " is-disabled" : ""}">
+      <span class="tv-set__field-label">${label}</span>
+      <div class="tv-set__select-wrap">
+        <button type="button" class="tv-drawing-settings__menu-btn" data-symbol-pick="${key}" data-field="${key}" data-store="${store}" data-value="${value ?? ""}" aria-haspopup="dialog"${disabled ? ' disabled aria-disabled="true" tabindex="-1"' : ""}>
+          <span data-symbol-label="${key}">${ticker}</span>
+          <span class="tv-set__select-chev">${MENU_CHEVRON}</span>
+        </button>
+      </div>
+    </div>`;
+  }
+
   function propSelect(key, label, value, options, store = "inputs") {
-    const current = options.find((o) => o.id === value)?.label ?? value;
+    const resolved = value ?? options[0]?.id ?? "";
+    const current = options.find((o) => o.id === resolved)?.label ?? options[0]?.label ?? String(resolved);
     return `<div class="tv-set__field-row">
       <span class="tv-set__field-label">${label}</span>
       <div class="tv-set__select-wrap">
-        <button type="button" class="tv-drawing-settings__menu-btn" data-field="${key}" data-store="${store}" data-value="${value}" aria-haspopup="listbox">
+        <button type="button" class="tv-drawing-settings__menu-btn" data-field="${key}" data-store="${store}" data-value="${resolved}" aria-haspopup="listbox">
           <span data-select-label="${key}">${current}</span>
           <span class="tv-set__select-chev">${MENU_CHEVRON}</span>
         </button>
@@ -464,8 +488,18 @@ export function createIndicatorSettingsDialog(opts) {
         return;
       }
       if (el instanceof HTMLInputElement) {
-        const n = Number(el.value);
         const isNumeric = el.getAttribute("inputmode") === "numeric";
+        if (isNumeric && el.dataset.uint === "1") {
+          const digits = el.value.replace(/\D/g, "");
+          let n = digits === "" ? 0 : Number(digits);
+          if (!Number.isFinite(n)) n = 0;
+          const min = el.dataset.min != null ? Number(el.dataset.min) : 0;
+          if (Number.isFinite(min)) n = Math.max(min, n);
+          dest[key] = n;
+          if (el.value !== String(n)) el.value = String(n);
+          return;
+        }
+        const n = Number(el.value);
         dest[key] = isNumeric && Number.isFinite(n) ? n : el.value;
       } else if (el.dataset.value) {
         dest[key] = el.dataset.value;
@@ -476,6 +510,11 @@ export function createIndicatorSettingsDialog(opts) {
   function readDraftFromUi() {
     readFieldsFromPanel(inputsPanel, draft.inputs);
     readFieldsFromPanel(stylePanel, draft.style);
+    for (const input of getInputSchema()) {
+      if (input.type !== "symbolSizeRules") continue;
+      const rules = readSizeFilterRulesFromPanel(inputsPanel, input.id);
+      if (rules) draft.inputs[input.id] = rules;
+    }
     visibilityList.querySelectorAll("[data-vis-btn]").forEach((btn) => {
       if (!(btn instanceof HTMLElement)) return;
       const key = btn.dataset.visBtn;
@@ -630,7 +669,15 @@ export function createIndicatorSettingsDialog(opts) {
   root.addEventListener("input", (ev) => {
     const target = ev.target;
     if (!(target instanceof HTMLInputElement)) return;
+    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max]")) {
+      applyDraft();
+      return;
+    }
     if (!target.matches(".tv-drawing-settings__input[data-field]")) return;
+    if (target.dataset.uint === "1") {
+      const digits = target.value.replace(/\D/g, "");
+      target.value = digits;
+    }
     applyDraft();
   });
 
@@ -677,8 +724,51 @@ export function createIndicatorSettingsDialog(opts) {
       return;
     }
     const selectBtn = target.closest(".tv-drawing-settings__menu-btn[data-field]");
-    if (selectBtn instanceof HTMLElement && selectBtn.dataset.field) {
+    if (selectBtn instanceof HTMLElement && selectBtn.dataset.field && !selectBtn.dataset.symbolPick) {
       openSelectMenu(selectBtn, selectBtn.dataset.field);
+      return;
+    }
+    const sizeRuleAdd = target.closest("[data-size-rule-add]");
+    if (sizeRuleAdd instanceof HTMLElement && !sizeRuleAdd.hasAttribute("disabled")) {
+      const root = sizeRuleAdd.closest("[data-size-rules-root]");
+      const list = root?.querySelector("[data-size-rules-list]");
+      if (list instanceof HTMLElement) {
+        appendSizeRuleRow(list);
+        readDraftFromUi();
+        applyDraft();
+      }
+      return;
+    }
+    const sizeRuleRemove = target.closest("[data-size-rule-remove]");
+    if (sizeRuleRemove instanceof HTMLElement && !sizeRuleRemove.hasAttribute("disabled")) {
+      const row = sizeRuleRemove.closest("[data-size-rule-row]");
+      const list = row?.parentElement;
+      row?.remove();
+      if (list instanceof HTMLElement && !list.querySelector("[data-size-rule-row]")) {
+        const empty = document.createElement("div");
+        empty.className = "tv-ind-settings__size-rules-empty";
+        empty.textContent = "No symbol overrides — global min/max applies.";
+        list.appendChild(empty);
+      }
+      readDraftFromUi();
+      applyDraft();
+      return;
+    }
+    const symbolPick = target.closest("[data-symbol-pick]");
+    if (symbolPick instanceof HTMLElement && symbolPick.dataset.symbolPick && datafeed) {
+      const field = symbolPick.dataset.symbolPick;
+      const storeKey = symbolPick.dataset.store === "style" ? "style" : "inputs";
+      openSymbolSearchPopover({
+        anchor: symbolPick,
+        datafeed,
+        currentSymbol: String(draft[storeKey][field] ?? ""),
+        onSelect: (sym) => {
+          draft[storeKey][field] = sym;
+          onInputFieldChange(field);
+          renderInputsPanel();
+          applyDraft();
+        },
+      });
       return;
     }
     const colorPick = target.closest("[data-color-pick]");

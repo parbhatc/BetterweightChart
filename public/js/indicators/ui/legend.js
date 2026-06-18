@@ -58,6 +58,9 @@ export function mountIndicatorLegend(statusEl, opts) {
     const params = s.params?.length
       ? `<span class="study-legend__params">${s.params.map((p) => `<span class="study-legend__param">${p}</span>`).join("")}</span>`
       : "";
+    const loader = s.loading
+      ? `<span class="study-legend__loader" role="status" aria-label="Loading"></span>`
+      : "";
     const visibleValues = (s.values ?? []).filter((v) => !v.hidden && v.value != null);
     const values = visibleValues.length ? `<span class="study-legend__values">${valuesHtml(s.values)}</span>` : "";
     const actions = `<span class="study-legend__actions">
@@ -69,6 +72,7 @@ export function mountIndicatorLegend(statusEl, opts) {
     return `<div class="study-legend__item${s.selected ? " is-selected" : ""}${itemExpanded(s) ? " is-expanded" : ""}${s.hidden ? " is-hidden" : ""}" data-id="${s.instanceId}" role="toolbar">
       <span class="study-legend__main">
         <span class="study-legend__title">${s.shortTitle}</span>
+        ${loader}
         ${params}
       </span>
       ${tail}
@@ -140,7 +144,7 @@ export function mountIndicatorLegend(statusEl, opts) {
     const structureKey = studies
       .map(
         (s) =>
-          `${s.instanceId}|${s.hidden ? 1 : 0}|${s.selected ? 1 : 0}|${(s.params ?? []).join(",")}|${s.shortTitle}`,
+          `${s.instanceId}|${s.hidden ? 1 : 0}|${s.selected ? 1 : 0}|${s.loading ? 1 : 0}|${(s.params ?? []).join(",")}|${s.shortTitle}`,
       )
       .join(";");
     const valuesKey = studies

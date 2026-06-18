@@ -1,4 +1,6 @@
 import { applyColorOpacity } from "../../ui/color/picker.js";
+import { symbolTicker } from "../../app/symbol/ticker.js";
+import { renderSymbolSizeRulesPanel } from "./symbolSizeRulesPanel.js";
 
 /**
  * @param {import("../types.js").InputFieldDef} field
@@ -16,7 +18,7 @@ function fieldStore(field, draftInputs, draftStyle) {
  * @param {object} helpers
  */
 export function renderInputsPanelHtml(schema, draftInputs, draftStyle, helpers) {
-  const { propNumber, propSelect, propCheck, propText, propInputColor } = helpers;
+  const { propNumber, propSelect, propCheck, propText, propInputColor, propSymbol } = helpers;
 
   if (!schema.length) {
     return `<div class="tv-set__section"><div class="tv-set__section-body">No inputs</div></div>`;
@@ -48,6 +50,11 @@ export function renderInputsPanelHtml(schema, draftInputs, draftStyle, helpers) 
           inlineBatch = [];
         };
         for (const item of items) {
+          if (item.type === "symbolSizeRules") {
+            flushInline();
+            chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
+            continue;
+          }
           if (item.type !== "row" && item.type !== "inlinePair" && "inline" in item && item.inline) {
             inlineBatch.push(item);
             continue;
@@ -87,6 +94,9 @@ function renderInputItem(input, draftInputs, draftStyle, helpers) {
       <div class="tv-ind-settings__tv-pair-cell">${renderInputField(input.right, draftInputs, draftStyle, helpers)}</div>
     </div></div>`;
   }
+  if (input.type === "symbolSizeRules") {
+    return renderSymbolSizeRulesPanel(input, draftInputs);
+  }
   return renderInputField(input, draftInputs, draftStyle, helpers);
 }
 
@@ -120,7 +130,7 @@ function renderInputField(input, draftInputs, draftStyle, helpers) {
   const store = fieldStore(input, draftInputs, draftStyle);
   const value = store[input.id];
   const disabled = input.disabled?.(draftInputs) ?? false;
-  const { propNumber, propSelect, propCheck, propText, propInputColor } = helpers;
+  const { propNumber, propSelect, propCheck, propText, propInputColor, propSymbol } = helpers;
 
   switch (input.type) {
     case "source":
@@ -133,10 +143,14 @@ function renderInputField(input, draftInputs, draftStyle, helpers) {
       return propCheck(input.id, input.title, value, input.store);
     case "text":
       return propText(input.id, input.title, value, disabled, input.store);
+    case "symbol":
+      return propSymbol(input.id, input.title, value, disabled, input.store);
     case "color":
       return propInputColor(input, store);
     case "float":
+      return propNumber(input.id, input.title, value, disabled, false, input.store);
     case "int":
+      return propNumber(input.id, input.title, value, disabled, false, input.store, input.min);
     default:
       return propNumber(input.id, input.title, value, disabled, false, input.store);
   }

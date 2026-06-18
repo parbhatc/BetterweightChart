@@ -21,12 +21,24 @@ function formatPrice(price, symbolInfo) {
  * @param {object | null} [opts.symbolInfo]
  */
 export function createBarScriptContext(opts) {
-  const { utcBars, chartBars, inputs, style, plotIds, symbolInfo = null } = opts;
+  const {
+    utcBars,
+    chartBars,
+    inputs,
+    style,
+    plotIds,
+    symbolInfo = null,
+    overlayCtx = null,
+  } = opts;
 
   /** @type {Record<string, Array<number | null>>} */
   const plots = Object.fromEntries(plotIds.map((id) => [id, []]));
   /** @type {object[]} */
   const labels = [];
+  /** @type {object[]} */
+  const boxes = [];
+  /** @type {object[]} */
+  const lines = [];
   /** @type {Record<string, unknown>} */
   const state = {};
 
@@ -38,7 +50,11 @@ export function createBarScriptContext(opts) {
     style,
     state,
     bars: utcBars,
+    chartBars,
+    overlayCtx,
     labels,
+    boxes,
+    lines,
 
     math: {
       pivotHigh(left, right) {
@@ -68,9 +84,17 @@ export function createBarScriptContext(opts) {
       const { barIndex: _barIndex, ...rest } = label;
       labels.push({ ...rest, time });
     },
+
+    drawBox(box) {
+      boxes.push(box);
+    },
+
+    drawLine(line) {
+      lines.push(line);
+    },
   };
 
-  return { ctx, plots, labels };
+  return { ctx, plots, labels, boxes, lines };
 }
 
 /**
@@ -81,11 +105,17 @@ export function createBarScriptContext(opts) {
  * @property {object} style — study style colors
  * @property {Record<string, unknown>} state — persists across bars (Pine `var`)
  * @property {object[]} bars — full series for lookback
+ * @property {object[]} chartBars — chart-time bars (aligned with bars)
+ * @property {object | null} overlayCtx — HTF/datafeed helpers for overlay studies
  * @property {object[]} labels — labels collected this run (overlay mode)
+ * @property {object[]} boxes — boxes collected this run (overlay mode)
+ * @property {object[]} lines — lines collected this run (overlay mode)
  * @property {{ pivotHigh: (left: number, right: number) => number | null, pivotLow: (left: number, right: number) => number | null, source: (bar?: object, field?: string) => number | null }} math
  * @property {{ price: (n: number) => string }} format
  * @property {(plotKey: string, value: number | null) => void} plot
  * @property {(label: object) => void} drawLabel
+ * @property {(box: object) => void} drawBox
+ * @property {(line: object) => void} drawLine
  */
 
 /**
@@ -98,15 +128,19 @@ export function createBarScriptContext(opts) {
  * @param {object} opts.style
  * @param {string[]} opts.plotIds
  * @param {object | null} [opts.symbolInfo]
+ * @param {import("./types.js").IndicatorInstance} [opts.instance]
  * @param {() => void} [opts.init]
  * @param {(this: BarScriptContext, bar: object, index: number) => void} opts.onBar
- * @param {"plots" | "labels"} [opts.collect]
+ * @param {"plots" | "labels" | "boxes" | "lines"} [opts.collect]
  */
 export function runBarScript(opts) {
-  const { utcBars, chartBars, init, onBar, collect = "plots" } = opts;
-  const { ctx, plots, labels } = createBarScriptContext(opts);
+  const { utcBars, chartBars, init, onBar, collect = "plots", instance } = opts;
+  const { ctx, plots, labels, boxes, lines } = createBarScriptContext(opts);
 
   init?.call(ctx);
+  if (instance && init) {
+    instance._initPending = ctx.state?.loading === true;
+  }
 
   for (let i = 0; i < utcBars.length; i++) {
     ctx.index = i;
@@ -123,5 +157,8 @@ export function runBarScript(opts) {
     while (plots[id].length < utcBars.length) plots[id].push(null);
   }
 
-  return collect === "labels" ? labels : plots;
+  if (collect === "labels") return labels;
+  if (collect === "boxes") return boxes;
+  if (collect === "lines") return lines;
+  return plots;
 }

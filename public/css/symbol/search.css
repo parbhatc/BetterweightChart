@@ -188,3 +188,24 @@
   font-size: var(--text-sm);
   text-align: center;
 }
+
+.tv-symbol-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--tv-border, #363a45);
+  background: var(--tv-panel, #1e222d);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  max-height: min(360px, 50vh);
+}
+
+.tv-symbol-popover .tv-symbol__search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.tv-symbol-popover .tv-symbol__list {
+  max-height: min(300px, 42vh);
+}

@@ -197,20 +197,22 @@ export class BaseIndicator {
 
   /**
    * Status line params shown after the study title. Override in subclasses.
-   * @param {IndicatorInstance} _instance
+   * @param {IndicatorInstance} instance
+   * @param {{ primarySymbol?: string }} [ctx]
    * @returns {string[]}
    */
-  static legendParams(instance) {
+  static legendParams(instance, ctx = {}) {
     return inputStatusLineParams(this.inputs, instance);
   }
 
   /**
    * @param {IndicatorInstance} instance
+   * @param {{ primarySymbol?: string }} [ctx]
    * @returns {LegendMeta}
    */
-  static legendMeta(instance) {
+  static legendMeta(instance, ctx = {}) {
     const params =
-      instance.style.inputsInStatusLine === false ? [] : this.legendParams(instance);
+      instance.style.inputsInStatusLine === false ? [] : this.legendParams(instance, ctx);
     return {
       shortTitle: this.shortTitle,
       title: this.title,

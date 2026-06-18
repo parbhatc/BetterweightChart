@@ -1,16 +1,11 @@
 import { attachLabelsPrimitive } from "../primitives/labels.js";
 import { attachBoxesPrimitive } from "../primitives/boxes.js";
+import { attachLinesPrimitive } from "../primitives/lines.js";
 import {
   clearOverlayInstanceCache,
   overlayGeometryKey,
   overlayRecomputeKey,
 } from "../overlayCache.js";
-import { chartDebug, chartDebugThrottle } from "../../debug/chart/index.js";
-
-/** @param {string} message @param {unknown} [detail] */
-function fvgOverlayDebug(message, detail) {
-  chartDebugThrottle("fvg", message, message, detail, 800);
-}
 
 /** @param {object} timeCtx */
 function overlayTimeCtxKey(timeCtx) {
@@ -29,6 +24,7 @@ function overlayTimeCtxKey(timeCtx) {
 const OVERLAY_PRIMITIVE_ATTACH = {
   labels: attachLabelsPrimitive,
   boxes: attachBoxesPrimitive,
+  lines: attachLinesPrimitive,
 };
 
 /**
@@ -106,42 +102,30 @@ export function createOverlaySync(deps) {
       return;
     }
 
-    const recomputeKey = overlayRecomputeKey(instance, chartBars, Indicator);
+    const overlayCtx = {
+      symbolInfo: pane.symbolInfo ?? null,
+      chartResolution: pane.resolution ?? null,
+      barSec: pane._chartView?.barSec ?? null,
+      primarySymbol: pane.symbol ?? null,
+      symbol: pane.symbol ?? null,
+      formingBar: utcBars.at(-1) ?? null,
+      ...(getOverlayContext?.(pane) ?? {}),
+    };
+
+    let recomputeKey = overlayRecomputeKey(instance, chartBars, Indicator);
+    if (typeof Indicator.overlayRecomputeExtra === "function") {
+      recomputeKey = `${recomputeKey}|${Indicator.overlayRecomputeExtra(instance, overlayCtx)}`;
+    }
     let overlayData;
     const cacheHit =
       instance._overlayRecomputeKey === recomputeKey && Array.isArray(instance._overlayBoxCache);
     if (cacheHit) {
       overlayData = instance._overlayBoxCache;
-      fvgOverlayDebug("overlay cache hit", {
-        defId: instance.defId,
-        boxCount: overlayData.length,
-        bars: chartBars.length,
-        head: chartBars[0]?.time,
-        tail: chartBars.at(-1)?.time,
-        recomputeKey,
-      });
     } else {
-      const prevKey = instance._overlayRecomputeKey;
-      overlayData =
-        Indicator.computeOverlay?.(utcBars, chartBars, instance, {
-          symbolInfo: pane.symbolInfo ?? null,
-          chartResolution: pane.resolution ?? null,
-          barSec: pane._chartView?.barSec ?? null,
-          ...(getOverlayContext?.(pane) ?? {}),
-        }) ?? [];
+      overlayData = Indicator.computeOverlay?.(utcBars, chartBars, instance, overlayCtx) ?? [];
       instance._overlayRecomputeKey = recomputeKey;
       instance._overlayBoxCache = overlayData;
       instance._overlayGeomKey = overlayGeometryKey(overlayData);
-      fvgOverlayDebug("overlay recompute", {
-        defId: instance.defId,
-        boxCount: overlayData.length,
-        bars: chartBars.length,
-        head: chartBars[0]?.time,
-        tail: chartBars.at(-1)?.time,
-        prevKey: prevKey ?? null,
-        recomputeKey,
-        reason: prevKey == null ? "cold" : prevKey !== recomputeKey ? "key-changed" : "no-cache",
-      });
     }
 
     const geomKey = overlayGeometryKey(overlayData);
@@ -158,12 +142,11 @@ export function createOverlaySync(deps) {
       mapBars: view?.mapBars ?? chartBars,
       barSec: view?.barSec ?? null,
       lastRealChartTime: chartBars.at(-1)?.time,
-      timeAdapter: pane.timeAdapter ?? view?.timeAdapter ?? null,
+      timeAdapter: view?.timeAdapter ?? pane.timeAdapter ?? null,
     };
 
     const syncToken = `${recomputeKey}|${geomKey}|${overlayTimeCtxKey(timeCtx)}|${pane._historyRestorePending ? 1 : 0}`;
     if (instance._overlayLastSyncToken === syncToken) {
-      fvgOverlayDebug("overlay sync skip (token)", { defId: instance.defId, syncToken });
       return;
     }
     instance._overlayLastSyncToken = syncToken;
@@ -179,20 +162,10 @@ export function createOverlaySync(deps) {
           timeCtx,
           geometryUnchanged: true,
         };
-        fvgOverlayDebug("overlay defer (history)", {
-          defId: instance.defId,
-          boxCount: overlayData.length,
-          historyRestore: Boolean(pane._historyRestorePending),
-          loadingHistory: Boolean(pane._loadingHistory),
-        });
         return;
       }
       applyOverlayBoxes(instance, instance._overlayBoxCache ?? overlayData, timeCtx, {
         geometryUnchanged: true,
-      });
-      fvgOverlayDebug("overlay apply (timeCtx only)", {
-        defId: instance.defId,
-        boxCount: overlayData.length,
       });
       return;
     }
@@ -203,17 +176,12 @@ export function createOverlaySync(deps) {
     if (pane._historyRestorePending || pane._loadingHistory) {
       instance._pendingOverlayApply = { overlayData, timeCtx, geometryUnchanged: false };
       instance.lastPlots = { overlay: overlayData };
-      fvgOverlayDebug("overlay defer (history, new geom)", {
-        defId: instance.defId,
-        boxCount: overlayData.length,
-      });
       return;
     }
 
     applyOverlayBoxes(instance, overlayData, timeCtx);
     instance._overlayAppliedGeomKey = geomKey;
     instance.lastPlots = { overlay: overlayData };
-    fvgOverlayDebug("overlay apply", { defId: instance.defId, boxCount: overlayData.length });
   }
 
   /** @param {number} paneIndex Clear overlay recompute cache after history prepend. */
@@ -222,9 +190,8 @@ export function createOverlaySync(deps) {
       if (instance.paneIndex !== paneIndex) continue;
       const Indicator = deps.getIndicatorClass(instance.defId);
       if (!Indicator?.overlayPrimitive) continue;
-      instance._overlayRecomputeKey = undefined;
-      instance._overlayLastSyncToken = undefined;
-      instance._overlayBoxCache = undefined;
+      clearOverlayInstanceCache(instance);
+      if (instance.lastPlots) instance.lastPlots.overlay = [];
     }
   }
 
@@ -240,7 +207,7 @@ export function createOverlaySync(deps) {
       mapBars: view?.mapBars ?? chartBars,
       barSec: view?.barSec ?? null,
       lastRealChartTime: chartBars.at(-1)?.time,
-      timeAdapter: pane.timeAdapter ?? view?.timeAdapter ?? null,
+      timeAdapter: view?.timeAdapter ?? pane.timeAdapter ?? null,
     };
 
     for (const instance of getInstances().values()) {
@@ -249,6 +216,7 @@ export function createOverlaySync(deps) {
       if (!Indicator?.overlayPrimitive || !instance._overlayPrimitive) continue;
       if (instance.hidden) continue;
       const overlayData = instance._overlayBoxCache ?? instance.lastPlots?.overlay ?? [];
+      if (!overlayData.length) continue;
       applyOverlayBoxes(instance, overlayData, timeCtx, { geometryUnchanged: true });
     }
   }

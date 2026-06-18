@@ -1,9 +1,16 @@
 import { defineIndicator } from "../defineIndicator.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { resolutionSec } from "../../chart/resolutions.js";
+import { normalizeResolutionId, resolutionDisplayTitle } from "../../chart/resolutionFormat.js";
 import { aggregateBars } from "../math/aggregate.js";
-import { chartDebug, isChartDebugEnabled } from "../../debug/chart/index.js";
-import { resolveTimezone } from "../../chart/timezone/list.js";
+import { alignUtcBarsByChartTime } from "../math/pivots.js";
+import { getHtfBars } from "../../app/bar/htfBarCache.js";
+import { resolveSmtCompareSymbol } from "./SmtIndicator.js";
+import {
+  buildFvgBoxLabel,
+  fvgZonePassesSizeFilter,
+  resolveFvgSizeFilterLimits,
+} from "../ui/symbolSizeRulesPanel.js";
 
 const LABEL_DISTANCE_BARS = 10;
 
@@ -14,20 +21,6 @@ const TF_LAYER_DEFS = [
   { on: "tf4On", tf: "tf4", label: "tf4Label", title: "Timeframe #4", defTf: "240", defLabel: "4h FVG" },
   { on: "tf5On", tf: "tf5", label: "tf5Label", title: "Timeframe #5", defTf: "D", defLabel: "D FVG" },
 ];
-
-/** @param {number} chartSec chart-time (pseudo-UTC wall clock) */
-function fmtChartTime(chartSec) {
-  if (chartSec == null || !Number.isFinite(chartSec)) return "?";
-  const d = new Date(chartSec * 1000);
-  return d.toLocaleString("en-US", {
-    timeZone: "UTC",
-    month: "numeric",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-  });
-}
 
 /** @param {string} color @param {number} opacity */
 function rgba(color, opacity) {
@@ -40,7 +33,7 @@ function fvgAtBar(bars, i, tfSec = 900) {
   const b0 = bars[i - 2];
   const b1 = bars[i - 1];
   const b2 = bars[i];
-  // TV-style: gap may fall between candles 1→2 (e.g. Fri close → Sun open) but never 2→3.
+  if (!b0 || !b1 || !b2) return null;
   if (b2.time - b1.time > tfSec) return null;
   if (b2.low > b0.high) {
     return { kind: "bull", top: b2.low, bottom: b0.high, barIndex: i - 2 };
@@ -51,12 +44,61 @@ function fvgAtBar(bars, i, tfSec = 900) {
   return null;
 }
 
+/** @param {object} hit @param {object[]} series @param {number} confirmIndex */
+function zoneFromFvgHit(hit, series, confirmIndex) {
+  const startBar = series[hit.barIndex];
+  const startTime = startBar?.chartTime;
+  if (startTime == null) return null;
+  return {
+    kind: hit.kind,
+    top: hit.top,
+    bottom: hit.bottom,
+    startTime,
+    startIndex: hit.barIndex,
+    confirmIndex,
+  };
+}
+
+/** @param {object} zone @param {object} bar */
+function isIfvgCloseInversion(zone, bar) {
+  if (zone.kind === "bull") return bar.close < zone.bottom;
+  return bar.close > zone.top;
+}
+
+/** Forming-bar only: close through gap before candle confirms (reverts if close recovers). */
+function isPartialClose(zone, bar) {
+  if (zone.kind === "bull") return bar.close < zone.bottom;
+  return bar.close > zone.top;
+}
+
 /** @param {object} zone @param {object} bar @param {"close"|"wick"} fillType */
 function isFvgFilled(zone, bar, fillType) {
   if (zone.kind === "bull") {
     return fillType === "wick" ? bar.low <= zone.bottom : bar.close <= zone.bottom;
   }
   return fillType === "wick" ? bar.high >= zone.top : bar.close >= zone.top;
+}
+
+/** @param {object[]} zones @param {number} max @param {(z: object) => number} timeOf */
+function takeRecentZones(zones, max, timeOf) {
+  if (max <= 0 || !zones.length) return [];
+  if (zones.length <= max) return zones;
+  return zones
+    .slice()
+    .sort((a, b) => timeOf(a) - timeOf(b))
+    .slice(-max);
+}
+
+/** @param {object} zone @param {object[]} series */
+function zoneConfirmTime(zone, series) {
+  const bar = series[zone.confirmIndex];
+  return bar?.confirmChartTime ?? bar?.chartTime ?? zone.startTime;
+}
+
+/** @param {object} zone @param {object[]} series */
+function zoneInvertTime(zone, series) {
+  const bar = series[zone.invertIndex];
+  return bar?.confirmChartTime ?? bar?.chartTime ?? zone.invertTime ?? zone.startTime;
 }
 
 /** @returns {import("../types.js").InputDef[]} */
@@ -76,7 +118,6 @@ function buildInputs() {
   }
 
   inputs.push(
-    { id: "waitClose", type: "bool", title: "Wait for candle close to identify FVGs", defval: false, section: "FVG settings" },
     { id: "hideLowerTf", type: "bool", title: "Hide FVGs lower than enabled timeframes", defval: true, section: "FVG settings" },
     { id: "showFvg", type: "bool", title: "Show FVG", defval: true, section: "FVG settings" },
     {
@@ -91,8 +132,162 @@ function buildInputs() {
       ],
     },
     { id: "maxBarsBack", type: "int", title: "Max bars back to find FVGs (HTF bars per layer)", defval: 300, section: "FVG settings" },
+    {
+      id: "maxFvgZones",
+      type: "int",
+      title: "Max FVG zones to show",
+      defval: 300,
+      min: 0,
+      section: "FVG settings",
+      inline: true,
+    },
+    {
+      id: "partialCloseColor",
+      type: "color",
+      title: "Partial close",
+      defval: { color: "#ff9800", opacity: 20 },
+      section: "FVG settings",
+    },
+    { id: "showLiveForming", type: "bool", title: "Show live forming FVG", defval: true, section: "Live Forming" },
+    {
+      type: "inlinePair",
+      section: "Live Forming",
+      header: "Forming FVG color",
+      left: {
+        id: "formingBullColor",
+        type: "color",
+        title: "Bullish",
+        defval: { color: "#00bcd4", opacity: 25 },
+      },
+      right: {
+        id: "formingBearColor",
+        type: "color",
+        title: "Bearish",
+        defval: { color: "#ab47bc", opacity: 25 },
+      },
+    },
+    {
+      id: "requireCorrelatedFvg",
+      type: "bool",
+      title: "Require matching FVG on compare symbol",
+      defval: false,
+      section: "Correlated FVG",
+    },
+    {
+      id: "correlatedFvgTf",
+      type: "select",
+      title: "Timeframe",
+      defval: "all",
+      section: "Correlated FVG",
+      options: [{ id: "all", label: "All" }],
+      disabled: (inputs) => inputs.requireCorrelatedFvg !== true,
+    },
+    {
+      id: "autoCompare",
+      type: "bool",
+      title: "Auto-detect compare symbol",
+      defval: true,
+      section: "Correlated FVG",
+    },
+    {
+      id: "compareSymbol",
+      type: "symbol",
+      title: "Compare symbol",
+      defval: "ES",
+      section: "Correlated FVG",
+      disabled: (inputs) => inputs.autoCompare !== false,
+    },
+    {
+      id: "sizeFilterOn",
+      type: "bool",
+      title: "Filter FVG by size",
+      defval: false,
+      section: "FVG Size Filter",
+      showInStatusLine: false,
+    },
+    {
+      id: "sizeFilterUnit",
+      type: "select",
+      title: "Unit",
+      defval: "none",
+      section: "FVG Size Filter",
+      options: [
+        { id: "none", label: "None" },
+        { id: "ticks", label: "Ticks" },
+        { id: "points", label: "Points" },
+      ],
+      disabled: (inputs) => inputs.sizeFilterOn !== true,
+      showInStatusLine: false,
+    },
+    {
+      type: "inlinePair",
+      section: "FVG Size Filter",
+      header: "Global min / max (0 = no limit)",
+      left: {
+        id: "sizeFilterMin",
+        type: "float",
+        title: "Min",
+        defval: 0,
+        disabled: (inputs) => inputs.sizeFilterOn !== true || inputs.sizeFilterUnit === "none",
+        showInStatusLine: false,
+      },
+      right: {
+        id: "sizeFilterMax",
+        type: "float",
+        title: "Max",
+        defval: 0,
+        disabled: (inputs) => inputs.sizeFilterOn !== true || inputs.sizeFilterUnit === "none",
+        showInStatusLine: false,
+      },
+    },
+    {
+      type: "symbolSizeRules",
+      id: "sizeFilterRules",
+      title: "Per-symbol overrides",
+      section: "FVG Size Filter",
+      defval: [{ symbol: "NQ", min: 8, max: 20 }],
+      disabled: (inputs) => inputs.sizeFilterOn !== true,
+    },
+    { id: "showIfvg", type: "bool", title: "Show IFVG (inversed FVG)", defval: true, section: "IFVG settings" },
+    {
+      id: "maxIfvgZones",
+      type: "int",
+      title: "Max IFVG zones to show",
+      defval: 1,
+      min: 0,
+      section: "IFVG settings",
+    },
+    { id: "ifvgLabel", type: "text", title: "IFVG label", defval: "IFVG", section: "IFVG settings" },
 
     { id: "showLabels", type: "bool", title: "Show Labels", defval: true, section: "Label Settings" },
+    {
+      id: "showSizeOnLabel",
+      type: "bool",
+      title: "Show FVG size on label",
+      defval: false,
+      section: "Label Settings",
+    },
+    {
+      id: "showFvgNameOnLabel",
+      type: "bool",
+      title: "Show FVG name on label",
+      defval: true,
+      section: "Label Settings",
+      disabled: (inputs) => inputs.showLabels === false,
+    },
+    {
+      id: "sizeLabelFormat",
+      type: "select",
+      title: "Size format",
+      defval: "both",
+      section: "Label Settings",
+      options: [
+        { id: "both", label: "Points / Ticks" },
+        { id: "points", label: "Points" },
+        { id: "ticks", label: "Ticks" },
+      ],
+      disabled: (inputs) => inputs.showSizeOnLabel !== true,
+    },
   );
 
   for (const row of TF_LAYER_DEFS) {
@@ -156,6 +351,13 @@ function buildInputs() {
         defval: { color: "#f23645", opacity: 0 },
       },
     },
+    {
+      id: "ifvgBoxColor",
+      type: "color",
+      title: "IFVG",
+      defval: { color: "#ffff00", opacity: 20 },
+      section: "IFVG settings",
+    },
   );
 
   return inputs;
@@ -193,7 +395,437 @@ export function fvgRequiredChartBars(inputs, chartResolution) {
   return Math.max(10, Number(inputs.maxBarsBack) || 300);
 }
 
-let _lastFvgDebugKey = "";
+/** @param {import("../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer */
+function buildLayerSeries(script, layer) {
+  const { chartSec, maxBack } = script.state.cfg;
+  const overlayCtx = script.overlayCtx ?? {};
+
+  if (layer.tfSec <= chartSec) {
+    const series = script.bars.map((b, i) => ({
+      ...b,
+      sourceIndex: i,
+      startSourceIndex: i,
+      chartTime: script.chartBars[i]?.time ?? b.time,
+      confirmChartTime: script.chartBars[i]?.time ?? b.time,
+    }));
+    return { series, startIdx: Math.max(2, series.length - maxBack) };
+  }
+
+  const htf = overlayCtx.getHtfBars?.(layer.tfId);
+  if (htf?.utcBars?.length) {
+    const series = htf.utcBars.map((b, i) => ({
+      ...b,
+      sourceIndex: i,
+      startSourceIndex: i,
+      chartTime: htf.chartBars[i]?.time ?? b.time,
+      confirmChartTime: htf.chartBars[i]?.time ?? b.time,
+    }));
+    return { series, startIdx: Math.max(2, series.length - maxBack) };
+  }
+
+  overlayCtx.requestHtfBars?.(layer.tfId, maxBack);
+  const series = aggregateBars(
+    script.bars,
+    layer.tfSec,
+    chartSec,
+    (_, i) => script.chartBars[i]?.time ?? script.bars[i].time,
+  ).map((b) => ({
+    ...b,
+    chartTime: script.chartBars[b.startSourceIndex]?.time ?? b.time,
+    confirmChartTime: script.chartBars[b.startSourceIndex]?.time ?? b.time,
+  }));
+  return { series, startIdx: Math.max(2, series.length - maxBack) };
+}
+
+/** @param {object} inputs */
+export function fvgRequiresCorrelatedCompare(inputs) {
+  return inputs.requireCorrelatedFvg === true;
+}
+
+/**
+ * Compare-symbol series for the same FVG layer (aligned to primary chart times).
+ * @param {(object | null)[]} alignedCompare
+ * @param {object[]} chartBars
+ * @param {{ tfSec: number, tfId: string, label: string }} layer
+ * @param {number} chartSec
+ * @param {number} maxBack
+ * @param {string} compareSymbol
+ */
+function buildCompareLayerSeries(alignedCompare, chartBars, layer, chartSec, maxBack, compareSymbol) {
+  if (layer.tfSec <= chartSec) {
+    const series = alignedCompare.map((b, i) => {
+      if (!b) return null;
+      return {
+        ...b,
+        sourceIndex: i,
+        startSourceIndex: i,
+        chartTime: chartBars[i]?.time ?? b.time,
+        confirmChartTime: chartBars[i]?.time ?? b.time,
+      };
+    });
+    return { series, startIdx: Math.max(2, alignedCompare.length - maxBack) };
+  }
+
+  const htf = getHtfBars(compareSymbol, layer.tfId);
+  if (htf?.utcBars?.length) {
+    const series = htf.utcBars.map((b, i) => ({
+      ...b,
+      sourceIndex: i,
+      startSourceIndex: i,
+      chartTime: htf.chartBars[i]?.time ?? b.time,
+      confirmChartTime: htf.chartBars[i]?.time ?? b.time,
+    }));
+    return { series, startIdx: Math.max(2, series.length - maxBack) };
+  }
+
+  /** @type {object[]} */
+  const packed = [];
+  /** @type {number[]} */
+  const chartTimes = [];
+  for (let i = 0; i < alignedCompare.length; i++) {
+    const b = alignedCompare[i];
+    if (!b) continue;
+    packed.push(b);
+    chartTimes.push(chartBars[i]?.time ?? b.time);
+  }
+  if (packed.length < 3) return { series: [], startIdx: 0 };
+
+  const series = aggregateBars(packed, layer.tfSec, chartSec, (_, i) => chartTimes[i]).map((b) => ({
+    ...b,
+    chartTime: chartTimes[b.startSourceIndex] ?? b.time,
+    confirmChartTime: chartTimes[b.sourceIndex] ?? b.time,
+  }));
+  return { series, startIdx: Math.max(2, series.length - maxBack) };
+}
+
+/** @param {object[]} compareSeries @param {number} confirmTime @param {number} tfSec */
+function compareFvgKindAtConfirmTime(compareSeries, confirmTime, tfSec) {
+  if (!compareSeries?.length || confirmTime == null) return null;
+  let idx = -1;
+  for (let i = 0; i < compareSeries.length; i++) {
+    const bar = compareSeries[i];
+    if (!bar) continue;
+    const t = bar.confirmChartTime ?? bar.chartTime;
+    if (t === confirmTime) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 2) return null;
+  const hit = fvgAtBar(compareSeries, idx, tfSec);
+  return hit?.kind ?? null;
+}
+
+/**
+ * @param {object} inputs
+ * @param {string} [chartResolution]
+ * @returns {{ id: string, label: string }[]}
+ */
+export function fvgCorrelatedTfOptions(inputs, chartResolution = "1") {
+  /** @type {{ id: string, label: string }[]} */
+  const options = [{ id: "all", label: "All" }];
+  const seen = new Set(["all"]);
+
+  for (const def of TF_LAYER_DEFS) {
+    const enabled = def.defaultOn ? inputs[def.on] !== false : Boolean(inputs[def.on]);
+    if (!enabled) continue;
+    const tfId = inputs[def.tf] ?? def.defTf;
+    const key = tfId === "chart" ? "chart" : normalizeResolutionId(tfId);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const label =
+      key === "chart" ? resolutionDisplayTitle(chartResolution) : resolutionDisplayTitle(tfId);
+    options.push({ id: key, label });
+  }
+  return options;
+}
+
+/**
+ * @param {string} sel
+ * @param {{ tfSec: number, tfId: string }} layer
+ * @param {number} chartSec
+ */
+function layerMatchesCorrelatedTfSel(sel, layer, chartSec) {
+  if (sel === "chart") {
+    return layer.tfId === "chart" || layer.tfSec === chartSec;
+  }
+  const normSel = normalizeResolutionId(sel);
+  const normLayer = layer.tfId === "chart" ? "chart" : normalizeResolutionId(layer.tfId);
+  if (normLayer === normSel) return true;
+  const wantSec = resolutionSec(sel);
+  return wantSec != null && layer.tfSec === wantSec;
+}
+
+/**
+ * @param {import("../pineRuntime.js").BarScriptContext} script
+ * @param {{ tfSec: number, tfId: string, label: string }} layer
+ * @param {object[]} primarySeries
+ * @param {object} zone
+ */
+function passesCorrelatedFilter(script, layer, primarySeries, zone) {
+  if (!script.state.cfg.requireCorrelatedFvg) return true;
+  const sel = script.state.cfg.correlatedFvgTf ?? "all";
+  if (sel !== "all" && !layerMatchesCorrelatedTfSel(sel, layer, script.state.cfg.chartSec)) {
+    return true;
+  }
+  const cmpSeries = script.state.compareSeriesByLayer?.get(layer.label);
+  if (!cmpSeries?.length) return false;
+  const confirmBar = primarySeries[zone.confirmIndex];
+  const confirmTime = confirmBar?.confirmChartTime ?? confirmBar?.chartTime;
+  const cmpKind = compareFvgKindAtConfirmTime(cmpSeries, confirmTime, layer.tfSec);
+  return cmpKind != null && cmpKind === zone.kind;
+}
+
+/**
+ * @param {import("../pineRuntime.js").BarScriptContext} script
+ * @param {{ tfSec: number, tfId: string, label: string }} layer
+ * @param {object[]} series
+ * @param {object[]} active
+ * @param {object[]} ifvgActive
+ * @param {number} i
+ * @param {number} lastBarIdx
+ */
+function processFvgBar(script, layer, series, active, ifvgActive, i, lastBarIdx) {
+  const { deleteOnFill, fillType, showIfvg, showPartial } = script.state.cfg;
+  const isFormingBar = i === lastBarIdx;
+
+  for (let z = active.length - 1; z >= 0; z--) {
+    const zone = active[z];
+    if (showIfvg && !isFormingBar && isIfvgCloseInversion(zone, series[i])) {
+      ifvgActive.push({
+        ...zone,
+        invertIndex: i,
+        invertTime: series[i]?.chartTime ?? series[i]?.time,
+      });
+      active.splice(z, 1);
+      continue;
+    }
+    if (isFormingBar && showPartial) {
+      if (isPartialClose(zone, series[i])) {
+        active[z] = { ...zone, partial: true };
+        continue;
+      }
+      if (zone.partial) {
+        active[z] = { ...zone, partial: false };
+      }
+    } else if (zone.partial) {
+      active[z] = { ...zone, partial: false };
+    }
+    if (!isFvgFilled(zone, series[i], fillType)) continue;
+    if (deleteOnFill) active.splice(z, 1);
+    else active[z] = { ...zone, filled: true, fillIndex: i, partial: false };
+  }
+
+  const hit = fvgAtBar(series, i, layer.tfSec);
+  if (!hit) return;
+  if (isFormingBar) return;
+
+  const zone = zoneFromFvgHit(hit, series, i);
+  if (!zone) return;
+  active.push(zone);
+}
+
+/** @param {import("../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object[]} series @param {number} startIdx @param {number} barIdx */
+function onBarLayer(script, layer, series, startIdx, barIdx) {
+  if (barIdx < startIdx || barIdx >= series.length) return;
+  const active = script.state.layerActive.get(layer.label) ?? [];
+  const ifvgActive = script.state.layerIfvg.get(layer.label) ?? [];
+  processFvgBar(script, layer, series, active, ifvgActive, barIdx, series.length - 1);
+  script.state.layerActive.set(layer.label, active);
+  script.state.layerIfvg.set(layer.label, ifvgActive);
+}
+
+/** @param {import("../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object[]} series @param {number} startIdx */
+function scanLayerSeries(script, layer, series, startIdx) {
+  const active = [];
+  const ifvgActive = [];
+  const lastBarIdx = series.length - 1;
+  for (let i = startIdx; i < series.length; i++) {
+    processFvgBar(script, layer, series, active, ifvgActive, i, lastBarIdx);
+  }
+  script.state.layerActive.set(layer.label, active);
+  script.state.layerIfvg.set(layer.label, ifvgActive);
+}
+
+/** @param {import("../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object} zone @param {object[]} series @param {{ isIfvg?: boolean, layerLabel?: string }} opts */
+function emitZoneBox(script, layer, series, zone, opts = {}) {
+  const cfg = script.state.cfg;
+  const isIfvg = opts.isIfvg === true;
+  if (isIfvg && !cfg.showIfvg) return;
+  if (!isIfvg && zone.forming && !cfg.showLiveForming) return;
+  if (!isIfvg && !zone.forming && !cfg.showFvg) return;
+
+  const confirmBar = series[zone.confirmIndex];
+  const confirmTime = confirmBar?.confirmChartTime ?? confirmBar?.chartTime ?? zone.startTime;
+  const invertTime = isIfvg ? zoneInvertTime(zone, series) : confirmTime;
+  const anchorTime = isIfvg ? invertTime : confirmTime;
+  const startTime = zone.startTime;
+  const boxEndBase = anchorTime;
+  const boxLenSec = cfg.boxLen * cfg.chartSec;
+  let endTime = boxEndBase + boxLenSec;
+  let extendRight = false;
+
+  if (cfg.extendBoxes) {
+    if (!isIfvg && zone.filled && zone.fillIndex != null) {
+      endTime =
+        series[zone.fillIndex]?.confirmChartTime ??
+        series[zone.fillIndex]?.chartTime ??
+        cfg.lastChartTime;
+    } else {
+      endTime = anchorTime;
+      extendRight = true;
+    }
+  } else {
+    endTime = boxEndBase + boxLenSec;
+    if (!isIfvg && zone.filled && zone.fillIndex != null) {
+      const fillTime =
+        series[zone.fillIndex]?.confirmChartTime ?? series[zone.fillIndex]?.chartTime;
+      if (fillTime != null) endTime = Math.min(endTime, fillTime);
+    }
+  }
+
+  const isBull = zone.kind === "bull";
+  let fillColor;
+  let borderColor;
+  let borderWidth;
+  let label;
+  let textColor;
+
+  if (isIfvg) {
+    fillColor = cfg.ifvgColor;
+    borderColor = cfg.ifvgColor;
+    borderWidth = cfg.ifvgColor ? cfg.borderWidth : 0;
+    label = cfg.ifvgLabel;
+    textColor = script.inputs.ifvgBoxColor ?? "#ffff00";
+  } else if (zone.forming) {
+    fillColor = isBull ? cfg.formingBullFill : cfg.formingBearFill;
+    borderColor = fillColor;
+    borderWidth = fillColor ? cfg.borderWidth : 0;
+    label = opts.layerLabel ?? layer.label;
+    textColor = isBull
+      ? (script.inputs.formingBullColor ?? "#00bcd4")
+      : (script.inputs.formingBearColor ?? "#ab47bc");
+  } else if (zone.partial) {
+    fillColor = cfg.partialFill;
+    borderColor = cfg.partialFill;
+    borderWidth = cfg.partialFill ? cfg.borderWidth : 0;
+    label = opts.layerLabel ?? layer.label;
+    textColor = script.inputs.partialCloseColor ?? "#ff9800";
+  } else {
+    fillColor = isBull ? cfg.bullFill : cfg.bearFill;
+    borderColor = isBull ? cfg.bullBorder : cfg.bearBorder;
+    borderWidth = borderColor ? cfg.borderWidth : 0;
+    label = opts.layerLabel ?? layer.label;
+    textColor = isBull
+      ? (script.inputs.bullBorderColor ?? "#00e676")
+      : (script.inputs.bearBorderColor ?? "#f23645");
+  }
+
+  const labelTime = extendRight ? startTime + LABEL_DISTANCE_BARS * cfg.chartSec : null;
+  const symbolInfo = script.overlayCtx?.symbolInfo ?? null;
+
+  if (!isIfvg) {
+    const baseName = opts.layerLabel ?? layer.label;
+    label = buildFvgBoxLabel(cfg, baseName, zone, symbolInfo);
+  }
+
+  const showLabel = cfg.showLabels && Boolean(label && String(label).trim());
+
+  script.drawBox({
+    timeStart: startTime,
+    timeEnd: endTime,
+    extendRight,
+    labelTime,
+    priceTop: zone.top,
+    priceBottom: zone.bottom,
+    fillColor,
+    borderColor: borderColor ?? "transparent",
+    borderWidth,
+    borderDash: cfg.borderDash,
+    label,
+    showLabel,
+    labelAlign: "center",
+    textColor,
+    isIfvg,
+    isPartial: Boolean(zone.partial),
+    isForming: Boolean(zone.forming),
+  });
+}
+
+/** @param {import("../pineRuntime.js").BarScriptContext} script */
+function emitAllBoxes(script) {
+  const cfg = script.state.cfg;
+  /** @type {{ layer: object, series: object[], zone: object, sortTime: number }[]} */
+  const fvgCandidates = [];
+  /** @type {{ layer: object, series: object[], zone: object, sortTime: number }[]} */
+  const ifvgCandidates = [];
+
+  const allLayers = [
+    ...script.state.chartLayers.map((e) => ({ layer: e.layer, series: e.series })),
+    ...(script.state.htfLayers ?? []),
+  ];
+
+  for (const { layer, series } of allLayers) {
+    const active = script.state.layerActive.get(layer.label) ?? [];
+    const ifvgActive = script.state.layerIfvg.get(layer.label) ?? [];
+    const lastIdx = series.length - 1;
+    for (const zone of active) {
+      if (zone.filled) continue;
+      if (zone.confirmIndex === lastIdx) continue;
+      if (!passesCorrelatedFilter(script, layer, series, zone)) continue;
+      if (!fvgZonePassesSizeFilter(zone, cfg.sizeFilterLimits, script.overlayCtx?.symbolInfo ?? null)) {
+        continue;
+      }
+      fvgCandidates.push({
+        layer,
+        series,
+        zone,
+        sortTime: zoneConfirmTime(zone, series),
+      });
+    }
+    if (cfg.showLiveForming && cfg.showFvg && series.length >= 3) {
+      const hit = fvgAtBar(series, lastIdx, layer.tfSec);
+      const formingZone = hit ? zoneFromFvgHit(hit, series, lastIdx) : null;
+      if (formingZone) {
+        formingZone.forming = true;
+        if (passesCorrelatedFilter(script, layer, series, formingZone)) {
+          if (
+            fvgZonePassesSizeFilter(
+              formingZone,
+              cfg.sizeFilterLimits,
+              script.overlayCtx?.symbolInfo ?? null,
+            )
+          ) {
+            fvgCandidates.push({
+              layer,
+              series,
+              zone: formingZone,
+              sortTime: zoneConfirmTime(formingZone, series),
+            });
+          }
+        }
+      }
+    }
+    for (const zone of ifvgActive) {
+      ifvgCandidates.push({
+        layer,
+        series,
+        zone,
+        sortTime: zoneInvertTime(zone, series),
+      });
+    }
+  }
+
+  const fvgZones = takeRecentZones(fvgCandidates, cfg.maxFvgZones, (z) => z.sortTime);
+  const ifvgZones = takeRecentZones(ifvgCandidates, cfg.maxIfvgZones, (z) => z.sortTime);
+
+  for (const item of fvgZones) {
+    emitZoneBox(script, item.layer, item.series, item.zone, { layerLabel: item.layer.label });
+  }
+  for (const item of ifvgZones) {
+    emitZoneBox(script, item.layer, item.series, item.zone, { isIfvg: true });
+  }
+}
 
 export const FvgIndicator = defineIndicator(class FvgIndicator {
   constructor() {}
@@ -205,7 +837,9 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
 
   static overlayPrimitive = "boxes";
   static graphicObjects = [
-    { styleKey: "graphicBoxes", label: "Boxes", overlay: "boxes" },
+    { styleKey: "graphicBoxes", label: "FVG boxes", overlay: "boxes" },
+    { styleKey: "graphicForming", label: "Live forming FVG", overlay: "boxes" },
+    { styleKey: "graphicIfvg", label: "IFVG boxes", overlay: "boxes" },
     { styleKey: "graphicLabels", label: "Labels", overlay: "labels" },
   ];
 
@@ -215,8 +849,18 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
     return {
       ...style,
       graphicBoxes: style.graphicBoxes ?? true,
+      graphicForming: style.graphicForming ?? true,
+      graphicIfvg: style.graphicIfvg ?? true,
       graphicLabels: style.graphicLabels ?? true,
     };
+  }
+
+  /** @param {object} [inputs] @param {string} [chartResolution] */
+  static inputSchema(inputs = {}, chartResolution = "1") {
+    const options = fvgCorrelatedTfOptions(inputs, chartResolution);
+    return buildInputs().map((item) =>
+      item.id === "correlatedFvgTf" ? { ...item, options } : item,
+    );
   }
 
   /** Min chart-resolution bars to satisfy maxBarsBack on the highest enabled HTF layer. */
@@ -224,17 +868,62 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
     return fvgRequiredChartBars(inputs, chartResolution);
   }
 
-  static overlay(utcBars, chartBars, inputs, style, ctx = {}) {
-    if (inputs.showFvg === false || style.graphicBoxes === false) return [];
+  /** @param {object} instance @param {{ formingBar?: object | null, primarySymbol?: string, symbol?: string, chartResolution?: string, getCompareBars?: Function }} ctx */
+  static overlayRecomputeExtra(instance, ctx) {
+    const b = ctx.formingBar;
+    const ohlc = b ? `${b.open}|${b.high}|${b.low}|${b.close}` : "";
+    let extra = ohlc;
+    if (instance.inputs.sizeFilterOn === true) {
+      extra += `|sf:${instance.inputs.sizeFilterUnit}|${instance.inputs.sizeFilterMin}|${instance.inputs.sizeFilterMax}|${JSON.stringify(instance.inputs.sizeFilterRules ?? [])}`;
+    }
+    if (instance.inputs.showSizeOnLabel === true || instance.inputs.showFvgNameOnLabel === false) {
+      extra += `|lbl:${instance.inputs.showSizeOnLabel}|${instance.inputs.showFvgNameOnLabel}|${instance.inputs.sizeLabelFormat}`;
+    }
+    if (instance.inputs.requireCorrelatedFvg !== true) return extra;
+    const compare = resolveSmtCompareSymbol(instance.inputs, ctx.primarySymbol ?? ctx.symbol);
+    const cmp = ctx.getCompareBars?.(compare, ctx.chartResolution);
+    const tail = cmp?.utcBars?.at(-1);
+    const cmpOhlc = tail ? `${tail.open}|${tail.high}|${tail.low}|${tail.close}` : "";
+    const corrTf = instance.inputs.correlatedFvgTf ?? "all";
+    return `${extra}|${compare}|${corrTf}|${cmp?.utcBars?.length ?? 0}|${cmpOhlc}`;
+  }
+
+  init() {
+    const inputs = this.inputs;
+    const style = this.style;
+    const ctx = this.overlayCtx ?? {};
+
+    if (
+      (inputs.showFvg === false && inputs.showIfvg === false) ||
+      (style.graphicBoxes === false && style.graphicIfvg === false)
+    ) {
+      this.state.skip = true;
+      return;
+    }
 
     const chartSec = ctx.barSec ?? resolutionSec(ctx.chartResolution ?? "1");
     const maxBack = Math.max(10, Number(inputs.maxBarsBack) || 300);
-    const waitClose = Boolean(inputs.waitClose);
     const deleteOnFill = inputs.deleteOnFill !== false;
     const extendBoxes = Boolean(inputs.extendBoxes);
     const boxLen = Math.max(1, Number(inputs.boxLength) || 20);
     const fillType = inputs.filledType === "wick" ? "wick" : "close";
     const showLabels = inputs.showLabels !== false && style.graphicLabels !== false;
+    const showFvg = inputs.showFvg !== false && style.graphicBoxes !== false;
+    const showLiveForming =
+      inputs.showLiveForming !== false && style.graphicForming !== false && showFvg;
+    const showIfvg = inputs.showIfvg !== false && style.graphicIfvg !== false;
+    const maxFvgZones = Math.max(
+      0,
+      inputs.maxFvgZones != null && inputs.maxFvgZones !== ""
+        ? Number(inputs.maxFvgZones)
+        : 300,
+    );
+    const maxIfvgZones = Math.max(
+      0,
+      inputs.maxIfvgZones != null && inputs.maxIfvgZones !== ""
+        ? Number(inputs.maxIfvgZones)
+        : 1,
+    );
 
     const borderStyle = String(inputs.borderStyle ?? "solid");
     const borderWidth = Math.max(1, Number(inputs.borderWidth) || 1);
@@ -245,16 +934,21 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
     const bearFillOp = inputs.bearBoxOpacity !== undefined ? Number(inputs.bearBoxOpacity) : 10;
     const bullBorderOp = inputs.bullBorderOpacity !== undefined ? Number(inputs.bullBorderOpacity) : 0;
     const bearBorderOp = inputs.bearBorderOpacity !== undefined ? Number(inputs.bearBorderOpacity) : 0;
+    const ifvgOp = inputs.ifvgBoxOpacity !== undefined ? Number(inputs.ifvgBoxOpacity) : 20;
+    const partialOp =
+      inputs.partialCloseOpacity !== undefined ? Number(inputs.partialCloseOpacity) : 20;
+    const formingBullOp =
+      inputs.formingBullOpacity !== undefined ? Number(inputs.formingBullOpacity) : 25;
+    const formingBearOp =
+      inputs.formingBearOpacity !== undefined ? Number(inputs.formingBearOpacity) : 25;
 
-    const bullFill = rgba(inputs.bullBoxColor ?? "#00e676", bullFillOp);
-    const bearFill = rgba(inputs.bearBoxColor ?? "#f23645", bearFillOp);
-    const bullBorder = bullBorderOp > 0 ? rgba(inputs.bullBorderColor ?? "#00e676", bullBorderOp) : null;
-    const bearBorder = bearBorderOp > 0 ? rgba(inputs.bearBorderColor ?? "#f23645", bearBorderOp) : null;
+    const lastChartTime = this.chartBars.at(-1)?.time;
+    if (lastChartTime == null) {
+      this.state.skip = true;
+      return;
+    }
 
-    const lastChartTime = chartBars.at(-1)?.time;
-    if (lastChartTime == null) return [];
-
-    /** @type {{ tfSec: number, label: string }[]} */
+    /** @type {{ tfSec: number, tfId: string, label: string }[]} */
     let layers = [];
     for (const def of TF_LAYER_DEFS) {
       const enabled = def.defaultOn ? inputs[def.on] !== false : Boolean(inputs[def.on]);
@@ -263,210 +957,121 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
       const tfSec = tfId === "chart" ? chartSec : resolutionSec(tfId);
       layers.push({ tfSec, tfId, label: String(inputs[def.label] ?? def.defLabel) });
     }
-    if (!layers.length) return [];
+    if (!layers.length) {
+      this.state.skip = true;
+      return;
+    }
 
     if (inputs.hideLowerTf !== false) {
       const maxSec = Math.max(...layers.map((l) => l.tfSec));
       layers = layers.filter((l) => l.tfSec === maxSec);
     }
 
-    /** @type {object[]} */
-    const boxes = [];
-    /** @type {object[]} */
-    const debugRows = [];
-    /** @type {Record<string, { seriesLen: number, startIdx: number, maxBack: number }>} */
-    const layerScan = {};
+    const requireCorrelatedFvg = inputs.requireCorrelatedFvg === true;
+    /** @type {Map<string, object[]> | null} */
+    let compareSeriesByLayer = null;
+
+    if (requireCorrelatedFvg) {
+      const compare = resolveSmtCompareSymbol(inputs, ctx.primarySymbol ?? ctx.symbol);
+      const cmp = ctx.getCompareBars?.(compare, ctx.chartResolution);
+      if (!cmp?.utcBars?.length || cmp.utcBars.length !== cmp.chartBars?.length) {
+        ctx.requestCompareBars?.(compare, this.bars.length);
+        this.state.skip = true;
+        this.state.loading = true;
+        return;
+      }
+      const aligned = alignUtcBarsByChartTime(this.chartBars, cmp.utcBars, cmp.chartBars);
+      let covered = 0;
+      for (const bar of aligned) {
+        if (bar) covered += 1;
+      }
+      if (covered < Math.min(this.bars.length, 3)) {
+        ctx.requestCompareBars?.(compare, this.bars.length);
+        this.state.skip = true;
+        this.state.loading = true;
+        return;
+      }
+      compareSeriesByLayer = new Map();
+      for (const layer of layers) {
+        const built = buildCompareLayerSeries(
+          aligned,
+          this.chartBars,
+          layer,
+          chartSec,
+          maxBack,
+          compare,
+        );
+        compareSeriesByLayer.set(layer.label, built.series);
+      }
+      this.state.compareSymbol = compare;
+      this.state.loading = false;
+    } else {
+      this.state.loading = false;
+    }
+
+    this.state.cfg = {
+      chartSec,
+      maxBack,
+      deleteOnFill,
+      extendBoxes,
+      boxLen,
+      fillType,
+      showLabels,
+      showSizeOnLabel: inputs.showSizeOnLabel === true,
+      showFvgNameOnLabel: inputs.showFvgNameOnLabel !== false,
+      sizeLabelFormat:
+        inputs.sizeLabelFormat === "points" || inputs.sizeLabelFormat === "ticks"
+          ? inputs.sizeLabelFormat
+          : "both",
+      showFvg,
+      showLiveForming,
+      showIfvg,
+      showPartial: true,
+      maxFvgZones,
+      maxIfvgZones,
+      ifvgLabel: String(inputs.ifvgLabel ?? "IFVG"),
+      borderWidth,
+      borderDash,
+      bullFill: rgba(inputs.bullBoxColor ?? "#00e676", bullFillOp),
+      bearFill: rgba(inputs.bearBoxColor ?? "#f23645", bearFillOp),
+      bullBorder: bullBorderOp > 0 ? rgba(inputs.bullBorderColor ?? "#00e676", bullBorderOp) : null,
+      bearBorder: bearBorderOp > 0 ? rgba(inputs.bearBorderColor ?? "#f23645", bearBorderOp) : null,
+      ifvgColor: rgba(inputs.ifvgBoxColor ?? "#ffff00", ifvgOp),
+      partialFill: rgba(inputs.partialCloseColor ?? "#ff9800", partialOp),
+      formingBullFill: rgba(inputs.formingBullColor ?? "#00bcd4", formingBullOp),
+      formingBearFill: rgba(inputs.formingBearColor ?? "#ab47bc", formingBearOp),
+      requireCorrelatedFvg,
+      correlatedFvgTf: String(inputs.correlatedFvgTf ?? "all"),
+      chartSec,
+      sizeFilterLimits: resolveFvgSizeFilterLimits(ctx.primarySymbol ?? ctx.symbol, inputs),
+      lastChartTime,
+    };
+    this.state.compareSeriesByLayer = compareSeriesByLayer;
+    this.state.chartLayers = [];
+    this.state.htfLayers = [];
+    this.state.layerActive = new Map();
+    this.state.layerIfvg = new Map();
 
     for (const layer of layers) {
-      let series;
-      let seriesSource = "chart";
-
+      const built = buildLayerSeries(this, layer);
+      if (!built) continue;
       if (layer.tfSec <= chartSec) {
-        series = utcBars.map((b, i) => ({
-          ...b,
-          sourceIndex: i,
-          startSourceIndex: i,
-          chartTime: chartBars[i]?.time ?? b.time,
-          confirmChartTime: chartBars[i]?.time ?? b.time,
-        }));
+        this.state.chartLayers.push({ layer, ...built });
+        this.state.layerActive.set(layer.label, []);
+        this.state.layerIfvg.set(layer.label, []);
       } else {
-        const htf = ctx.getHtfBars?.(layer.tfId);
-        if (htf?.utcBars?.length) {
-          seriesSource = "datafeed";
-          series = htf.utcBars.map((b, i) => ({
-            ...b,
-            sourceIndex: i,
-            startSourceIndex: i,
-            chartTime: htf.chartBars[i]?.time ?? b.time,
-            confirmChartTime: htf.chartBars[i]?.time ?? b.time,
-          }));
-        } else {
-          seriesSource = "aggregate";
-          ctx.requestHtfBars?.(layer.tfId, maxBack);
-          series = aggregateBars(
-            utcBars,
-            layer.tfSec,
-            chartSec,
-            (_, i) => chartBars[i]?.time ?? utcBars[i].time,
-          ).map((b) => ({
-            ...b,
-            chartTime: chartBars[b.startSourceIndex]?.time ?? b.time,
-            confirmChartTime: chartBars[b.startSourceIndex]?.time ?? b.time,
-          }));
-        }
-      }
-
-      const startIdx = Math.max(2, series.length - maxBack);
-      layerScan[layer.label] = { seriesLen: series.length, startIdx, maxBack, seriesSource };
-      const lastBarIdx = series.length - 1;
-      /** @type {object[]} */
-      const active = [];
-
-      for (let i = startIdx; i < series.length; i++) {
-        for (let z = active.length - 1; z >= 0; z--) {
-          if (!isFvgFilled(active[z], series[i], fillType)) continue;
-          if (deleteOnFill) active.splice(z, 1);
-          else active[z] = { ...active[z], filled: true, fillIndex: i };
-        }
-
-        // waitClose: skip the forming (last) bar — confirm only after it closes
-        if (waitClose && i === lastBarIdx) continue;
-
-        const hit = fvgAtBar(series, i, layer.tfSec);
-        if (!hit) continue;
-        const startBar = series[hit.barIndex];
-        const startTime = startBar?.chartTime;
-        if (startTime == null) continue;
-        active.push({
-          kind: hit.kind,
-          top: hit.top,
-          bottom: hit.bottom,
-          startTime,
-          startIndex: hit.barIndex,
-          confirmIndex: i,
-        });
-      }
-
-      for (const zone of active) {
-        if (zone.filled && deleteOnFill) continue;
-
-        const startTime = zone.startTime;
-        const confirmBar = series[zone.confirmIndex];
-        const confirmTime = confirmBar?.confirmChartTime ?? confirmBar?.chartTime ?? startTime;
-        // Wait for close: confirm after the 3rd candle closes, so box length starts at the next bar open.
-        const boxEndBase = waitClose ? confirmTime + chartSec : confirmTime;
-        // Box length is always in chart-resolution bars (TV-style MTF display).
-        const boxLenSec = boxLen * chartSec;
-        let endTime = boxEndBase + boxLenSec;
-        let extendRight = false;
-
-        if (extendBoxes) {
-          if (zone.filled && zone.fillIndex != null) {
-            endTime =
-              series[zone.fillIndex]?.confirmChartTime ??
-              series[zone.fillIndex]?.chartTime ??
-              lastChartTime;
-          } else {
-            endTime = confirmTime;
-            extendRight = true;
-          }
-        } else {
-          endTime = boxEndBase + boxLenSec;
-          if (zone.filled && zone.fillIndex != null) {
-            const fillTime =
-              series[zone.fillIndex]?.confirmChartTime ?? series[zone.fillIndex]?.chartTime;
-            if (fillTime != null) endTime = Math.min(endTime, fillTime);
-          }
-        }
-
-        const isBull = zone.kind === "bull";
-        const borderColor = isBull ? bullBorder : bearBorder;
-        const effectiveBorderWidth = borderColor ? borderWidth : 0;
-        const labelDistBars = LABEL_DISTANCE_BARS;
-        const labelTime = extendRight ? startTime + labelDistBars * chartSec : null;
-        boxes.push({
-          timeStart: startTime,
-          timeEnd: endTime,
-          extendRight,
-          labelTime,
-          priceTop: zone.top,
-          priceBottom: zone.bottom,
-          fillColor: isBull ? bullFill : bearFill,
-          borderColor: borderColor ?? "transparent",
-          borderWidth: effectiveBorderWidth,
-          borderDash,
-          label: layer.label,
-          showLabel: showLabels,
-          labelAlign: "center",
-          textColor: isBull ? (inputs.bullBorderColor ?? "#00e676") : (inputs.bearBorderColor ?? "#f23645"),
-        });
-
-        debugRows.push({
-          label: layer.label,
-          kind: zone.kind,
-          tfMin: layer.tfSec / 60,
-          start: fmtChartTime(startTime),
-          end: fmtChartTime(endTime),
-          confirm: fmtChartTime(confirmTime),
-          htfPatternOpen: fmtChartTime(series[zone.startIndex]?.time),
-          htfConfirmOpen: fmtChartTime(series[zone.confirmIndex]?.time),
-          startIndex: zone.startIndex,
-          confirmIndex: zone.confirmIndex,
-          boxLenBars: boxLen,
-          extendBoxes,
-          filled: Boolean(zone.filled),
-          top: zone.top,
-          bottom: zone.bottom,
-        });
+        scanLayerSeries(this, layer, built.series, built.startIdx);
+        this.state.htfLayers.push({ layer, series: built.series });
       }
     }
+  }
 
-    if (debugRows.length && isChartDebugEnabled()) {
-      const debugKey = JSON.stringify(debugRows);
-      if (debugKey !== _lastFvgDebugKey) {
-        _lastFvgDebugKey = debugKey;
-        const tz = resolveTimezone("exchange", ctx.symbolInfo);
-        const requiredChartBars = fvgRequiredChartBars(inputs, ctx.chartResolution ?? "1");
-        const requiredHtfBars = fvgRequiredHtfBars(inputs);
-        const bullCount = debugRows.filter((r) => r.kind === "bull").length;
-        const bearCount = debugRows.filter((r) => r.kind === "bear").length;
-        chartDebug("fvg", `${debugRows.length} boxes (${bullCount} bull, ${bearCount} bear)`, {
-          chartResolution: ctx.chartResolution,
-          chartSec,
-          timezone: tz,
-          boxLen,
-          extendBoxes,
-          maxBarsBack: maxBack,
-          requiredHtfBars,
-          requiredChartBars,
-          loadedChartBars: utcBars.length,
-          dataShortfall: requiredChartBars > 0 && utcBars.length < requiredChartBars,
-          bars: {
-            utc: utcBars.length,
-            chart: chartBars.length,
-            first: fmtChartTime(chartBars[0]?.time),
-            last: fmtChartTime(lastChartTime),
-          },
-          layerScan,
-          boxes: debugRows,
-        });
-        if (typeof window !== "undefined") {
-          window.__BWC_FVG_DEBUG__ = {
-            at: new Date().toISOString(),
-            timezone: tz,
-            maxBarsBack: maxBack,
-            requiredChartBars,
-            loadedChartBars: utcBars.length,
-            bullCount,
-            bearCount,
-            bars: { utc: utcBars.length, chart: chartBars.length },
-            layerScan,
-            boxes: debugRows,
-          };
-        }
-      }
+  onBar() {
+    if (this.state.skip) return;
+    for (const entry of this.state.chartLayers) {
+      onBarLayer(this, entry.layer, entry.series, entry.startIdx, this.index);
     }
-
-    return boxes;
+    if (this.index !== this.bars.length - 1) return;
+    emitAllBoxes(this);
   }
 });

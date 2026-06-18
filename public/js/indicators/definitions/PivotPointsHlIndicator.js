@@ -1,4 +1,65 @@
 import { defineIndicator } from "../defineIndicator.js";
+import { pivotBarIndex, pivotHighAt, pivotLowAt } from "../math/pivots.js";
+
+/** @param {number} price @param {object | null | undefined} symbolInfo */
+function formatPivotPrice(price, symbolInfo) {
+  const scale = symbolInfo?.pricescale ?? 100;
+  const minmov = symbolInfo?.minmov ?? 1;
+  const decimals = Math.max(2, Math.round(Math.log10(scale / minmov)));
+  return Number(price).toFixed(decimals);
+}
+
+/**
+ * Batch overlay labels (same rules as onBar).
+ * @param {object[]} utcBars
+ * @param {object[]} chartBars
+ * @param {object} inputs
+ * @param {object} style
+ * @param {object | null} [symbolInfo]
+ */
+function computePivotLabels(utcBars, chartBars, inputs, style, symbolInfo = null) {
+  const leftH = Math.max(1, Number(inputs.leftLenH) || 10);
+  const rightH = Math.max(1, Number(inputs.rightLenH) || 10);
+  const leftL = Math.max(1, Number(inputs.leftLenL) || 10);
+  const rightL = Math.max(1, Number(inputs.rightLenL) || 10);
+
+  /** @type {object[]} */
+  const labels = [];
+
+  for (let i = 0; i < utcBars.length; i++) {
+    const ph = pivotHighAt(utcBars, i, leftH, rightH);
+    if (ph != null) {
+      const pivotIdx = pivotBarIndex(i, rightH);
+      const chartTime = chartBars[pivotIdx]?.time;
+      if (chartTime == null) continue;
+      labels.push({
+        time: chartTime,
+        price: ph,
+        kind: "high",
+        text: formatPivotPrice(ph, symbolInfo),
+        textColor: style.textColorH ?? "#131722",
+        bgColor: style.labelColorH ?? "#ffffff",
+      });
+    }
+
+    const pl = pivotLowAt(utcBars, i, leftL, rightL);
+    if (pl != null) {
+      const pivotIdx = pivotBarIndex(i, rightL);
+      const chartTime = chartBars[pivotIdx]?.time;
+      if (chartTime == null) continue;
+      labels.push({
+        time: chartTime,
+        price: pl,
+        kind: "low",
+        text: formatPivotPrice(pl, symbolInfo),
+        textColor: style.textColorL ?? "#131722",
+        bgColor: style.labelColorL ?? "#ffffff",
+      });
+    }
+  }
+
+  return labels;
+}
 
 /**
  * Pine: Pivot Points High Low — one `onBar()` per candle, like the script.
@@ -37,6 +98,17 @@ export const PivotPointsHlIndicator = defineIndicator(class PivotPointsHlIndicat
       `${instance.inputs.leftLenH ?? 10}/${instance.inputs.rightLenH ?? 10}`,
       `${instance.inputs.leftLenL ?? 10}/${instance.inputs.rightLenL ?? 10}`,
     ];
+  }
+
+  /**
+   * @param {object[]} utcBars
+   * @param {object[]} chartBars
+   * @param {object} inputs
+   * @param {object} style
+   * @param {object | null} [symbolInfo]
+   */
+  static computePivotLabels(utcBars, chartBars, inputs, style, symbolInfo = null) {
+    return computePivotLabels(utcBars, chartBars, inputs, style, symbolInfo);
   }
 
   onBar() {

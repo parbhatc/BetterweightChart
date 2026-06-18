@@ -10,9 +10,11 @@ import { attachStudyPaneScaleGuards } from "../../../chart/pane/studyScale.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { precisionFromSettings } from "../../../chart/timezone/list.js";
 import { listIndicators } from "../../../indicators/catalog.js";
-import { FvgIndicator, fvgEnabledHtfResolutions, fvgRequiredHtfBars } from "../../../indicators/definitions/FvgIndicator.js";
+import { FvgIndicator, fvgEnabledHtfResolutions, fvgRequiredHtfBars, fvgRequiresCorrelatedCompare } from "../../../indicators/definitions/FvgIndicator.js";
+import { SmtIndicator } from "../../../indicators/definitions/SmtIndicator.js";
+import { resolveSmtCompareSymbol } from "../../../indicators/definitions/SmtIndicator.js";
 import { ensureHtfBars, getHtfBars, prependHtfBars } from "../../bar/htfBarCache.js";
-import { chartDebug } from "../../../debug/chart/index.js";
+import { ensureSymbolBars, lookupSymbolBars } from "../../bar/symbolBarCache.js";
 import { priceLineBarForPane } from "../../symbol/lineStyle.js";
 import { symbolPriceLabelHeight } from "../../../primitives/priceLineLabel/index.js";
 
@@ -47,6 +49,18 @@ export function attachIndicatorsBoot(ctx) {
     getOverlayContext: (pane) => ({
       getHtfBars: (resId) => getHtfBars(pane.symbol, resId),
       requestHtfBars: (resId, countBack) => scheduleHtfBarsFetch(pane, resId, countBack),
+      getCompareBars: (symbol, resId) =>
+        lookupSymbolBars({
+          symbol,
+          resolution: resId ?? pane.resolution,
+          pane,
+          getAllChartPanes: ctx.getAllChartPanes,
+          settingsStore: ctx.settingsStore,
+          symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
+          resolutions: ctx.resolutions,
+        }),
+      requestCompareBars: (symbol, countBack) =>
+        scheduleCompareBarsFetch(pane, symbol, pane.resolution, countBack),
     }),
   });
 
@@ -56,14 +70,24 @@ export function attachIndicatorsBoot(ctx) {
     onSelect: (defId) => {
       const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
       controller.addIndicator(defId, pane?.index ?? 0);
-      if (defId === FvgIndicator.id) scheduleFvgHistoryLoad();
+      if (defId === FvgIndicator.id) {
+        scheduleFvgHistoryLoad();
+        scheduleFvgCompareLoad();
+      }
+      if (defId === SmtIndicator.id) scheduleSmtCompareLoad();
     },
   });
 
   const settings = createIndicatorSettingsDialog({
     controller,
+    datafeed: ctx.datafeed,
     getTimeframes: () =>
       ctx.resolutions.map((r) => ({ id: r.id, label: resolutionDisplayTitle(r.id) })),
+    getPaneResolution: (inst) => {
+      if (!inst) return "1";
+      const pane = ctx.getAllChartPanes?.().find((p) => p.index === inst.paneIndex);
+      return pane?.resolution ?? "1";
+    },
   });
 
   function syncSettingsDialog() {
@@ -374,6 +398,7 @@ export function attachIndicatorsBoot(ctx) {
     ctx.refreshStatusLine();
     syncSettingsDialog();
     ctx.scheduleAutosaveLayout?.();
+    scheduleFvgCompareLoad();
   };
 
   /** One HTF fetch per idle window — loads 15m (etc.) from datafeed, not 15k 1m bars. */
@@ -385,6 +410,225 @@ export function attachIndicatorsBoot(ctx) {
   const fvgHistoryInFlight = new Set();
   /** @type {Set<string>} */
   const htfFetchInFlight = new Set();
+
+  /** @type {Set<string>} */
+  const compareFetchInFlight = new Set();
+  /** @type {Set<number>} */
+  const smtCompareInFlight = new Set();
+  const fvgCompareInFlight = new Set();
+
+  /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack */
+  function scheduleCompareBarsFetch(pane, symbol, resolution, countBack) {
+    if (!pane || !ctx.datafeed || !symbol || !resolution) return;
+    const want = Math.max(50, Number(countBack) || 300);
+    const key = `${symbol}|${resolution}`;
+    if (compareFetchInFlight.has(key)) return;
+
+    const hit = lookupSymbolBars({
+      symbol,
+      resolution,
+      pane,
+      getAllChartPanes: ctx.getAllChartPanes,
+      settingsStore: ctx.settingsStore,
+      symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
+      resolutions: ctx.resolutions,
+    });
+    if (hit && hit.utcBars.length >= want) return;
+
+    compareFetchInFlight.add(key);
+    void ctx.datafeed
+      .resolveSymbol(symbol)
+      .then((symbolInfo) =>
+        ensureSymbolBars({
+          datafeed: ctx.datafeed,
+          symbolInfo,
+          symbol,
+          resolution,
+          countBack: want,
+          pane,
+          settingsStore: ctx.settingsStore,
+          symbolInfoExtra: symbolInfo,
+          getAllChartPanes: ctx.getAllChartPanes,
+          resolutions: ctx.resolutions,
+        }),
+      )
+      .then(() => {
+        controller.invalidateOverlayCacheForPane(pane.index);
+        controller.refreshOverlaysImmediate(pane.index);
+      })
+      .finally(() => compareFetchInFlight.delete(key));
+  }
+
+  /** @param {object} pane */
+  async function ensureSmtCompareForPane(pane) {
+    if (!pane?.symbol || !ctx.datafeed) return;
+    if (smtCompareInFlight.has(pane.index)) return;
+
+    const compares = new Set();
+    for (const inst of controller.indicatorsForPane(pane.index)) {
+      if (inst.defId !== SmtIndicator.id) continue;
+      const sym = resolveSmtCompareSymbol(inst.inputs, pane.symbol);
+      compares.add(sym);
+    }
+    if (!compares.size) return;
+
+    smtCompareInFlight.add(pane.index);
+    try {
+      const want = Math.max(pane.bars?.length ?? 300, 300);
+      for (const symbol of compares) {
+        let hit = lookupSymbolBars({
+          symbol,
+          resolution: pane.resolution,
+          pane,
+          getAllChartPanes: ctx.getAllChartPanes,
+          settingsStore: ctx.settingsStore,
+          symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
+          resolutions: ctx.resolutions,
+        });
+        if (hit && hit.utcBars.length >= want) {
+          continue;
+        }
+        const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
+        hit = await ensureSymbolBars({
+          datafeed: ctx.datafeed,
+          symbolInfo,
+          symbol,
+          resolution: pane.resolution,
+          countBack: want,
+          pane,
+          settingsStore: ctx.settingsStore,
+          symbolInfoExtra: symbolInfo,
+          getAllChartPanes: ctx.getAllChartPanes,
+          resolutions: ctx.resolutions,
+        });
+        let entry = getHtfBars(symbol, pane.resolution);
+        let guard = 0;
+        while (entry && entry.utcBars.length < want && !entry.historyExhausted && guard < 8) {
+          entry = await prependHtfBars({
+            datafeed: ctx.datafeed,
+            symbolInfo,
+            symbol,
+            resolution: pane.resolution,
+            countBack: 200,
+            pane,
+            settingsStore: ctx.settingsStore,
+            symbolInfoExtra: symbolInfo,
+          });
+          guard += 1;
+        }
+      }
+      controller.invalidateOverlayCacheForPane(pane.index);
+      controller.refreshOverlaysImmediate(pane.index);
+    } finally {
+      smtCompareInFlight.delete(pane.index);
+    }
+  }
+
+  /** @param {number} [delayMs] */
+  function scheduleSmtCompareLoad(delayMs = HTF_FETCH_IDLE_MS) {
+    setTimeout(() => {
+      for (const pane of ctx.getAllChartPanes()) {
+        void ensureSmtCompareForPane(pane);
+      }
+    }, delayMs);
+  }
+
+  /** @param {object} pane */
+  async function ensureFvgCompareForPane(pane) {
+    if (!pane?.symbol || !ctx.datafeed) return;
+    if (fvgCompareInFlight.has(pane.index)) return;
+
+    /** @type {Map<string, number>} */
+    const compares = new Map();
+    /** @type {Map<string, Map<string, number>>} */
+    const compareHtfs = new Map();
+
+    for (const inst of controller.indicatorsForPane(pane.index)) {
+      if (inst.defId !== FvgIndicator.id || !fvgRequiresCorrelatedCompare(inst.inputs)) continue;
+      const sym = resolveSmtCompareSymbol(inst.inputs, pane.symbol);
+      const want = Math.max(pane.bars?.length ?? 300, 300);
+      compares.set(sym, Math.max(compares.get(sym) ?? 0, want));
+      for (const { tfId } of fvgEnabledHtfResolutions(inst.inputs, pane.resolution)) {
+        const htfWant = fvgRequiredHtfBars(inst.inputs) + 20;
+        if (!compareHtfs.has(sym)) compareHtfs.set(sym, new Map());
+        const perSym = compareHtfs.get(sym);
+        perSym.set(tfId, Math.max(perSym.get(tfId) ?? 0, htfWant));
+      }
+    }
+    if (!compares.size) return;
+
+    fvgCompareInFlight.add(pane.index);
+    try {
+      for (const [symbol, want] of compares) {
+        let hit = lookupSymbolBars({
+          symbol,
+          resolution: pane.resolution,
+          pane,
+          getAllChartPanes: ctx.getAllChartPanes,
+          settingsStore: ctx.settingsStore,
+          symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
+          resolutions: ctx.resolutions,
+        });
+        if (!hit || hit.utcBars.length < want) {
+          const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
+          hit = await ensureSymbolBars({
+            datafeed: ctx.datafeed,
+            symbolInfo,
+            symbol,
+            resolution: pane.resolution,
+            countBack: want,
+            pane,
+            settingsStore: ctx.settingsStore,
+            symbolInfoExtra: symbolInfo,
+            getAllChartPanes: ctx.getAllChartPanes,
+            resolutions: ctx.resolutions,
+          });
+        }
+        const htfs = compareHtfs.get(symbol);
+        if (!htfs?.size) continue;
+        const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
+        for (const [resId, htfWant] of htfs) {
+          let entry = await ensureHtfBars({
+            datafeed: ctx.datafeed,
+            symbolInfo,
+            symbol,
+            resolution: resId,
+            countBack: htfWant,
+            pane,
+            settingsStore: ctx.settingsStore,
+            symbolInfoExtra: symbolInfo,
+          });
+          let guard = 0;
+          while (entry && entry.utcBars.length < htfWant && !entry.historyExhausted && guard < 8) {
+            entry = await prependHtfBars({
+              datafeed: ctx.datafeed,
+              symbolInfo,
+              symbol,
+              resolution: resId,
+              countBack: 200,
+              pane,
+              settingsStore: ctx.settingsStore,
+              symbolInfoExtra: symbolInfo,
+            });
+            guard += 1;
+          }
+        }
+      }
+      controller.invalidateOverlayCacheForPane(pane.index);
+      controller.refreshOverlaysImmediate(pane.index);
+    } finally {
+      fvgCompareInFlight.delete(pane.index);
+    }
+  }
+
+  /** @param {number} [delayMs] */
+  function scheduleFvgCompareLoad(delayMs = HTF_FETCH_IDLE_MS) {
+    setTimeout(() => {
+      for (const pane of ctx.getAllChartPanes()) {
+        void ensureFvgCompareForPane(pane);
+      }
+    }, delayMs);
+  }
 
   /** @param {object} pane @param {string} resId @param {number} countBack */
   function scheduleHtfBarsFetch(pane, resId, countBack) {
@@ -451,12 +695,6 @@ export function attachIndicatorsBoot(ctx) {
           });
           guard += 1;
         }
-        chartDebug("fvg", "htf bars ready", {
-          pane: pane.index,
-          resolution: resId,
-          bars: entry?.utcBars.length ?? 0,
-          want,
-        });
       }
       controller.invalidateOverlayCacheForPane(pane.index);
       controller.refreshOverlaysImmediate(pane.index);
@@ -477,6 +715,8 @@ export function attachIndicatorsBoot(ctx) {
   }
 
   ctx.ensureFvgHistory = () => scheduleFvgHistoryLoad(0);
+  ctx.ensureFvgCompare = () => scheduleFvgCompareLoad(0);
+  ctx.ensureSmtCompare = () => scheduleSmtCompareLoad(0);
 
   const origApplyChartSettings = ctx.applyChartSettings;
   ctx.applyChartSettings = () => {
@@ -506,4 +746,5 @@ export function attachIndicatorsBoot(ctx) {
   refreshAllScaleLabels();
   refreshAllBandFills();
   scheduleFvgHistoryLoad(4000);
+  scheduleSmtCompareLoad(4000);
 }

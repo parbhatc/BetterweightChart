@@ -8,6 +8,7 @@
  * @property {object} style
  * @property {Record<string, boolean>} visibility
  * @property {boolean} hidden
+ * @property {boolean} [_initPending] True while init() waits on external data (compare/HTF bars).
  * @property {Record<string, Array<number | null>>} [lastPlots]
  */
 
@@ -48,7 +49,7 @@
 /**
  * @typedef {object} InputFieldDef
  * @property {string} id
- * @property {"int"|"float"|"source"|"select"|"bool"|"timeframe"|"text"|"color"} type
+ * @property {"int"|"float"|"source"|"select"|"bool"|"timeframe"|"text"|"color"|"symbol"} type
  * @property {string} title
  * @property {*} [defval]
  * @property {boolean} [inline] Group with adjacent inline fields on one row (legacy flat schema)
@@ -58,6 +59,7 @@
  * @property {string} [opacityKey] For `color` — opacity stored under this key (default `${id}Opacity`)
  * @property {"inputs"|"style"} [store="inputs"] Where color values are stored
  * @property {boolean} [showInStatusLine=true] Show this input's value in the legend status line after the study title
+ * @property {number} [min] Minimum for `int` inputs (clamped on save)
  */
 
 /**
@@ -79,7 +81,17 @@
  */
 
 /**
- * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef} InputDef
+ * @typedef {object} SymbolSizeRulesInputDef
+ * @property {"symbolSizeRules"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {{ symbol: string, min: number, max: number }[]} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef} InputDef
  */
 
 /**

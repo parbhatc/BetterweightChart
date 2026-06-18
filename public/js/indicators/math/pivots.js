@@ -48,61 +48,39 @@ export function pivotBarIndex(confirmBarIndex, right) {
   return confirmBarIndex - right;
 }
 
-/** @param {number} price @param {object | null | undefined} symbolInfo */
-function formatPivotPrice(price, symbolInfo) {
-  const scale = symbolInfo?.pricescale ?? 100;
-  const minmov = symbolInfo?.minmov ?? 1;
-  const decimals = Math.max(2, Math.round(Math.log10(scale / minmov)));
-  return Number(price).toFixed(decimals);
+/**
+ * Map compare OHLCV onto primary chart bar times (same length as primaryChart).
+ * Missing bars are null — pivot helpers skip windows with gaps.
+ * @param {object[]} primaryChart
+ * @param {object[]} cmpUtc
+ * @param {object[]} cmpChart
+ */
+export function alignUtcBarsByChartTime(primaryChart, cmpUtc, cmpChart) {
+  /** @type {Map<number, object>} */
+  const byTime = new Map();
+  for (let i = 0; i < cmpUtc.length; i++) {
+    const t = cmpChart[i]?.time;
+    if (t != null) byTime.set(t, cmpUtc[i]);
+  }
+  return primaryChart.map((b) => byTime.get(b.time) ?? null);
 }
 
-/**
- * @param {object[]} utcBars
- * @param {object[]} chartBars
- * @param {object} inputs
- * @param {object} style
- * @param {object | null} [symbolInfo]
- */
-export function computePivotLabels(utcBars, chartBars, inputs, style, symbolInfo = null) {
-  const leftH = Math.max(1, Number(inputs.leftLenH) || 10);
-  const rightH = Math.max(1, Number(inputs.rightLenH) || 10);
-  const leftL = Math.max(1, Number(inputs.leftLenL) || 10);
-  const rightL = Math.max(1, Number(inputs.rightLenL) || 10);
-
-  /** @type {object[]} */
-  const labels = [];
-
-  for (let i = 0; i < utcBars.length; i++) {
-    const ph = pivotHighAt(utcBars, i, leftH, rightH);
-    if (ph != null) {
-      const pivotIdx = pivotBarIndex(i, rightH);
-      const chartTime = chartBars[pivotIdx]?.time;
-      if (chartTime == null) continue;
-      labels.push({
-        time: chartTime,
-        price: ph,
-        kind: "high",
-        text: formatPivotPrice(ph, symbolInfo),
-        textColor: style.textColorH ?? "#131722",
-        bgColor: style.labelColorH ?? "#ffffff",
-      });
-    }
-
-    const pl = pivotLowAt(utcBars, i, leftL, rightL);
-    if (pl != null) {
-      const pivotIdx = pivotBarIndex(i, rightL);
-      const chartTime = chartBars[pivotIdx]?.time;
-      if (chartTime == null) continue;
-      labels.push({
-        time: chartTime,
-        price: pl,
-        kind: "low",
-        text: formatPivotPrice(pl, symbolInfo),
-        textColor: style.textColorL ?? "#131722",
-        bgColor: style.labelColorL ?? "#ffffff",
-      });
-    }
+/** @param {({ high: number } | null)[]} bars @param {number} i @param {number} left @param {number} right */
+export function pivotHighAtSparse(bars, i, left, right) {
+  const pivotRange = left + right;
+  if (i < pivotRange || i >= bars.length) return null;
+  for (let j = i - pivotRange; j <= i; j++) {
+    if (!bars[j]) return null;
   }
+  return pivotHighAt(/** @type {{ high: number }[]} */ (bars), i, left, right);
+}
 
-  return labels;
+/** @param {({ low: number } | null)[]} bars @param {number} i @param {number} left @param {number} right */
+export function pivotLowAtSparse(bars, i, left, right) {
+  const pivotRange = left + right;
+  if (i < pivotRange || i >= bars.length) return null;
+  for (let j = i - pivotRange; j <= i; j++) {
+    if (!bars[j]) return null;
+  }
+  return pivotLowAt(/** @type {{ low: number }[]} */ (bars), i, left, right);
 }
