@@ -83,6 +83,9 @@ export function flattenInputFields(inputs) {
     else if (input.type === "inlinePair") fields.push(input.left, input.right);
     else if (input.type === "symbolSizeRules") continue;
     else if (input.type === "fvgTimeframes") continue;
+    else if (input.type === "levelsLayers") continue;
+    else if (input.type === "timeLevels") continue;
+    else if (input.type === "sessionLevels") continue;
     else fields.push(input);
   }
   return fields;
@@ -104,6 +107,12 @@ export function defaultInputsFromSchema(inputs) {
     } else if (input.type === "symbolSizeRules") {
       out[input.id] = input.defval ?? [];
     } else if (input.type === "fvgTimeframes") {
+      out[input.id] = input.defval ?? [];
+    } else if (input.type === "levelsLayers") {
+      out[input.id] = input.defval ?? [];
+    } else if (input.type === "timeLevels") {
+      out[input.id] = input.defval ?? [];
+    } else if (input.type === "sessionLevels") {
       out[input.id] = input.defval ?? [];
     } else {
       assignField(out, input);
@@ -145,14 +154,14 @@ function shouldShowInputInStatusLine(field) {
  * @param {*} value
  */
 export function formatInputStatusLineValue(field, value) {
-  if (value == null || value === "") return null;
+  if (value == null || value === "" || value === "undefined") return null;
 
   switch (field.type) {
     case "bool":
       return value ? String(field.title || "true") : null;
     case "select": {
       const opt = field.options?.find((o) => o.id === value);
-      return opt?.label ?? String(value);
+      return opt?.label ?? null;
     }
     case "timeframe":
       return value === "chart" ? null : String(value);
@@ -187,7 +196,7 @@ export function inputStatusLineParams(inputs, instance) {
     if (!shouldShowInputInStatusLine(field)) continue;
     const store = field.store === "style" ? instance.style : instance.inputs;
     const formatted = formatInputStatusLineValue(field, store[field.id]);
-    if (formatted != null && formatted !== "") params.push(formatted);
+    if (formatted != null && formatted !== "" && formatted !== "undefined") params.push(formatted);
   }
   return params;
 }

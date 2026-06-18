@@ -6,6 +6,7 @@ import { aggregateBars } from "../math/aggregate.js";
 import { alignUtcBarsByChartTime } from "../math/pivots.js";
 import { getHtfBars } from "../../app/bar/htfBarCache.js";
 import { resolveSmtCompareSymbol } from "./SmtIndicator.js";
+import { symbolTicker } from "../../app/symbol/ticker.js";
 import {
   buildFvgBoxLabel,
   fvgZonePassesSizeFilter,
@@ -174,6 +175,7 @@ function buildInputs() {
       section: "Correlated FVG",
       options: [{ id: "all", label: "All" }],
       disabled: (inputs) => inputs.requireCorrelatedFvg !== true,
+      showInStatusLine: false,
     },
     {
       id: "autoCompare",
@@ -181,6 +183,7 @@ function buildInputs() {
       title: "Auto-detect compare symbol",
       defval: true,
       section: "Correlated FVG",
+      showInStatusLine: false,
     },
     {
       id: "compareSymbol",
@@ -189,6 +192,7 @@ function buildInputs() {
       defval: "ES",
       section: "Correlated FVG",
       disabled: (inputs) => inputs.autoCompare !== false,
+      showInStatusLine: false,
     },
     {
       id: "sizeFilterOn",
@@ -280,6 +284,7 @@ function buildInputs() {
         { id: "ticks", label: "Ticks" },
       ],
       disabled: (inputs) => inputs.showSizeOnLabel !== true,
+      showInStatusLine: false,
     },
   );
 
@@ -842,6 +847,24 @@ export const FvgIndicator = defineIndicator(class FvgIndicator {
   /** Min chart-resolution bars to satisfy maxBarsBack on the highest enabled HTF layer. */
   static requiredChartBars(inputs, chartResolution) {
     return fvgRequiredChartBars(inputs, chartResolution);
+  }
+
+  /** @param {import("../types.js").IndicatorInstance} instance @param {{ primarySymbol?: string, chartResolution?: string }} [ctx] */
+  static legendParams(instance, ctx = {}) {
+    const inputs = instance.inputs;
+    /** @type {string[]} */
+    const params = [];
+    const enabled = resolveFvgTimeframeRows(inputs).filter((r) => r.enabled);
+    if (enabled.length) params.push(enabled.map((r) => r.label).join(", "));
+    if (inputs.requireCorrelatedFvg === true) {
+      params.push(symbolTicker(resolveSmtCompareSymbol(inputs, ctx.primarySymbol ?? "")));
+      const tf = inputs.correlatedFvgTf ?? "all";
+      if (tf !== "all") {
+        const opt = fvgCorrelatedTfOptions(inputs, ctx.chartResolution ?? "1").find((o) => o.id === tf);
+        if (opt?.label) params.push(opt.label);
+      }
+    }
+    return params;
   }
 
   /** @param {object} instance @param {{ formingBar?: object | null, primarySymbol?: string, symbol?: string, chartResolution?: string, getCompareBars?: Function }} ctx */

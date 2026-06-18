@@ -46,9 +46,12 @@ function drawLine(ctx, line, timeToX, priceToY, paneW) {
   if (Math.abs(x2 - x1) < 1 && Math.abs(y2 - y1) < 1) return;
 
   ctx.save();
+  const swept = Boolean(line.swept);
   ctx.strokeStyle = line.color ?? "#2962ff";
   ctx.lineWidth = Math.max(1, Number(line.width) || 1);
-  ctx.setLineDash(Array.isArray(line.dash) ? line.dash : []);
+  ctx.globalAlpha = swept ? 0.72 : 1;
+  const dash = swept ? [2, 3] : Array.isArray(line.dash) ? line.dash : [];
+  ctx.setLineDash(dash);
   ctx.beginPath();
   ctx.moveTo(x1, y1);
   ctx.lineTo(x2, y2);
@@ -56,6 +59,21 @@ function drawLine(ctx, line, timeToX, priceToY, paneW) {
   ctx.restore();
 
   if (!line.label || !lineIntersectsViewport(x1, x2, paneW)) return;
+
+  if (line.labelAnchor === "right") {
+    const rightX = Math.max(x1, x2);
+    const ly = y1;
+    if (!Number.isFinite(rightX) || !Number.isFinite(ly)) return;
+    ctx.save();
+    ctx.font = "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    ctx.fillStyle = line.labelTextColor ?? line.color ?? "#e2e8f0";
+    ctx.textBaseline = "middle";
+    ctx.textAlign = "left";
+    ctx.globalAlpha = swept ? 0.7 : 0.95;
+    ctx.fillText(String(line.label), rightX + 4, ly);
+    ctx.restore();
+    return;
+  }
 
   const lx = labelXOnVisibleSegment(x1, x2, paneW);
   const midY = (y1 + y2) / 2;
@@ -145,6 +163,8 @@ function linesEqual(a, b) {
       x.label !== y.label ||
       x.labelBg !== y.labelBg ||
       x.labelTextColor !== y.labelTextColor ||
+      x.labelAnchor !== y.labelAnchor ||
+      x.swept !== y.swept ||
       x.width !== y.width
     ) {
       return false;

@@ -101,7 +101,37 @@
  */
 
 /**
- * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef} InputDef
+ * @typedef {object} LevelsLayersInputDef
+ * @property {"levelsLayers"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {{ enabled: boolean, label: string, layer: string }[]} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
+ * @typedef {object} TimeLevelsInputDef
+ * @property {"timeLevels"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {{ enabled: boolean, label: string, layer: string }[]} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
+ * @typedef {object} SessionLevelsInputDef
+ * @property {"sessionLevels"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {{ enabled: boolean, label: string, sessionId: string, startTime: string, endTime: string }[]} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef} InputDef
  */
 
 /**

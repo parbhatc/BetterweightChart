@@ -19,6 +19,14 @@ import {
   appendFvgTimeframeRow,
   readFvgTimeframesFromPanel,
 } from "./fvgTimeframesPanel.js";
+import {
+  appendSessionLevelRow,
+  appendTimeLevelRow,
+  readSessionLevelsFromPanel,
+  readTimeLevelsFromPanel,
+  SESSION_OPTIONS,
+  timeLevelOptions,
+} from "./levelsLayersPanel.js";
 import { flattenInputFields } from "../schema.js";
 import { openSymbolSearchPopover } from "../../ui/symbol/popover.js";
 import { symbolTicker } from "../../app/symbol/ticker.js";
@@ -523,6 +531,19 @@ export function createIndicatorSettingsDialog(opts) {
       if (input.type === "fvgTimeframes") {
         const rows = readFvgTimeframesFromPanel(inputsPanel, input.id);
         if (rows) draft.inputs[input.id] = rows;
+        continue;
+      }
+      if (input.type === "levelsLayers") {
+        continue;
+      }
+      if (input.type === "timeLevels") {
+        const rows = readTimeLevelsFromPanel(inputsPanel, input.id);
+        if (rows) draft.inputs[input.id] = rows;
+        continue;
+      }
+      if (input.type === "sessionLevels") {
+        const rows = readSessionLevelsFromPanel(inputsPanel, input.id);
+        if (rows) draft.inputs[input.id] = rows;
       }
     }
     visibilityList.querySelectorAll("[data-vis-btn]").forEach((btn) => {
@@ -717,7 +738,7 @@ export function createIndicatorSettingsDialog(opts) {
   root.addEventListener("input", (ev) => {
     const target = ev.target;
     if (!(target instanceof HTMLInputElement)) return;
-    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max], [data-tf-label]")) {
+    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max], [data-tf-label], [data-time-level-label], [data-session-label], [data-session-start], [data-session-end]")) {
       applyDraft();
       return;
     }
@@ -844,6 +865,107 @@ export function createIndicatorSettingsDialog(opts) {
         tfPick.dataset.value = val;
         const label = timeframeOptions().find((o) => o.id === val)?.label ?? val;
         const labelEl = tfPick.querySelector("[data-tf-timeframe-label]");
+        if (labelEl) labelEl.textContent = label;
+        readDraftFromUi();
+        applyDraft();
+        renderInputsPanel();
+      });
+      return;
+    }
+    const levelAdd = target.closest("[data-time-level-add]");
+    if (levelAdd instanceof HTMLElement && !levelAdd.hasAttribute("disabled")) {
+      const rootEl = levelAdd.closest("[data-time-levels-root]");
+      const list = rootEl?.querySelector("[data-time-levels-list]");
+      if (list instanceof HTMLElement) {
+        const opts = timeLevelOptions(timeframeOptions());
+        appendTimeLevelRow(list, { enabled: true, label: "4H", layer: "240" }, opts);
+        readDraftFromUi();
+        applyDraft();
+      }
+      return;
+    }
+    const levelRemove = target.closest("[data-time-level-remove]");
+    if (levelRemove instanceof HTMLElement && !levelRemove.hasAttribute("disabled")) {
+      const row = levelRemove.closest("[data-time-level-row]");
+      const list = row?.parentElement;
+      row?.remove();
+      if (list instanceof HTMLElement && !list.querySelector("[data-time-level-row]")) {
+        const empty = document.createElement("div");
+        empty.className = "tv-ind-settings__tf-rules-empty";
+        empty.textContent = "No time levels configured.";
+        list.appendChild(empty);
+      }
+      readDraftFromUi();
+      applyDraft();
+      renderInputsPanel();
+      return;
+    }
+    const levelEnabled = target.closest("[data-time-level-enabled]");
+    if (levelEnabled instanceof HTMLElement && !levelEnabled.hasAttribute("disabled")) {
+      setTvCheck(levelEnabled, !levelEnabled.classList.contains("tv-set__check--on"));
+      readDraftFromUi();
+      applyDraft();
+      renderInputsPanel();
+      return;
+    }
+    const levelPick = target.closest("[data-time-level-tf]");
+    if (levelPick instanceof HTMLElement && !levelPick.hasAttribute("disabled")) {
+      const current = levelPick.dataset.value ?? "240";
+      const opts = timeLevelOptions(timeframeOptions());
+      openOptionsMenu(levelPick, opts, current, (val) => {
+        levelPick.dataset.value = val;
+        const label = opts.find((o) => o.id === val)?.label ?? val;
+        const labelEl = levelPick.querySelector("[data-time-level-tf-label]");
+        if (labelEl) labelEl.textContent = label;
+        readDraftFromUi();
+        applyDraft();
+        renderInputsPanel();
+      });
+      return;
+    }
+    const sessionAdd = target.closest("[data-session-add]");
+    if (sessionAdd instanceof HTMLElement && !sessionAdd.hasAttribute("disabled")) {
+      const rootEl = sessionAdd.closest("[data-session-levels-root]");
+      const list = rootEl?.querySelector("[data-session-levels-list]");
+      if (list instanceof HTMLElement) {
+        appendSessionLevelRow(list, { enabled: true, label: "Asia", sessionId: "asia", startTime: "20:00", endTime: "00:00" });
+        readDraftFromUi();
+        applyDraft();
+      }
+      return;
+    }
+    const sessionRemove = target.closest("[data-session-remove]");
+    if (sessionRemove instanceof HTMLElement && !sessionRemove.hasAttribute("disabled")) {
+      const row = sessionRemove.closest("[data-session-level-row]");
+      const list = row?.parentElement;
+      row?.remove();
+      if (list instanceof HTMLElement && !list.querySelector("[data-session-level-row]")) {
+        const empty = document.createElement("div");
+        empty.className = "tv-ind-settings__tf-rules-empty";
+        empty.textContent = "No sessions configured.";
+        list.appendChild(empty);
+      }
+      readDraftFromUi();
+      applyDraft();
+      renderInputsPanel();
+      return;
+    }
+    const sessionEnabled = target.closest("[data-session-enabled]");
+    if (sessionEnabled instanceof HTMLElement && !sessionEnabled.hasAttribute("disabled")) {
+      setTvCheck(sessionEnabled, !sessionEnabled.classList.contains("tv-set__check--on"));
+      readDraftFromUi();
+      applyDraft();
+      renderInputsPanel();
+      return;
+    }
+    const sessionPick = target.closest("[data-session-id]");
+    if (sessionPick instanceof HTMLElement && !sessionPick.hasAttribute("disabled")) {
+      const current = sessionPick.dataset.value ?? "asia";
+      const opts = SESSION_OPTIONS.map((o) => ({ id: o.id, label: o.label }));
+      openOptionsMenu(sessionPick, opts, current, (val) => {
+        sessionPick.dataset.value = val;
+        const label = opts.find((o) => o.id === val)?.label ?? val;
+        const labelEl = sessionPick.querySelector("[data-session-id-label]");
         if (labelEl) labelEl.textContent = label;
         readDraftFromUi();
         applyDraft();

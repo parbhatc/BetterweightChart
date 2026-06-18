@@ -1,6 +1,6 @@
 /** @param {object} line */
 export function overlayLineSignature(line) {
-  return `${line.timeStart}|${line.timeEnd}|${line.priceStart}|${line.priceEnd}|${line.color ?? ""}|${line.kind ?? ""}|${line.label ?? ""}|${line.labelBg ?? ""}|${line.labelTextColor ?? ""}|${line.width ?? ""}`;
+  return `${line.timeStart}|${line.timeEnd}|${line.priceStart}|${line.priceEnd}|${line.color ?? ""}|${line.kind ?? ""}|${line.label ?? ""}|${line.labelAnchor ?? ""}|${Boolean(line.swept)}|${line.width ?? ""}`;
 }
 
 /** @param {object} box */

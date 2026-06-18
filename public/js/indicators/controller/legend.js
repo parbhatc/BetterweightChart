@@ -71,7 +71,10 @@ export function createLegendHelpers(deps) {
       .map((inst) => {
         const Indicator = getIndicatorClass(inst.defId);
         if (!Indicator) return null;
-        const meta = Indicator.legendMeta(inst, { primarySymbol: pane.symbol });
+        const meta = Indicator.legendMeta(inst, {
+          primarySymbol: pane.symbol,
+          chartResolution: pane.resolution,
+        });
         return {
           instanceId: inst.instanceId,
           shortTitle: meta.shortTitle,
@@ -102,7 +105,10 @@ export function createLegendHelpers(deps) {
       .map((inst) => {
         const Indicator = getIndicatorClass(inst.defId);
         if (!Indicator) return null;
-        const meta = Indicator.legendMeta(inst, { primarySymbol: pane.symbol });
+        const meta = Indicator.legendMeta(inst, {
+          primarySymbol: pane.symbol,
+          chartResolution: pane.resolution,
+        });
         const values = plotValuesForLegend(inst, idx, precision).map((v) =>
           v.key === "histogram" && inst.lastPlots?.histColors?.[idx]
             ? { ...v, color: inst.lastPlots.histColors[idx] }
