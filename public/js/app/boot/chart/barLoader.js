@@ -55,6 +55,7 @@ export function attachBarLoader(ctx) {
       ctx.ensureSmtCompare?.();
       ctx.ensureFvgHistory?.();
       ctx.ensureFvgCompare?.();
+      ctx.ensureLevelsHistory?.();
       pane.priceLineLabel?.requestRefresh();
       if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
         ctx.refreshIndicatorsImmediate?.(pane.index);

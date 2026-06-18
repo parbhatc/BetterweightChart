@@ -35,7 +35,7 @@ const OVERLAY_PRIMITIVE_ATTACH = {
  * @param {(pane: object) => object} [deps.getOverlayContext]
  */
 export function createOverlaySync(deps) {
-  const { getPaneBars, getInstances, getOverlayContext } = deps;
+  const { getPaneBars, getInstances, getOverlayContext, emit } = deps;
 
   /** @param {number} paneIndex */
   function paneByIndex(paneIndex) {
@@ -116,16 +116,30 @@ export function createOverlaySync(deps) {
     if (typeof Indicator.overlayRecomputeExtra === "function") {
       recomputeKey = `${recomputeKey}|${Indicator.overlayRecomputeExtra(instance, overlayCtx)}`;
     }
+
+    const overlayPending =
+      typeof Indicator.overlayPending === "function" && Indicator.overlayPending(instance, overlayCtx);
+    const prevPending = instance._initPending === true;
+    instance._initPending = overlayPending === true;
+
     let overlayData;
     const cacheHit =
-      instance._overlayRecomputeKey === recomputeKey && Array.isArray(instance._overlayBoxCache);
-    if (cacheHit) {
+      !instance._initPending &&
+      instance._overlayRecomputeKey === recomputeKey &&
+      Array.isArray(instance._overlayBoxCache);
+    if (instance._initPending) {
+      overlayData = [];
+    } else if (cacheHit) {
       overlayData = instance._overlayBoxCache;
     } else {
       overlayData = Indicator.computeOverlay?.(utcBars, chartBars, instance, overlayCtx) ?? [];
       instance._overlayRecomputeKey = recomputeKey;
       instance._overlayBoxCache = overlayData;
       instance._overlayGeomKey = overlayGeometryKey(overlayData);
+    }
+
+    if (prevPending !== instance._initPending) {
+      emit?.();
     }
 
     const geomKey = overlayGeometryKey(overlayData);
@@ -145,7 +159,7 @@ export function createOverlaySync(deps) {
       timeAdapter: view?.timeAdapter ?? pane.timeAdapter ?? null,
     };
 
-    const syncToken = `${recomputeKey}|${geomKey}|${overlayTimeCtxKey(timeCtx)}|${pane._historyRestorePending ? 1 : 0}`;
+    const syncToken = `${recomputeKey}|${geomKey}|${overlayTimeCtxKey(timeCtx)}|${pane._historyRestorePending ? 1 : 0}|${instance._initPending ? 1 : 0}`;
     if (instance._overlayLastSyncToken === syncToken) {
       return;
     }

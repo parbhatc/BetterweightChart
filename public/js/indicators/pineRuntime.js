@@ -92,6 +92,21 @@ export function createBarScriptContext(opts) {
     drawLine(line) {
       lines.push(line);
     },
+
+    request: {
+      security(symbol, resolution, countBack = 300) {
+        const fn = overlayCtx?.request?.security ?? overlayCtx?.lookupSecurity;
+        if (typeof fn === "function") {
+          return fn(symbol, resolution, countBack);
+        }
+        return (
+          overlayCtx?.getSecurityBars?.(symbol, resolution) ??
+          overlayCtx?.getBars?.(resolution) ??
+          overlayCtx?.getHtfBars?.(resolution) ??
+          null
+        );
+      },
+    },
   };
 
   return { ctx, plots, labels, boxes, lines };
@@ -106,7 +121,8 @@ export function createBarScriptContext(opts) {
  * @property {Record<string, unknown>} state — persists across bars (Pine `var`)
  * @property {object[]} bars — full series for lookback
  * @property {object[]} chartBars — chart-time bars (aligned with bars)
- * @property {object | null} overlayCtx — HTF/datafeed helpers for overlay studies
+ * @property {object | null} overlayCtx — HTF/datafeed helpers (`request.security`, `getHtfBars`, …)
+ * @property {{ security: (symbol?: string, resolution?: string, countBack?: number) => object | null }} request
  * @property {object[]} labels — labels collected this run (overlay mode)
  * @property {object[]} boxes — boxes collected this run (overlay mode)
  * @property {object[]} lines — lines collected this run (overlay mode)

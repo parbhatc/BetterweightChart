@@ -24,7 +24,8 @@ import {
   appendTimeLevelRow,
   readSessionLevelsFromPanel,
   readTimeLevelsFromPanel,
-  SESSION_OPTIONS,
+  SESSION_TIME_OPTIONS,
+  sessionTimeOptionLabel,
   timeLevelOptions,
 } from "./levelsLayersPanel.js";
 import { flattenInputFields } from "../schema.js";
@@ -738,7 +739,7 @@ export function createIndicatorSettingsDialog(opts) {
   root.addEventListener("input", (ev) => {
     const target = ev.target;
     if (!(target instanceof HTMLInputElement)) return;
-    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max], [data-tf-label], [data-time-level-label], [data-session-label], [data-session-start], [data-session-end]")) {
+    if (target.matches("[data-size-rule-symbol], [data-size-rule-min], [data-size-rule-max], [data-tf-label], [data-time-level-label], [data-session-label]")) {
       applyDraft();
       return;
     }
@@ -928,7 +929,7 @@ export function createIndicatorSettingsDialog(opts) {
       const rootEl = sessionAdd.closest("[data-session-levels-root]");
       const list = rootEl?.querySelector("[data-session-levels-list]");
       if (list instanceof HTMLElement) {
-        appendSessionLevelRow(list, { enabled: true, label: "Asia", sessionId: "asia", startTime: "20:00", endTime: "00:00" });
+        appendSessionLevelRow(list, { enabled: true, label: "", startTime: "09:30", endTime: "11:00" });
         readDraftFromUi();
         applyDraft();
       }
@@ -958,15 +959,26 @@ export function createIndicatorSettingsDialog(opts) {
       renderInputsPanel();
       return;
     }
-    const sessionPick = target.closest("[data-session-id]");
-    if (sessionPick instanceof HTMLElement && !sessionPick.hasAttribute("disabled")) {
-      const current = sessionPick.dataset.value ?? "asia";
-      const opts = SESSION_OPTIONS.map((o) => ({ id: o.id, label: o.label }));
-      openOptionsMenu(sessionPick, opts, current, (val) => {
-        sessionPick.dataset.value = val;
-        const label = opts.find((o) => o.id === val)?.label ?? val;
-        const labelEl = sessionPick.querySelector("[data-session-id-label]");
-        if (labelEl) labelEl.textContent = label;
+    const sessionStartPick = target.closest("[data-session-start]");
+    if (sessionStartPick instanceof HTMLElement && !sessionStartPick.hasAttribute("disabled")) {
+      const current = sessionStartPick.dataset.value ?? "20:00";
+      openOptionsMenu(sessionStartPick, SESSION_TIME_OPTIONS, current, (val) => {
+        sessionStartPick.dataset.value = val;
+        const labelEl = sessionStartPick.querySelector("[data-session-start-label]");
+        if (labelEl) labelEl.textContent = sessionTimeOptionLabel(val);
+        readDraftFromUi();
+        applyDraft();
+        renderInputsPanel();
+      });
+      return;
+    }
+    const sessionEndPick = target.closest("[data-session-end]");
+    if (sessionEndPick instanceof HTMLElement && !sessionEndPick.hasAttribute("disabled")) {
+      const current = sessionEndPick.dataset.value ?? "00:00";
+      openOptionsMenu(sessionEndPick, SESSION_TIME_OPTIONS, current, (val) => {
+        sessionEndPick.dataset.value = val;
+        const labelEl = sessionEndPick.querySelector("[data-session-end-label]");
+        if (labelEl) labelEl.textContent = sessionTimeOptionLabel(val);
         readDraftFromUi();
         applyDraft();
         renderInputsPanel();

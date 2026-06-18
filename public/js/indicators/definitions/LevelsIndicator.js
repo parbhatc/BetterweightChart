@@ -1,4 +1,6 @@
 import { defineIndicator } from "../defineIndicator.js";
+import { resolutionSec } from "../../chart/resolutions.js";
+import { normalizeResolutionId } from "../../chart/resolutionFormat.js";
 import {
   DEFAULT_SESSION_LEVELS,
   DEFAULT_TIME_LEVELS,
@@ -6,6 +8,12 @@ import {
   resolveTimeLevels,
 } from "../ui/levelsLayersPanel.js";
 import { levelsToOverlayLines, runLevelsEngine } from "../math/levelsEngine.js";
+import {
+  debugLevelsEngineResult,
+  debugLevelsOverlayStart,
+  debugLevelsPriceSanity,
+  debugLevelsTimeMapping,
+} from "../math/levelsDebug.js";
 
 /** @param {object | null | undefined} symbolInfo */
 function tickSizeFromSymbol(symbolInfo) {
@@ -19,6 +27,62 @@ function colorStr(v, fallback) {
   if (typeof v === "string" && v) return v;
   if (v && typeof v === "object" && v.color) return String(v.color);
   return fallback;
+}
+
+/** @param {object} inputs @param {string} [chartResolution] */
+export function levelsEnabledHtfResolutions(inputs, chartResolution = "1") {
+  const chartSec = resolutionSec(chartResolution ?? "1");
+  /** @type {{ tfId: string, tfSec: number }[]} */
+  const out = [];
+  for (const row of resolveTimeLevels(inputs)) {
+    if (!row.enabled) continue;
+    const tfId = normalizeResolutionId(row.layer ?? "240");
+    const tfSec = resolutionSec(tfId);
+    if (!tfSec || tfSec <= chartSec) continue;
+    out.push({ tfId, tfSec });
+  }
+  return out;
+}
+
+/** HTF bar count needed for maxBarsBack (not chart bars). */
+export function levelsRequiredHtfBars(inputs) {
+  return Math.max(10, Number(inputs.maxBarsBack) || 300);
+}
+
+/** True while any enabled HTF time layer is still missing bar data. */
+export function levelsHtfPending(inputs, ctx = {}) {
+  const chartResolution = ctx.chartResolution ?? "1";
+  const htfs = levelsEnabledHtfResolutions(inputs, chartResolution);
+  if (!htfs.length) return false;
+
+  const need = levelsRequiredHtfBars(inputs);
+  const symbol = ctx.primarySymbol ?? ctx.symbol;
+  let pending = false;
+
+  for (const { tfId } of htfs) {
+    const hit =
+      ctx.lookupSecurity?.(symbol, tfId, need) ??
+      (() => {
+        const series =
+          ctx.getSecurityBars?.(symbol, tfId) ?? ctx.getBars?.(tfId) ?? ctx.getHtfBars?.(tfId);
+        if (!series?.utcBars?.length) return null;
+        return { ...series, sufficient: series.utcBars.length >= need };
+      })();
+    if (hit?.utcBars?.length && hit.sufficient) continue;
+    ctx.requestSecurityBars?.(symbol, tfId, need);
+    ctx.requestBars?.(tfId, need);
+    ctx.requestHtfBars?.(tfId, need);
+    pending = true;
+  }
+  return pending;
+}
+
+/** @param {object} inputs @param {string} [chartResolution] */
+export function levelsRequiredChartBars(inputs, chartResolution) {
+  const chartSec = resolutionSec(chartResolution ?? "1");
+  const htfs = levelsEnabledHtfResolutions(inputs, chartResolution);
+  if (htfs.length) return 0;
+  return Math.max(10, Number(inputs.maxBarsBack) || 300);
 }
 
 export const LevelsIndicator = defineIndicator(class LevelsIndicator {
@@ -67,6 +131,14 @@ export const LevelsIndicator = defineIndicator(class LevelsIndicator {
       min: 1,
       section: "Pivot",
       inline: true,
+    },
+    {
+      id: "maxBarsBack",
+      type: "int",
+      title: "Max bars back to find levels (HTF bars per layer)",
+      defval: 300,
+      min: 10,
+      section: "Display limits",
     },
     {
       id: "maxUnswept",
@@ -128,6 +200,16 @@ export const LevelsIndicator = defineIndicator(class LevelsIndicator {
     };
   }
 
+  /** Min chart-resolution bars when all enabled time levels are at or below chart resolution. */
+  static requiredChartBars(inputs, chartResolution) {
+    return levelsRequiredChartBars(inputs, chartResolution);
+  }
+
+  /** @param {import("../types.js").IndicatorInstance} instance @param {object} ctx */
+  static overlayPending(instance, ctx) {
+    return levelsHtfPending(instance.inputs, ctx);
+  }
+
   /** @param {import("../types.js").IndicatorInstance} instance */
   static legendParams(instance) {
     const enabled = [
@@ -142,9 +224,18 @@ export const LevelsIndicator = defineIndicator(class LevelsIndicator {
   static overlayRecomputeExtra(instance, ctx) {
     const time = JSON.stringify(resolveTimeLevels(instance.inputs));
     const sessions = JSON.stringify(resolveSessionLevels(instance.inputs));
-    const b = ctx.formingBar;
-    const ohlc = b ? `${b.open}|${b.high}|${b.low}|${b.close}` : "";
-    return `${time}|${sessions}|${instance.inputs.pivotLeftBars}|${instance.inputs.pivotRightBars}|${instance.inputs.maxUnswept}|${instance.inputs.maxSwept}|${instance.inputs.mergeConfluence}|${instance.inputs.confHiColor}|${instance.inputs.confLoColor}|${instance.style.graphicLabels}|${ohlc}`;
+    // Bar tail is already in overlayRecomputeKey — do not key on forming OHLC or the
+    // full levels engine runs on every tick within the same 1m candle.
+    const htfKey = levelsEnabledHtfResolutions(instance.inputs, ctx.chartResolution ?? "1")
+      .map(({ tfId }) => {
+        const hit =
+          ctx.getSecurityBars?.(ctx.primarySymbol ?? ctx.symbol, tfId) ??
+          ctx.getBars?.(tfId) ??
+          ctx.getHtfBars?.(tfId);
+        return `${tfId}:${hit?.utcBars?.length ?? 0}:${hit?.source ?? ""}`;
+      })
+      .join(",");
+    return `${time}|${sessions}|${htfKey}|${instance.inputs.maxBarsBack}|${instance.inputs.pivotLeftBars}|${instance.inputs.pivotRightBars}|${instance.inputs.maxUnswept}|${instance.inputs.maxSwept}|${instance.inputs.mergeConfluence}|${instance.inputs.confHiColor}|${instance.inputs.confLoColor}|${instance.style.graphicLabels}`;
   }
 
   /**
@@ -162,7 +253,7 @@ export const LevelsIndicator = defineIndicator(class LevelsIndicator {
     if (anchorUnix == null) return [];
 
     const tick = tickSizeFromSymbol(ctx.symbolInfo);
-    const lines = runLevelsEngine(utcBars, anchorUnix, {
+    const engineOpts = {
       timeLayers: resolveTimeLevels(inputs),
       sessionLayers: resolveSessionLevels(inputs),
       pivotLeftBars: inputs.pivotLeftBars,
@@ -171,12 +262,32 @@ export const LevelsIndicator = defineIndicator(class LevelsIndicator {
       maxSwept: inputs.maxSwept,
       maxSessions: inputs.maxSessions,
       tickSize: tick,
+      chartSec: ctx.barSec ?? 60,
+      chartBars,
+      symbol: ctx.primarySymbol ?? ctx.symbol,
+      maxBarsBack: Math.max(10, Number(inputs.maxBarsBack) || 300),
+      htfBarsNeeded: levelsRequiredHtfBars(inputs),
+      getSecurityBars: ctx.getSecurityBars,
+      getBars: ctx.getBars,
+      getHtfBars: ctx.getHtfBars,
+      requestSecurityBars: ctx.requestSecurityBars,
+      requestBars: ctx.requestBars,
+      requestHtfBars: ctx.requestHtfBars,
       showLabels: style.graphicLabels !== false,
       mergeConfluence: inputs.mergeConfluence !== false,
       confHiColor: colorStr(inputs.confHiColor, "#9400d3"),
       confLoColor: colorStr(inputs.confLoColor, "#ffaa00"),
-    });
+    };
 
-    return levelsToOverlayLines(lines, utcBars, chartBars, style);
+    debugLevelsOverlayStart(ctx, utcBars, chartBars, engineOpts);
+
+    const { lines, htfState } = runLevelsEngine(utcBars, anchorUnix, engineOpts);
+    debugLevelsEngineResult(utcBars, anchorUnix, engineOpts, lines, htfState);
+
+    const overlay = levelsToOverlayLines(lines, utcBars, chartBars, style);
+    debugLevelsTimeMapping(lines, overlay, utcBars, chartBars);
+    debugLevelsPriceSanity(overlay, chartBars);
+
+    return overlay;
   }
 });

@@ -19,14 +19,6 @@ export const DEFAULT_SESSION_LEVELS = [
   { enabled: true, label: "London", sessionId: "london", startTime: "02:00", endTime: "05:00" },
 ];
 
-const SESSION_OPTIONS = [
-  { id: "asia", label: "Asia" },
-  { id: "london", label: "London" },
-  { id: "ny_am", label: "New York AM" },
-  { id: "ny_lunch", label: "New York Lunch" },
-  { id: "ny_pm", label: "New York PM" },
-];
-
 /** @param {unknown} raw */
 export function normalizeTimeLevels(raw) {
   if (!Array.isArray(raw)) return DEFAULT_TIME_LEVELS.map((r) => ({ ...r }));
@@ -46,7 +38,7 @@ export function normalizeSessionLevels(raw) {
     .map((r) => ({
       enabled: r?.enabled !== false,
       label: String(r?.label ?? "").trim(),
-      sessionId: String(r?.sessionId ?? "asia").trim() || "asia",
+      sessionId: resolveSessionIdFromLabel(String(r?.label ?? "").trim(), String(r?.sessionId ?? "")),
       startTime: normalizeHm(r?.startTime, "20:00"),
       endTime: normalizeHm(r?.endTime, "00:00"),
     }))
@@ -56,7 +48,19 @@ export function normalizeSessionLevels(raw) {
 /** @param {unknown} v @param {string} fallback */
 function normalizeHm(v, fallback) {
   const s = String(v ?? "").trim();
-  return /^\d{1,2}:\d{2}$/.test(s) ? s : fallback;
+  const m24 = parseHm24(s);
+  if (m24) return fmtHm(m24.h, m24.min);
+  const m12 = s.match(/^(\d{1,2}):(\d{2})\s*(am|pm)$/i);
+  if (m12) {
+    let h = Number(m12[1]);
+    const min = Number(m12[2]);
+    if (!Number.isFinite(h) || !Number.isFinite(min) || h < 1 || h > 12 || min > 59) return fallback;
+    const pm = m12[3].toLowerCase() === "pm";
+    if (h === 12) h = pm ? 12 : 0;
+    else if (pm) h += 12;
+    return fmtHm(h, min);
+  }
+  return fallback;
 }
 
 /** Migrate legacy `levelLayers` into time + session rows. */
@@ -95,6 +99,58 @@ function migrateLegacyLevelLayers(inputs) {
 /** @param {number} h @param {number} m */
 function fmtHm(h, m) {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+/** @param {unknown} raw */
+function parseHm24(raw) {
+  const m = String(raw ?? "").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = Number(m[1]);
+  const min = Number(m[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || h > 23 || min > 59) return null;
+  return { h, min };
+}
+
+/** @param {string} hm24 24-hour "HH:mm" */
+export function formatSessionTimeLabel(hm24) {
+  const parsed = parseHm24(hm24);
+  if (!parsed) return String(hm24 ?? "");
+  const { h, min } = parsed;
+  const ampm = h < 12 ? "am" : "pm";
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(min).padStart(2, "0")}${ampm}`;
+}
+
+/** @param {number} [stepMin] */
+function buildSessionTimeOptions(stepMin = 30) {
+  /** @type {{ id: string, label: string }[]} */
+  const out = [];
+  for (let total = 0; total < 24 * 60; total += stepMin) {
+    const h = Math.floor(total / 60);
+    const min = total % 60;
+    const id = fmtHm(h, min);
+    out.push({ id, label: formatSessionTimeLabel(id) });
+  }
+  return out;
+}
+
+export const SESSION_TIME_OPTIONS = buildSessionTimeOptions(30);
+
+/** @param {string} hm24 */
+export function sessionTimeOptionLabel(hm24) {
+  const id = normalizeHm(hm24, hm24);
+  return SESSION_TIME_OPTIONS.find((o) => o.id === id)?.label ?? formatSessionTimeLabel(id);
+}
+
+/** @param {string} attr e.g. data-session-start */
+function renderSessionTimeButton(attr, value, disabledAttr) {
+  const id = normalizeHm(value, "00:00");
+  const label = sessionTimeOptionLabel(id);
+  const labelAttr = `${attr}-label`;
+  return `<button type="button" class="tv-drawing-settings__menu-btn tv-ind-settings__session-time" ${attr} data-value="${escapeAttr(id)}" aria-haspopup="listbox"${disabledAttr}>
+    <span ${labelAttr}>${escapeHtml(label)}</span>
+    <span class="tv-set__select-chev">${MENU_CHEVRON}</span>
+  </button>`;
 }
 
 /** @param {object} inputs @returns {TimeLevelRow[]} */
@@ -142,9 +198,15 @@ function layerOptionLabel(layerId, options) {
   return found?.label ?? resolutionDisplayTitle(layerId);
 }
 
-/** @param {string} sessionId */
-function sessionOptionLabel(sessionId) {
-  return SESSION_OPTIONS.find((o) => o.id === sessionId)?.label ?? sessionId;
+/** @param {string} label @param {string} [storedId] */
+function resolveSessionIdFromLabel(label, storedId) {
+  const sid = String(storedId ?? "").trim();
+  if (sid && SESSION_DEFS[sid]) return sid;
+  const trimmed = String(label ?? "").trim();
+  for (const [id, def] of Object.entries(SESSION_DEFS)) {
+    if (def.label === trimmed) return id;
+  }
+  return sid || "asia";
 }
 
 /**
@@ -209,22 +271,17 @@ export function renderSessionLevelsPanel(input, draftInputs) {
 
   const rowHtml = rows
     .map((row) => {
-      const sid = row.sessionId ?? "asia";
       const on = row.enabled !== false;
-      return `<div class="tv-ind-settings__session-rule-row" data-session-level-row>
+      return `<div class="tv-ind-settings__session-rule-row" data-session-level-row data-session-id="${escapeAttr(row.sessionId ?? "asia")}">
       <div class="tv-ind-settings__tf-rule-enable">
         <button type="button" class="tv-set__check${on ? " tv-set__check--on" : ""}" data-session-enabled role="checkbox" aria-checked="${on ? "true" : "false"}" aria-label="Enable"${disabledAttr}>
           <span class="tv-set__check-box">${on ? CHECK_SVG : ""}</span>
         </button>
       </div>
       <input type="text" class="tv-drawing-settings__input tv-ind-settings__tf-rule-label" data-session-label placeholder="Label" value="${escapeAttr(row.label)}"${disabledAttr} />
-      <button type="button" class="tv-drawing-settings__menu-btn tv-ind-settings__tf-rule-tf" data-session-id data-value="${escapeAttr(sid)}" aria-haspopup="listbox"${disabledAttr}>
-        <span data-session-id-label>${escapeHtml(sessionOptionLabel(sid))}</span>
-        <span class="tv-set__select-chev">${MENU_CHEVRON}</span>
-      </button>
-      <input type="text" class="tv-drawing-settings__input tv-ind-settings__session-time" data-session-start placeholder="20:00" value="${escapeAttr(row.startTime)}" inputmode="numeric"${disabledAttr} />
-      <input type="text" class="tv-drawing-settings__input tv-ind-settings__session-time" data-session-end placeholder="00:00" value="${escapeAttr(row.endTime)}" inputmode="numeric"${disabledAttr} />
-      <button type="button" class="tv-ind-settings__tf-rule-remove" data-session-remove aria-label="Remove session"${disabledAttr}>${ICON_CLOSE}</button>
+      ${renderSessionTimeButton("data-session-start", row.startTime, disabledAttr)}
+      ${renderSessionTimeButton("data-session-end", row.endTime, disabledAttr)}
+      <button type="button" class="tv-ind-settings__tf-rule-remove" data-session-remove aria-label="Remove"${disabledAttr}>${ICON_CLOSE}</button>
     </div>`;
     })
     .join("");
@@ -234,11 +291,11 @@ export function renderSessionLevelsPanel(input, draftInputs) {
       <span class="tv-set__field-label">${input.title ?? "Sessions"}</span>
       <button type="button" class="tv-ind-settings__tf-rule-add" data-session-add${disabledAttr}>
         <span class="tv-ind-settings__tf-rule-add-icon" aria-hidden="true">+</span>
-        Add session
+        Add
       </button>
     </div>
     <div class="tv-ind-settings__session-cols" aria-hidden="true">
-      <span></span><span>Label</span><span>Session</span><span>Start (ET)</span><span>End (ET)</span><span></span>
+      <span></span><span>Label</span><span>Start</span><span>End</span><span></span>
     </div>
     <div class="tv-ind-settings__tf-rules-list" data-session-levels-list>
       ${rowHtml || `<div class="tv-ind-settings__tf-rules-empty">No sessions configured.</div>`}
@@ -278,15 +335,16 @@ export function readSessionLevelsFromPanel(inputsPanel, fieldId) {
   root.querySelectorAll("[data-session-level-row]").forEach((row) => {
     if (!(row instanceof HTMLElement)) return;
     const labelEl = row.querySelector("[data-session-label]");
-    const idBtn = row.querySelector("[data-session-id]");
-    const startEl = row.querySelector("[data-session-start]");
-    const endEl = row.querySelector("[data-session-end]");
+    const startBtn = row.querySelector("[data-session-start]");
+    const endBtn = row.querySelector("[data-session-end]");
     const enabledBtn = row.querySelector("[data-session-enabled]");
     const label = labelEl instanceof HTMLInputElement ? labelEl.value.trim() : "";
     if (!label) return;
-    const sessionId = idBtn instanceof HTMLElement ? String(idBtn.dataset.value ?? "asia") : "asia";
-    const startTime = startEl instanceof HTMLInputElement ? normalizeHm(startEl.value, "20:00") : "20:00";
-    const endTime = endEl instanceof HTMLInputElement ? normalizeHm(endEl.value, "00:00") : "00:00";
+    const storedId = row instanceof HTMLElement ? row.dataset.sessionId : undefined;
+    const sessionId = resolveSessionIdFromLabel(label, storedId);
+    const startTime =
+      startBtn instanceof HTMLElement ? normalizeHm(startBtn.dataset.value, "20:00") : "20:00";
+    const endTime = endBtn instanceof HTMLElement ? normalizeHm(endBtn.dataset.value, "00:00") : "00:00";
     const enabled =
       enabledBtn instanceof HTMLElement
         ? enabledBtn.classList.contains("tv-set__check--on")
@@ -326,11 +384,12 @@ export function appendTimeLevelRow(list, seed = {}, options = []) {
 export function appendSessionLevelRow(list, seed = {}) {
   const empty = list.querySelector(".tv-ind-settings__tf-rules-empty");
   empty?.remove();
-  const sid = seed.sessionId ?? "asia";
+  const sessionId = seed.sessionId ?? resolveSessionIdFromLabel(seed.label ?? "", seed.sessionId);
   const on = seed.enabled !== false;
   const row = document.createElement("div");
   row.className = "tv-ind-settings__session-rule-row";
   row.dataset.sessionLevelRow = "";
+  row.dataset.sessionId = sessionId;
   row.innerHTML = `
     <div class="tv-ind-settings__tf-rule-enable">
       <button type="button" class="tv-set__check${on ? " tv-set__check--on" : ""}" data-session-enabled role="checkbox" aria-checked="${on ? "true" : "false"}" aria-label="Enable">
@@ -338,18 +397,12 @@ export function appendSessionLevelRow(list, seed = {}) {
       </button>
     </div>
     <input type="text" class="tv-drawing-settings__input tv-ind-settings__tf-rule-label" data-session-label placeholder="Label" value="${escapeAttr(seed.label ?? "")}" />
-    <button type="button" class="tv-drawing-settings__menu-btn tv-ind-settings__tf-rule-tf" data-session-id data-value="${escapeAttr(sid)}" aria-haspopup="listbox">
-      <span data-session-id-label>${escapeHtml(sessionOptionLabel(sid))}</span>
-      <span class="tv-set__select-chev">${MENU_CHEVRON}</span>
-    </button>
-    <input type="text" class="tv-drawing-settings__input tv-ind-settings__session-time" data-session-start placeholder="20:00" value="${escapeAttr(seed.startTime ?? "20:00")}" inputmode="numeric" />
-    <input type="text" class="tv-drawing-settings__input tv-ind-settings__session-time" data-session-end placeholder="00:00" value="${escapeAttr(seed.endTime ?? "00:00")}" inputmode="numeric" />
-    <button type="button" class="tv-ind-settings__tf-rule-remove" data-session-remove aria-label="Remove session">${ICON_CLOSE}</button>`;
+    ${renderSessionTimeButton("data-session-start", seed.startTime ?? "20:00", "")}
+    ${renderSessionTimeButton("data-session-end", seed.endTime ?? "00:00", "")}
+    <button type="button" class="tv-ind-settings__tf-rule-remove" data-session-remove aria-label="Remove">${ICON_CLOSE}</button>`;
   list.appendChild(row);
   row.querySelector("[data-session-label]")?.focus();
 }
-
-export { SESSION_OPTIONS };
 
 /** @param {string} s */
 function escapeAttr(s) {

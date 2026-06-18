@@ -100,7 +100,7 @@ export function setChartDebugVerbose(on = true) {
 }
 
 /**
- * @param {string} category perf | pan | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg
+ * @param {string} category perf | pan | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt
  * @param {string} message
  * @param {unknown} [detail]
  */

@@ -4,7 +4,7 @@ import { resolutionSec } from "../../chart/resolutions.js";
 const ET_ZONE = "America/New_York";
 
 /** @typedef {{ enabled: boolean, label: string, layer: string }} LevelLayerRow */
-/** @typedef {{ price: number; startTime: number; endTime: number; label: string; color: string; lineWidth: number; kind: "high"|"low"; swept: boolean; sweepTime?: number; showLabel?: boolean; sessionBorn?: number; _drop?: boolean }} LiqLine */
+/** @typedef {{ price: number; startTime: number; endTime: number; bornTime?: number; startChartTime?: number; endChartTime?: number; sweepChartTime?: number; label: string; color: string; lineWidth: number; kind: "high"|"low"; swept: boolean; sweepTime?: number; showLabel?: boolean; sessionBorn?: number; _drop?: boolean }} LiqLine */
 
 const HTF_STYLE = {
   "240": { tag: "4H", hi: "#007fff", lo: "#ff7644" },
@@ -41,52 +41,13 @@ function etParts(unixSec) {
     if (part.type === "year") out.y = Number(part.value);
     if (part.type === "month") out.m = Number(part.value);
     if (part.type === "day") out.d = Number(part.value);
-    if (part.type === "hour") out.h = Number(part.value);
+    if (part.type === "hour") out.h = Number(part.value === "24" ? 0 : part.value);
     if (part.type === "minute") out.min = Number(part.value);
   }
   out.ymd = `${String(out.y).padStart(4, "0")}-${String(out.m).padStart(2, "0")}-${String(out.d).padStart(2, "0")}`;
   out.hm = `${String(out.h).padStart(2, "0")}:${String(out.min).padStart(2, "0")}`;
   out.mod = out.h * 60 + out.min;
   return out;
-}
-
-/** @param {number} unixSec @param {number} intervalSec */
-function bucketTimeEt(unixSec, intervalSec) {
-  if (intervalSec >= 86400) {
-    const { y, m, d } = etParts(unixSec);
-    return Date.UTC(y, m - 1, d) / 1000;
-  }
-  const { y, m, d, h, min } = etParts(unixSec);
-  const dayStart = Date.UTC(y, m - 1, d) / 1000;
-  const minuteOfDay = h * 60 + min;
-  const stepMin = intervalSec / 60;
-  const bucketMinute = Math.floor(minuteOfDay / stepMin) * stepMin;
-  return dayStart + Math.floor(bucketMinute / 60) * 3600 + (bucketMinute % 60) * 60;
-}
-
-/**
- * @param {object[]} bars
- * @param {number} tfSec
- */
-function aggregateCandlesEt(bars, tfSec) {
-  if (!bars.length || tfSec <= 60) return bars.map((b, i) => ({ ...b, sourceIndex: i }));
-  /** @type {Map<number, object>} */
-  const grouped = new Map();
-  for (let i = 0; i < bars.length; i++) {
-    const b = bars[i];
-    const t = bucketTimeEt(b.time, tfSec);
-    let g = grouped.get(t);
-    if (!g) {
-      g = { time: t, open: b.open, high: b.high, low: b.low, close: b.close, volume: b.volume ?? 0 };
-      grouped.set(t, g);
-    } else {
-      g.high = Math.max(g.high, b.high);
-      g.low = Math.min(g.low, b.low);
-      g.close = b.close;
-      g.volume = (g.volume ?? 0) + (b.volume ?? 0);
-    }
-  }
-  return [...grouped.values()].sort((a, b) => a.time - b.time);
 }
 
 /**
@@ -106,11 +67,15 @@ function createMatrix() {
   return { active: [], swept: [] };
 }
 
-/** @param {LiqLine} lvl @param {number} t */
-function markSwept(lvl, t) {
+/** @param {LiqLine} lvl @param {number} utc @param {number} [chartTime] */
+function markSwept(lvl, utc, chartTime) {
   lvl.swept = true;
-  lvl.sweepTime = t;
-  lvl.endTime = t;
+  lvl.sweepTime = utc;
+  lvl.endTime = utc;
+  if (chartTime != null) {
+    lvl.sweepChartTime = chartTime;
+    lvl.endChartTime = chartTime;
+  }
 }
 
 /**
@@ -121,34 +86,77 @@ function markSwept(lvl, t) {
  */
 function birthLevel(matrix, level, maxUnswept, proximity) {
   const last = matrix.active[matrix.active.length - 1];
-  if (last && Math.abs(last.price - level.price) <= proximity) return;
+  if (last && Math.abs(last.price - level.price) <= proximity) return null;
   matrix.active.push({ ...level, swept: false });
   while (matrix.active.length > maxUnswept) matrix.active.shift();
+  return matrix.active[matrix.active.length - 1];
+}
+
+/** @param {LiqLine} lvl */
+function levelBornTime(lvl) {
+  return lvl.bornTime ?? lvl.endTime ?? lvl.startTime;
+}
+
+/** @param {object} bar @param {"high"|"low"} kind @param {number} price */
+function barSweepsLevel(bar, kind, price) {
+  return kind === "high" ? bar.high > price : bar.low < price;
+}
+
+/**
+ * HTF pivots confirm late — only sweep bars after the level is born (HTF close), not pivot open.
+ * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix
+ * @param {LiqLine | null} lvl
+ * @param {object[]} bars
+ * @param {object[]} chartBars
+ * @param {number} toBarIndex
+ * @param {number} maxSwept
+ */
+function retroactiveSweep(matrix, lvl, bars, chartBars, toBarIndex, maxSwept) {
+  if (!lvl || lvl.swept || toBarIndex < 0) return;
+  const born = levelBornTime(lvl);
+  const fromIdx = firstBarIndexAtOrAfter(bars, born + 1);
+  for (let j = fromIdx; j <= toBarIndex; j++) {
+    const b = bars[j];
+    if (!b || b.time <= born) continue;
+    const chartTime = chartBars[j]?.time ?? b.time;
+    if (!barSweepsLevel(b, lvl.kind, lvl.price)) continue;
+    markSwept(lvl, b.time, chartTime);
+    const idx = matrix.active.indexOf(lvl);
+    if (idx >= 0) {
+      const moved = matrix.active.splice(idx, 1)[0];
+      matrix.swept.push(moved);
+      while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
+    }
+    return;
+  }
 }
 
 /**
  * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix
  * @param {object} bar
+ * @param {number} chartTime
  * @param {"high"|"low"} kind
  * @param {number} maxSwept
  */
-function sweepMatrix(matrix, bar, kind, maxSwept) {
+function sweepMatrix(matrix, bar, chartTime, kind, maxSwept) {
   for (let i = matrix.active.length - 1; i >= 0; i--) {
     const lvl = matrix.active[i];
     if (lvl.kind !== kind) continue;
-    if (bar.time <= lvl.startTime) continue;
-    const hit = kind === "high" ? bar.high >= lvl.price : bar.low <= lvl.price;
-    if (!hit) continue;
-    markSwept(lvl, bar.time);
+    if (bar.time <= levelBornTime(lvl)) continue;
+    if (!barSweepsLevel(bar, kind, lvl.price)) continue;
+    markSwept(lvl, bar.time, chartTime);
     const moved = matrix.active.splice(i, 1)[0];
     matrix.swept.push(moved);
     while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
   }
 }
 
-/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {number} t */
-function extendMatrix(matrix, t) {
-  for (const lvl of matrix.active) lvl.endTime = t;
+/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {number} utc @param {number} chartTime */
+function extendMatrix(matrix, utc, chartTime) {
+  for (const lvl of matrix.active) {
+    lvl.endTime = utc;
+    lvl.endChartTime = chartTime;
+  }
 }
 
 /** @param {number} bucketOpen @param {number} tfSec */
@@ -163,12 +171,18 @@ function htfBucketCompleteAt(bucketOpen, tfSec) {
  * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrixH
  * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrixL
  * @param {{ label: string; hiColor: string; loColor: string }} cfg
- * @param {number} endTime
+ * @param {number} endTime UTC bar time when HTF bucket confirmed
+ * @param {number} endChartTime chart display time for extension
  * @param {number} maxUnswept
  * @param {number} proximity
  * @param {boolean} showLabels
  * @param {number} pivotLeft
  * @param {number} pivotRight
+ * @param {(number | undefined)[]} chartTimes parallel chart times for agg bars
+ * @param {object[]} bars chart UTC bars
+ * @param {object[]} chartBars aligned chart bars
+ * @param {number} barIndex current bar index in chart walk
+ * @param {number} maxSwept
  */
 function onHtfBarClose(
   agg,
@@ -178,11 +192,17 @@ function onHtfBarClose(
   matrixL,
   cfg,
   endTime,
+  endChartTime,
   maxUnswept,
   proximity,
   showLabels,
   pivotLeft,
   pivotRight,
+  chartTimes,
+  bars,
+  chartBars,
+  barIndex,
+  maxSwept,
 ) {
   const c = agg[idx];
   hist.h.push(c.high);
@@ -197,6 +217,9 @@ function onHtfBarClose(
   if (hist.h.length < window) return;
 
   const p = pivotLeft;
+  const pivotAggIdx = idx - pivotRight;
+  const startChartTime =
+    pivotAggIdx >= 0 ? chartTimes[pivotAggIdx] : chartTimes[idx];
   let isHigh = true;
   let isLow = true;
   for (let j = 0; j < window; j++) {
@@ -206,12 +229,15 @@ function onHtfBarClose(
   }
 
   if (isHigh) {
-    birthLevel(
+    const born = birthLevel(
       matrixH,
       {
         price: hist.h[p],
         startTime: hist.t[p],
+        startChartTime,
+        bornTime: endTime,
         endTime,
+        endChartTime,
         label: `${cfg.label} High`,
         color: cfg.hiColor,
         lineWidth: 2,
@@ -222,14 +248,18 @@ function onHtfBarClose(
       maxUnswept,
       proximity,
     );
+    retroactiveSweep(matrixH, born, bars, chartBars, barIndex, maxSwept);
   }
   if (isLow) {
-    birthLevel(
+    const born = birthLevel(
       matrixL,
       {
         price: hist.l[p],
         startTime: hist.t[p],
+        startChartTime,
+        bornTime: endTime,
         endTime,
+        endChartTime,
         label: `${cfg.label} Low`,
         color: cfg.loColor,
         lineWidth: 2,
@@ -240,6 +270,7 @@ function onHtfBarClose(
       maxUnswept,
       proximity,
     );
+    retroactiveSweep(matrixL, born, bars, chartBars, barIndex, maxSwept);
   }
 }
 
@@ -310,25 +341,36 @@ function applyClusterConfluence(lines, proximity, confHi, confLo) {
     }
     const side = group[0].kind === "high" ? "High" : "Low";
     const confColor = group[0].kind === "high" ? confHi : confLo;
-    let survivor = group[0];
+    let survivor = group.find((l) => !l.swept) ?? group[0];
     for (const l of group) {
-      if (l.endTime > survivor.endTime) survivor = l;
+      if (l.endTime > survivor.endTime) {
+        survivor.endTime = l.endTime;
+        survivor.endChartTime = l.endChartTime;
+      }
+      if (l.startTime < survivor.startTime) {
+        survivor.startTime = l.startTime;
+        survivor.startChartTime = l.startChartTime;
+      }
     }
     survivor.label = formatMergedTags(tags, side);
     survivor.color = confColor;
     survivor.lineWidth = 3;
     if (group.every((l) => l.swept)) {
       const times = group.map((l) => l.sweepTime ?? l.endTime).filter((t) => t != null);
+      const chartTimes = group.map((l) => l.sweepChartTime ?? l.endChartTime).filter((t) => t != null);
       if (times.length) {
         survivor.swept = true;
         survivor.sweepTime = Math.max(...times);
         survivor.endTime = survivor.sweepTime;
+        if (chartTimes.length) {
+          survivor.sweepChartTime = Math.max(...chartTimes);
+          survivor.endChartTime = survivor.sweepChartTime;
+        }
       }
-    } else if (group.some((l) => l.swept && l.sweepTime != null)) {
-      const sweptOnes = group.filter((l) => l.swept && l.sweepTime != null);
-      survivor.swept = true;
-      survivor.sweepTime = Math.max(...sweptOnes.map((l) => l.sweepTime ?? 0));
-      survivor.endTime = survivor.sweepTime;
+    } else {
+      survivor.swept = false;
+      survivor.sweepTime = undefined;
+      survivor.sweepChartTime = undefined;
     }
     for (const l of group) {
       if (l !== survivor) l._drop = true;
@@ -363,6 +405,7 @@ export function buildLevelsEngineConfig(timeRows, sessionRows) {
     const style = HTF_STYLE[tfId] ?? { tag: resolutionDisplayTitle(tfId), hi: "#007fff", lo: "#ff7644" };
     htf.push({
       slot: `htf_${tfId}`,
+      tfId,
       label: label || style.tag,
       tfSec,
       hiColor: style.hi,
@@ -386,22 +429,33 @@ export function buildLevelsEngineConfig(timeRows, sessionRows) {
 
 /** @param {{ sessionId?: string, startTime?: string, endTime?: string, label?: string }} row */
 export function sessionConfigFromRow(row) {
-  const sid = String(row.sessionId ?? "asia").trim();
+  const sid = resolveSessionIdFromRow(row);
   const def = SESSION_DEFS[sid];
-  if (!def) return null;
-  const start = parseHm(row.startTime) ?? { h: def.startH, min: def.startM };
-  const end = parseHm(row.endTime) ?? { h: def.endH, min: def.endM };
+  const start = parseHm(row.startTime) ?? (def ? { h: def.startH, min: def.startM } : null);
+  const end = parseHm(row.endTime) ?? (def ? { h: def.endH, min: def.endM } : null);
+  if (!start || !end) return null;
   const startMod = start.h * 60 + start.min;
   const endMod = end.h * 60 + end.min;
   return {
-    label: row.label || def.label,
+    label: row.label || def?.label || "Session",
     startH: start.h,
     startM: start.min,
     endH: end.h,
     endM: end.min,
     crossesMidnight: endMod <= startMod,
-    color: def.color,
+    color: def?.color ?? "#00ffcc",
   };
+}
+
+/** @param {{ sessionId?: string, label?: string }} row */
+function resolveSessionIdFromRow(row) {
+  const sid = String(row.sessionId ?? "").trim();
+  if (sid && SESSION_DEFS[sid]) return sid;
+  const label = String(row.label ?? "").trim();
+  for (const [id, def] of Object.entries(SESSION_DEFS)) {
+    if (def.label === label) return id;
+  }
+  return sid || "asia";
 }
 
 /** @param {unknown} raw */
@@ -415,13 +469,84 @@ function parseHm(raw) {
 }
 
 /**
- * @param {object[]} bars — UTC OHLC bars (finest available)
+ * Resolve HTF OHLC series — native datafeed bars when available (same as FVG).
+ * @param {object} cfg
+ * @param {object[]} chartUtcBars 1m (or chart) UTC bars
+ * @param {object[]} chartBars aligned chart times
+ * @param {object} opts
+ */
+function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
+  const chartSec = Math.max(60, Number(opts.chartSec) || 60);
+  const maxBack = Math.max(10, Number(opts.maxBarsBack) || 300);
+  const pivotLeft = Math.max(1, Number(opts.pivotLeftBars) || 1);
+  const pivotRight = Math.max(1, Number(opts.pivotRightBars) || 1);
+  const visStart = chartUtcBars[0]?.time;
+  /** @param {object[]} series @param {(number | undefined)[]} times */
+  const trimToWindow = (series, times) => {
+    let agg = series.length > maxBack ? series.slice(-maxBack) : series;
+    let chartTimes =
+      times.length > maxBack ? times.slice(-maxBack) : times;
+    if (visStart != null) {
+      const buf = (pivotLeft + pivotRight) * cfg.tfSec;
+      const cut = agg.findIndex((b) => b.time + cfg.tfSec >= visStart - buf);
+      if (cut > 0) {
+        agg = agg.slice(cut);
+        chartTimes = chartTimes.slice(cut);
+      }
+    }
+    return { agg, chartTimes };
+  };
+
+  if (cfg.tfSec <= chartSec) {
+    const chartTimes = chartBars.map((b) => b.time);
+    const { agg, chartTimes: times } = trimToWindow(chartUtcBars, chartTimes);
+    return { agg, chartTimes: times, source: "chart" };
+  }
+
+  const htf =
+    opts.getSecurityBars?.(opts.symbol, cfg.tfId) ??
+    opts.getBars?.(cfg.tfId) ??
+    opts.getHtfBars?.(cfg.tfId);
+  if (htf?.utcBars?.length) {
+    const offset = Math.max(0, htf.utcBars.length - maxBack);
+    const sliceStart = htf.utcBars.length > maxBack ? offset : 0;
+    const series = htf.utcBars.slice(sliceStart);
+    const times = series.map((_, i) => htf.chartBars[sliceStart + i]?.time);
+    const { agg, chartTimes } = trimToWindow(series, times);
+    return { agg, chartTimes, source: "htf" };
+  }
+
+  opts.requestSecurityBars?.(opts.symbol, cfg.tfId, opts.htfBarsNeeded ?? maxBack);
+  opts.requestBars?.(cfg.tfId, opts.htfBarsNeeded ?? maxBack);
+  opts.requestHtfBars?.(cfg.tfId, opts.htfBarsNeeded ?? maxBack);
+  return { agg: [], chartTimes: [], source: "pending" };
+}
+
+/** @param {object[]} bars @param {number} t */
+function firstBarIndexAtOrAfter(bars, t) {
+  let lo = 0;
+  let hi = bars.length - 1;
+  let out = bars.length;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (bars[mid].time >= t) {
+      out = mid;
+      hi = mid - 1;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return out;
+}
+
+/**
+ * @param {object[]} bars — UTC OHLC bars (chart resolution, usually 1m)
  * @param {number} anchorUnix
  * @param {object} opts
- * @returns {LiqLine[]}
+ * @returns {{ lines: LiqLine[], htfState: Record<string, { agg: object[], ptr: number }> }}
  */
 export function runLevelsEngine(bars, anchorUnix, opts) {
-  if (!bars.length || anchorUnix == null) return [];
+  if (!bars.length || anchorUnix == null) return { lines: [], htfState: {} };
 
   let endIdx = -1;
   let lo = 0;
@@ -435,10 +560,11 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
       hi = mid - 1;
     }
   }
-  if (endIdx < 19) return [];
+  if (endIdx < 19) return { lines: [], htfState: {} };
 
   const pivotLeft = Math.max(1, Number(opts.pivotLeftBars) || 1);
   const pivotRight = Math.max(1, Number(opts.pivotRightBars) || 1);
+  const maxBarsBack = Math.max(10, Number(opts.maxBarsBack) || 300);
   const maxUnswept = Math.max(1, Number(opts.maxUnswept) || 15);
   const maxSwept = Math.max(0, Number(opts.maxSwept) || 5);
   const maxSessions = Math.max(1, Number(opts.maxSessions) || 3);
@@ -454,14 +580,20 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
   const hists = {};
   /** @type {Record<string, { active: LiqLine[]; swept: LiqLine[] }>} */
   const matrices = {};
-  /** @type {Record<string, { agg: object[]; ptr: number }>} */
+  /** @type {Record<string, { agg: object[]; chartTimes: (number | undefined)[]; ptr: number; source: string }>} */
   const htfState = {};
 
   for (const cfg of htf) {
     hists[cfg.slot] = { h: [], l: [], t: [] };
     matrices[`${cfg.slot}H`] = createMatrix();
     matrices[`${cfg.slot}L`] = createMatrix();
-    htfState[cfg.slot] = { agg: aggregateCandlesEt(bars, cfg.tfSec), ptr: 1 };
+    const { agg, chartTimes, source } = resolveHtfAggSeries(
+      cfg,
+      bars,
+      opts.chartBars ?? bars,
+      { ...opts, pivotLeftBars: pivotLeft, pivotRightBars: pivotRight },
+    );
+    htfState[cfg.slot] = { agg, chartTimes, ptr: 1, source };
   }
 
   /** @type {LiqLine[]} */
@@ -475,14 +607,30 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     sessBornTimes[cfg.label] = [];
   }
 
-  for (let i = 0; i <= endIdx; i++) {
+  let startIdx = 19;
+  for (const cfg of htf) {
+    const first = htfState[cfg.slot]?.agg?.[0]?.time;
+    if (first == null) continue;
+    const pivotBuf = (pivotLeft + pivotRight) * cfg.tfSec;
+    startIdx = Math.max(startIdx, firstBarIndexAtOrAfter(bars, first - pivotBuf));
+  }
+  if (sessions.length) {
+    startIdx = Math.max(startIdx, Math.max(19, endIdx - maxBarsBack + 1));
+  }
+  if (startIdx > endIdx) return { lines: [], htfState };
+
+  const chartBars = opts.chartBars ?? bars;
+
+  for (let i = startIdx; i <= endIdx; i++) {
     const bar = bars[i];
+    const chartTime = chartBars[i]?.time ?? bar.time;
 
     for (const cfg of htf) {
       const state = htfState[cfg.slot];
+      if (!state.agg.length) continue;
       const tfSec = cfg.tfSec;
       let { ptr } = state;
-      const { agg } = state;
+      const { agg, chartTimes } = state;
       while (ptr <= agg.length) {
         const closeIdx = ptr - 1;
         if (closeIdx < 0) {
@@ -499,11 +647,17 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
           matrices[`${cfg.slot}L`],
           cfg,
           bar.time,
+          chartTime,
           maxUnswept,
           proximity,
           showLabels,
           pivotLeft,
           pivotRight,
+          chartTimes,
+          bars,
+          chartBars,
+          i,
+          maxSwept,
         );
         ptr += 1;
       }
@@ -512,8 +666,8 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
 
     for (const key of Object.keys(matrices)) {
       const m = matrices[key];
-      sweepMatrix(m, bar, key.endsWith("H") ? "high" : "low", maxSwept);
-      extendMatrix(m, bar.time);
+      sweepMatrix(m, bar, chartTime, key.endsWith("H") ? "high" : "low", maxSwept);
+      extendMatrix(m, bar.time, chartTime);
     }
 
     for (const cfg of sessions) {
@@ -536,7 +690,10 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
         st.hi = {
           price: bar.high,
           startTime: bar.time,
+          startChartTime: chartTime,
+          bornTime: bar.time,
           endTime: bar.time,
+          endChartTime: chartTime,
           label: `${cfg.label} High`,
           color: cfg.color,
           lineWidth: 2,
@@ -548,7 +705,10 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
         st.lo = {
           price: bar.low,
           startTime: bar.time,
+          startChartTime: chartTime,
+          bornTime: bar.time,
           endTime: bar.time,
+          endChartTime: chartTime,
           label: `${cfg.label} Low`,
           color: cfg.color,
           lineWidth: 2,
@@ -562,10 +722,12 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
         if (bar.high >= st.hi.price) {
           st.hi.price = bar.high;
           st.hi.startTime = bar.time;
+          st.hi.startChartTime = chartTime;
         }
         if (bar.low <= st.lo.price) {
           st.lo.price = bar.low;
           st.lo.startTime = bar.time;
+          st.lo.startChartTime = chartTime;
         }
       } else if (!nowIn && st.active) {
         st.active = false;
@@ -576,14 +738,20 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
       if (sl.swept) continue;
       const cfg = sessions.find((c) => sl.label.startsWith(c.label));
       const inOwnSession = cfg ? inSession(bar.time, cfg) : false;
-      if (!inOwnSession && bar.time > sl.startTime) {
-        const hit = sl.kind === "high" ? bar.high >= sl.price : bar.low <= sl.price;
-        if (hit) {
-          markSwept(sl, bar.time);
+      if (!inOwnSession && bar.time > levelBornTime(sl)) {
+        if (barSweepsLevel(bar, sl.kind, sl.price)) {
+          markSwept(sl, bar.time, chartTime);
           continue;
         }
       }
       sl.endTime = bar.time;
+      sl.endChartTime = chartTime;
+    }
+  }
+
+  for (const m of Object.values(matrices)) {
+    for (const lvl of [...m.active]) {
+      retroactiveSweep(m, lvl, bars, chartBars, endIdx, maxSwept);
     }
   }
 
@@ -598,8 +766,17 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     out = applyClusterConfluence(out, proximity, confHi, confLo);
   }
 
+  const visStart = bars[0].time;
+  const visEnd = bars[endIdx].time;
+  out = out.filter(
+    (l) => (l.endTime ?? l.startTime) >= visStart && l.startTime <= visEnd,
+  );
+
   for (const lvl of out) {
-    if (lvl.swept && lvl.sweepTime != null) lvl.endTime = lvl.sweepTime;
+    if (lvl.swept && lvl.sweepTime != null) {
+      lvl.endTime = lvl.sweepTime;
+      if (lvl.sweepChartTime != null) lvl.endChartTime = lvl.sweepChartTime;
+    }
     if (!showLabels || lvl.showLabel === false) {
       lvl.label = "";
     } else if (lvl.label && !lvl.label.includes("(")) {
@@ -607,7 +784,32 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     }
   }
 
-  return out;
+  return { lines: out, htfState };
+}
+
+/**
+ * Map UTC unix to chart display time via aligned bar arrays (floor bracket).
+ * @param {number} utc
+ * @param {object[]} utcBars
+ * @param {object[]} chartBars
+ */
+export function mapUtcTimeToChartTime(utc, utcBars, chartBars) {
+  if (utc == null || !Number.isFinite(Number(utc)) || !utcBars?.length || !chartBars?.length) {
+    return utc;
+  }
+  const t = Number(utc);
+  if (t <= utcBars[0].time) return chartBars[0]?.time ?? t;
+  const last = utcBars.length - 1;
+  if (t >= utcBars[last].time) return chartBars[last]?.time ?? t;
+
+  let lo = 0;
+  let hi = last;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (utcBars[mid].time <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  return chartBars[lo]?.time ?? t;
 }
 
 /**
@@ -618,20 +820,16 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
  */
 export function levelsToOverlayLines(lines, utcBars, chartBars, style) {
   const showLabels = style.graphicLabels !== false;
-  const utcToChart = new Map();
-  for (let i = 0; i < utcBars.length; i++) {
-    const ct = chartBars[i]?.time;
-    if (ct != null) utcToChart.set(utcBars[i].time, ct);
-  }
 
-  const mapTime = (utc) => {
-    const hit = utcToChart.get(utc);
-    return hit != null ? hit : utc;
-  };
+  const mapTime = (utc, chartTime) =>
+    chartTime ?? mapUtcTimeToChartTime(utc, utcBars, chartBars);
 
   return lines.map((lvl) => ({
-    timeStart: mapTime(lvl.startTime),
-    timeEnd: mapTime(lvl.endTime ?? lvl.startTime),
+    timeStart: mapTime(lvl.startTime, lvl.startChartTime),
+    timeEnd: mapTime(
+      lvl.endTime ?? lvl.startTime,
+      lvl.endChartTime ?? lvl.sweepChartTime ?? lvl.startChartTime,
+    ),
     priceStart: lvl.price,
     priceEnd: lvl.price,
     color: lvl.color,

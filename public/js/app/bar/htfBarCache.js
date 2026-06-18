@@ -2,9 +2,9 @@ import { chartDebug } from "../../debug/chart/index.js";
 import { resolutionSec } from "../../chart/resolutions.js";
 import { shiftBarsToChartTime, chartTimeZoneForPane } from "../../chart/timezone/chartTime.js";
 import { buildInitialPeriodParams, buildPrependPeriodParams, alignBarTime } from "./periodParams.js";
-import { getResolutionCacheBars } from "./resolutionCache.js";
+import { lookupSymbolBars } from "./symbolBarCache.js";
 
-/** @typedef {{ utcBars: object[], chartBars: object[], historyExhausted: boolean, updatedAt: number }} HtfBarEntry */
+/** @typedef {{ utcBars: object[], chartBars: object[], historyExhausted: boolean, updatedAt: number, source?: string }} HtfBarEntry */
 
 /** @type {Map<string, HtfBarEntry>} */
 const store = new Map();
@@ -23,6 +23,32 @@ export function getHtfBars(symbol, resolution) {
 }
 
 /**
+ * Publish bars into the shared HTF store (from pane / resolution cache / another indicator).
+ * @param {string} symbol
+ * @param {string} resolution
+ * @param {object[]} utcBars
+ * @param {object[]} chartBars
+ * @param {string} [source]
+ */
+export function seedHtfBars(symbol, resolution, utcBars, chartBars, source = "seed") {
+  if (!symbol || !resolution || !utcBars?.length) return null;
+  const key = htfCacheKey(symbol, resolution);
+  const existing = store.get(key);
+  if (existing && existing.utcBars.length >= utcBars.length) return existing;
+
+  const entry = {
+    utcBars: utcBars.slice(),
+    chartBars: chartBars?.length ? chartBars.slice() : utcBars.slice(),
+    historyExhausted: existing?.historyExhausted ?? false,
+    updatedAt: Date.now(),
+    source,
+  };
+  store.set(key, entry);
+  chartDebug("data", "htf cache seed", { symbol, resolution, source, bars: entry.utcBars.length });
+  return entry;
+}
+
+/**
  * @param {object} opts
  * @param {import("../../datafeed/types.js").Datafeed} opts.datafeed
  * @param {object} opts.symbolInfo
@@ -33,11 +59,31 @@ export function getHtfBars(symbol, resolution) {
  * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} opts.settingsStore
  * @param {object | null} [opts.symbolInfoExtra]
  */
+/** @param {object} opts @param {number} want */
+function lookupBarsForEnsure(opts, want) {
+  const hit = lookupSymbolBars({
+    symbol: opts.symbol,
+    resolution: opts.resolution,
+    pane: opts.pane,
+    getAllChartPanes: opts.getAllChartPanes,
+    settingsStore: opts.settingsStore,
+    symbolInfoExtra: opts.symbolInfoExtra,
+    resolutions: opts.resolutions ?? [],
+  });
+  if (!hit?.utcBars?.length) return null;
+  return { ...hit, sufficient: hit.utcBars.length >= want };
+}
+
 export async function ensureHtfBars(opts) {
   const { datafeed, symbolInfo, symbol, resolution, countBack, pane, settingsStore, symbolInfoExtra } =
     opts;
   const key = htfCacheKey(symbol, resolution);
   const want = Math.max(50, Math.min(2000, Number(countBack) || 300));
+
+  const cached = lookupBarsForEnsure(opts, want);
+  if (cached?.sufficient) {
+    return seedHtfBars(symbol, resolution, cached.utcBars, cached.chartBars, cached.source);
+  }
 
   const existing = store.get(key);
   if (existing && existing.utcBars.length >= want && !existing.historyExhausted) {
@@ -57,6 +103,8 @@ export async function ensureHtfBars(opts) {
     settingsStore,
     symbolInfoExtra,
     existing,
+    getAllChartPanes: opts.getAllChartPanes,
+    resolutions: opts.resolutions,
   }).finally(() => inFlight.delete(key));
 
   inFlight.set(key, pending);
@@ -83,13 +131,48 @@ async function fetchHtfBars(opts) {
   const barSec = resolutionSec(resolution);
   const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfoExtra ?? symbolInfo);
 
-  /** @type {object[]} */
-  let utcBars = [];
+  let cacheSource = "datafeed";
+  const warmed = lookupBarsForEnsure(
+    {
+      symbol,
+      resolution,
+      pane,
+      settingsStore,
+      symbolInfoExtra,
+      getAllChartPanes: opts.getAllChartPanes,
+      resolutions: opts.resolutions,
+    },
+    want,
+  );
 
-  const cached = getResolutionCacheBars(symbol, resolution);
-  if (cached?.length) {
-    utcBars = cached.slice();
-    chartDebug("data", "htf cache from resolution cache", { symbol, resolution, bars: utcBars.length });
+  /** @type {object[]} */
+  let utcBars = warmed?.utcBars?.length ? warmed.utcBars.slice() : [];
+
+  if (!utcBars.length) {
+    const partial = lookupBarsForEnsure(
+      {
+        symbol,
+        resolution,
+        pane,
+        settingsStore,
+        symbolInfoExtra,
+        getAllChartPanes: opts.getAllChartPanes,
+        resolutions: opts.resolutions,
+      },
+      0,
+    );
+    if (partial?.utcBars?.length) {
+      utcBars = partial.utcBars.slice();
+      cacheSource = partial.source;
+      chartDebug("data", "htf cache from request.security", {
+        symbol,
+        resolution,
+        source: partial.source,
+        bars: utcBars.length,
+      });
+    }
+  } else {
+    cacheSource = warmed.source;
   }
 
   if (utcBars.length < want) {
@@ -114,6 +197,7 @@ async function fetchHtfBars(opts) {
     chartBars,
     historyExhausted: utcBars.length < want,
     updatedAt: Date.now(),
+    source: utcBars.length >= want ? cacheSource : "datafeed",
   };
   store.set(key, entry);
   chartDebug("data", "htf cache store", { symbol, resolution, bars: utcBars.length });

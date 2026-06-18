@@ -1,7 +1,8 @@
 import { getPaneChartView } from "../../chart/pane/viewCache.js";
 import { shiftBarsToChartTime, chartTimeZoneForPane } from "../../chart/timezone/chartTime.js";
 import { getResolutionCacheBars } from "./resolutionCache.js";
-import { ensureHtfBars, getHtfBars } from "./htfBarCache.js";
+import { getHtfBars } from "./htfBarCache.js";
+import { requestSecuritySeries } from "./requestSecurity.js";
 
 /** @param {string} symbol */
 function symbolLookupKeys(symbol) {
@@ -71,20 +72,11 @@ export function lookupSymbolBars(opts) {
  * @param {object} opts
  */
 export async function ensureSymbolBars(opts) {
-  const { symbol, resolution, countBack, pane, settingsStore, symbolInfoExtra } = opts;
-  const want = Math.max(50, Math.min(2000, Number(countBack) || 300));
-  const hit = lookupSymbolBars({
-    symbol,
-    resolution,
-    pane,
-    getAllChartPanes: opts.getAllChartPanes,
-    settingsStore,
-    symbolInfoExtra,
-    resolutions: opts.resolutions ?? [],
-  });
-  if (hit && hit.utcBars.length >= want) return hit;
-
-  const entry = await ensureHtfBars(opts);
-  if (!entry?.utcBars?.length) return hit;
-  return { utcBars: entry.utcBars, chartBars: entry.chartBars, source: "datafeed" };
+  const series = await requestSecuritySeries(opts);
+  if (!series) return null;
+  return {
+    utcBars: series.utcBars,
+    chartBars: series.chartBars,
+    source: series.source,
+  };
 }

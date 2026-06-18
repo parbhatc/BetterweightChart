@@ -1,8 +1,11 @@
 import { validateCustomInterval } from "../../chart/resolutions.js";
+import { mountDialogDrag } from "../../drawings/settings/dialog/utils.js";
 
-/** @typedef {{ id: "m"|"h"|"D"|"W"|"M", label: string }} IntervalType */
+/** @typedef {{ id: "T"|"S"|"m"|"h"|"D"|"W"|"M", label: string }} IntervalType */
 
 const TYPES = /** @type {IntervalType[]} */ ([
+  { id: "T", label: "ticks" },
+  { id: "S", label: "seconds" },
   { id: "m", label: "minutes" },
   { id: "h", label: "hours" },
   { id: "D", label: "days" },
@@ -41,8 +44,8 @@ export function openCustomIntervalDialog(opts) {
           </button>
           <div class="tv-tf-dialog__type-menu" role="listbox" hidden>
             ${TYPES.map(
-              (t, i) =>
-                `<button type="button" class="tv-tf-dialog__type-opt${i === 0 ? " is-active" : ""}" role="option" data-unit="${t.id}" aria-selected="${i === 0}">${t.label}</button>`,
+              (t) =>
+                `<button type="button" class="tv-tf-dialog__type-opt${t.id === "m" ? " is-active" : ""}" role="option" data-unit="${t.id}" aria-selected="${t.id === "m"}">${t.label}</button>`,
             ).join("")}
           </div>
         </div>
@@ -73,9 +76,10 @@ export function openCustomIntervalDialog(opts) {
 
   /** @type {IntervalType["id"]} */
   let unit = "m";
+  let userMoved = false;
 
   function positionDialog() {
-    if (!dialog) return;
+    if (!(dialog instanceof HTMLElement)) return;
     const pad = 8;
     const dialogW = 280;
     let left = window.innerWidth / 2 - dialogW / 2;
@@ -93,9 +97,11 @@ export function openCustomIntervalDialog(opts) {
       }
     }
 
+    dialog.style.position = "fixed";
+    dialog.style.margin = "0";
     dialog.style.width = `${dialogW}px`;
-    overlay.style.setProperty("--tv-tf-dialog-left", `${Math.max(pad, left)}px`);
-    overlay.style.setProperty("--tv-tf-dialog-top", `${Math.max(pad, top)}px`);
+    dialog.style.left = `${Math.max(pad, left)}px`;
+    dialog.style.top = `${Math.max(pad, top)}px`;
   }
 
   function closeTypeMenu() {
@@ -168,8 +174,12 @@ export function openCustomIntervalDialog(opts) {
   function close() {
     overlay.remove();
     document.removeEventListener("keydown", onKey);
-    window.removeEventListener("resize", positionDialog);
+    window.removeEventListener("resize", onResize);
     onClose?.();
+  }
+
+  function onResize() {
+    if (!userMoved) positionDialog();
   }
 
   function onKey(ev) {
@@ -195,14 +205,30 @@ export function openCustomIntervalDialog(opts) {
   }
 
   document.addEventListener("keydown", onKey);
-  window.addEventListener("resize", positionDialog);
+  window.addEventListener("resize", onResize);
   positionDialog();
+
+  const header = overlay.querySelector(".tv-tf-dialog__header");
+  if (dialog instanceof HTMLElement && header instanceof HTMLElement) {
+    mountDialogDrag(dialog, header);
+    header.addEventListener(
+      "mousedown",
+      (ev) => {
+        if (ev.target instanceof Element && ev.target.closest("button")) return;
+        userMoved = true;
+      },
+      true,
+    );
+  }
 
   typeBtn?.addEventListener("click", (ev) => {
     ev.stopPropagation();
     if (typeMenu?.hidden) openTypeMenu();
     else closeTypeMenu();
   });
+
+  typeMenu?.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  typeMenu?.addEventListener("wheel", (ev) => ev.stopPropagation(), { passive: true });
 
   typeMenu?.querySelectorAll("[data-unit]").forEach((el) => {
     el.addEventListener("click", (ev) => {

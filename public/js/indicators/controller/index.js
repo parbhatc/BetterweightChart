@@ -50,6 +50,7 @@ export function createIndicatorController(opts) {
     getIndicatorClass,
     isInstanceVisibleOnPane: isVisibleOnPane,
     getOverlayContext,
+    emit,
   });
 
   const seriesSync = createSeriesSync({

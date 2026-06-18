@@ -1052,7 +1052,7 @@
 
 .tv-ind-settings__session-cols {
   display: grid;
-  grid-template-columns: 2.75rem 1fr minmax(4.5rem, 5.5rem) 4.25rem 4.25rem 1.75rem;
+  grid-template-columns: 2.75rem 1fr minmax(5rem, 6.25rem) minmax(5rem, 6.25rem) 1.75rem;
   gap: var(--space-2);
   padding: 0 var(--space-4) var(--space-1);
   font-size: var(--text-xs);
@@ -1061,17 +1061,26 @@
 
 .tv-ind-settings__session-rule-row {
   display: grid;
-  grid-template-columns: 2.75rem 1fr minmax(4.5rem, 5.5rem) 4.25rem 4.25rem 1.75rem;
+  grid-template-columns: 2.75rem 1fr minmax(5rem, 6.25rem) minmax(5rem, 6.25rem) 1.75rem;
   gap: var(--space-2);
   align-items: center;
 }
 
 .tv-ind-settings__session-time {
   min-width: 0;
-  text-align: center;
-  font-size: var(--text-sm);
-  padding: 0 var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
   height: 2rem;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.tv-ind-settings__session-time > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv-ind-settings__tf-rule-remove:active {

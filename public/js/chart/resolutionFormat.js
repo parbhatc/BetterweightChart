@@ -74,10 +74,12 @@ export function buildResolutionId(value, unit) {
   return null;
 }
 
-/** @typedef {"m"|"h"|"D"|"W"|"M"} CustomIntervalUnit */
+/** @typedef {"T"|"S"|"m"|"h"|"D"|"W"|"M"} CustomIntervalUnit */
 
 /** Per-unit max for the custom interval dialog (TradingView-style). */
 export const CUSTOM_INTERVAL_LIMITS = {
+  T: 10000,
+  S: 3600,
   m: 10000,
   h: 240,
   D: 365,

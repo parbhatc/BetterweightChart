@@ -391,7 +391,10 @@ function buildLayerSeries(script, layer) {
     return { series, startIdx: Math.max(2, series.length - maxBack) };
   }
 
-  const htf = overlayCtx.getHtfBars?.(layer.tfId);
+  const htf =
+    overlayCtx.getSecurityBars?.(undefined, layer.tfId) ??
+    overlayCtx.getBars?.(layer.tfId) ??
+    overlayCtx.getHtfBars?.(layer.tfId);
   if (htf?.utcBars?.length) {
     const series = htf.utcBars.map((b, i) => ({
       ...b,
