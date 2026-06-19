@@ -117,7 +117,11 @@ export function readPageOptions(search = window.location.search) {
     theme,
     resolution,
     drawings: sp.get("drawings") !== "0",
+    replay: sp.get("replay") !== "0",
     chrome: sp.get("chrome") !== "0",
+    disabled_features: sp.get("disabled_features")
+      ? sp.get("disabled_features").split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined,
     countBack: sp.get("countback") != null ? Number(sp.get("countback")) : 500,
     historyChunk: sp.get("historychunk") != null ? Number(sp.get("historychunk")) : 200,
     datafeedType: datafeed ?? undefined,

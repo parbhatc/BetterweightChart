@@ -637,7 +637,7 @@ export function mountChartSettings(opts) {
       { fields: true },
     )}${sectionBlock(
       "Margins",
-      `${numberFieldRow("Top", "denvas", "marginTop", "%")}
+      `${numberFieldRow("Top", "canvas", "marginTop", "%")}
         ${numberFieldRow("Bottom", "canvas", "marginBottom", "%")}
         ${numberFieldRow("Right", "canvas", "marginRight", "bars")}`,
       { fields: true },

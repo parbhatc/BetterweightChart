@@ -623,16 +623,6 @@
   white-space: nowrap;
 }
 
-/* iOS Safari zooms focused inputs below 16px */
-.tv-ind-lib__search,
-.tv-ind-settings .tv-drawing-settings__input {
-  font-size: max(16px, var(--text-sm));
-}
-
-.tv-ind-settings .tv-drawing-settings__input {
-  font-size: max(16px, var(--text-base));
-}
-
 .tv-ind-settings__band-row .tv-ind-settings__style-actions {
   gap: var(--space-2);
 }

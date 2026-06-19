@@ -1,0 +1,213 @@
+.tv-replay-date-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: transparent;
+}
+
+.tv-replay-date-dialog {
+  position: fixed;
+  width: 320px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--tv-border);
+  background: var(--tv-bg-elevated);
+  color: var(--tv-text);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+}
+
+.tv-replay-date-dialog__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-3) var(--space-2);
+}
+
+.tv-replay-date-dialog__title {
+  font-size: var(--text-base);
+  font-weight: var(--weight-semibold);
+}
+
+.tv-replay-date-dialog__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+}
+
+.tv-replay-date-dialog__close:hover {
+  background: var(--tv-surface-hover);
+  color: var(--tv-text);
+}
+
+.tv-replay-date-dialog__body {
+  padding: 0 var(--space-3) var(--space-3);
+}
+
+.tv-replay-date-dialog__inputs {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+
+.tv-replay-date-dialog__field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--tv-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--tv-bg);
+}
+
+.tv-replay-date-dialog__field-icon {
+  display: flex;
+  color: var(--tv-muted);
+  flex-shrink: 0;
+}
+
+.tv-replay-date-dialog__input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--tv-text);
+  font-size: var(--text-sm);
+  outline: none;
+}
+
+.tv-replay-date-dialog__input--time {
+  width: 4.5rem;
+}
+
+.tv-replay-date-dialog__cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-2);
+}
+
+.tv-replay-date-dialog__month {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.tv-replay-date-dialog__nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+}
+
+.tv-replay-date-dialog__nav:hover:not(:disabled) {
+  background: var(--tv-surface-hover);
+  color: var(--tv-text);
+}
+
+.tv-replay-date-dialog__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tv-replay-date-dialog__nav--next svg {
+  transform: rotate(180deg);
+}
+
+.tv-replay-date-dialog__dow,
+.tv-replay-date-dialog__days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.tv-replay-date-dialog__dow {
+  margin-bottom: var(--space-1);
+  color: var(--tv-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.tv-replay-date-dialog__pad {
+  min-height: 30px;
+}
+
+.tv-replay-date-dialog__day {
+  min-height: 30px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--tv-text);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.tv-replay-date-dialog__day:hover:not(:disabled) {
+  background: var(--tv-surface-hover);
+}
+
+.tv-replay-date-dialog__day.is-selected {
+  background: var(--tv-accent);
+  color: #fff;
+}
+
+.tv-replay-date-dialog__day.is-today:not(.is-selected) {
+  color: var(--tv-accent);
+  font-weight: var(--weight-semibold);
+}
+
+.tv-replay-date-dialog__day:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.tv-replay-date-dialog__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--tv-border-subtle);
+}
+
+.tv-replay-date-dialog__btn {
+  min-width: 72px;
+  min-height: 32px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  cursor: pointer;
+}
+
+.tv-replay-date-dialog__btn--secondary {
+  background: transparent;
+  border-color: var(--tv-border-subtle);
+  color: var(--tv-text);
+}
+
+.tv-replay-date-dialog__btn--secondary:hover {
+  background: var(--tv-surface-hover);
+}
+
+.tv-replay-date-dialog__btn--primary {
+  background: var(--tv-accent);
+  color: #fff;
+}
+
+.tv-replay-date-dialog__btn--primary:hover {
+  filter: brightness(1.08);
+}

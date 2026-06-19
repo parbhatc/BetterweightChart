@@ -2,7 +2,21 @@ import { chartDebug } from "../../debug/chart/index.js";
 import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
 
 /** Keep bars warm after switching resolution or for another pane. */
-export const RESOLUTION_CACHE_TTL_MS = 10_000;
+export const RESOLUTION_CACHE_TTL_MS = 30_000;
+/** Longer TTL while bar replay is active (interval switching). */
+export const RESOLUTION_CACHE_REPLAY_TTL_MS = 60_000;
+
+/** @type {boolean} */
+let replayExtendedTtl = false;
+
+/** @param {boolean} active */
+export function setResolutionCacheReplayTtl(active) {
+  replayExtendedTtl = Boolean(active);
+}
+
+function cacheTtlMs() {
+  return replayExtendedTtl ? RESOLUTION_CACHE_REPLAY_TTL_MS : RESOLUTION_CACHE_TTL_MS;
+}
 
 /**
  * @typedef {{
@@ -94,7 +108,7 @@ function putEntry(symbol, resolution, snapshot, opts = {}) {
   };
 
   if (opts.ttl) {
-    entry.timer = setTimeout(() => evict(k, "ttl"), RESOLUTION_CACHE_TTL_MS);
+    entry.timer = setTimeout(() => evict(k, "ttl"), cacheTtlMs());
   }
 
   entries.set(k, entry);
@@ -110,7 +124,8 @@ export function getResolutionCacheBars(symbol, resolution) {
   const entry = entries.get(seriesCacheKey(symbol, resolution));
   if (!entry) return null;
   const ageMs = Date.now() - entry.updatedAt;
-  if (entry.timer && ageMs > RESOLUTION_CACHE_TTL_MS) return null;
+  const ttlMs = cacheTtlMs();
+  if (entry.timer && ageMs > ttlMs) return null;
   return entry.snapshot.bars.slice();
 }
 
@@ -119,6 +134,7 @@ export function getResolutionCacheBars(symbol, resolution) {
  * @param {object} pane
  */
 export function publishResolutionCache(pane) {
+  if (pane._replaySnapshot) return;
   const snapshot = snapshotFromPane(pane);
   if (!snapshot || !pane.symbol || !pane.resolution) return;
 
@@ -131,12 +147,21 @@ export function publishResolutionCache(pane) {
   });
 }
 
+export function clearResolutionCache() {
+  for (const entry of entries.values()) {
+    if (entry.timer) clearTimeout(entry.timer);
+  }
+  entries.clear();
+  chartDebug("data", "resolution cache clear all");
+}
+
 /**
  * Snapshot pane bars for a resolution before switching away (starts TTL eviction).
  * @param {object} pane
  * @param {string} resolution — interval being left (not the new one)
  */
 export function stashPaneResolutionCache(pane, resolution) {
+  if (pane._replaySnapshot) return;
   if (!pane.bars?.length || !pane.symbol || !resolution) return;
 
   const snapshot = snapshotFromPane(pane);
@@ -148,7 +173,7 @@ export function stashPaneResolutionCache(pane, resolution) {
     symbol: pane.symbol,
     resolution,
     bars: snapshot.bars.length,
-    ttlMs: RESOLUTION_CACHE_TTL_MS,
+    ttlMs: cacheTtlMs(),
   });
 }
 
@@ -165,7 +190,8 @@ export function tryRestorePaneResolutionCache(pane) {
   if (!entry) return false;
 
   const ageMs = Date.now() - entry.updatedAt;
-  if (entry.timer && ageMs > RESOLUTION_CACHE_TTL_MS) {
+  const ttlMs = cacheTtlMs();
+  if (entry.timer && ageMs > ttlMs) {
     evict(k, "expired");
     return false;
   }

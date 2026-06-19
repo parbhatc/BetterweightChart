@@ -1,4 +1,9 @@
 import { chartDebug } from "../../debug/chart/index.js";
+import { getChartViewportStats } from "../../debug/chart/viewportStats.js";
+import {
+  captureViewportBarLayout,
+  restoreViewportBarLayout,
+} from "../../chart/pane/viewportBarLayout.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -36,6 +41,10 @@ export function createChartWidgetApi(ctx) {
     drawing,
     lastBar,
     countBack,
+    getReplayState,
+    replayEngine,
+    resolutions,
+    activePriceScaleId,
   } = ctx;
 
   return {
@@ -144,22 +153,57 @@ export function createChartWidgetApi(ctx) {
     async setResolution(res) {
       const sync = layoutManager?.getSync();
       if (layoutManager && sync?.interval) {
-        for (const pane of getAllChartPanes()) {
+        const panes = getAllChartPanes();
+        const savedLayouts = panes.map((p) =>
+          captureViewportBarLayout(p, settingsStore, resolutions),
+        );
+        for (const pane of panes) {
           stashPaneResolutionCache(pane, pane.resolution);
           pane.resolution = res;
         }
         refreshWatermark();
         refreshStatusLine();
-        await loadBarsForPanes(getAllChartPanes(), { force: true });
+        await loadBarsForPanes(panes, { force: true, skipPriceScaleMargins: true });
+        ctx._viewportRestorePending = true;
+        try {
+          await ctx.afterTimeframeChange?.();
+          for (let i = 0; i < panes.length; i += 1) {
+            restoreViewportBarLayout(
+              panes[i],
+              savedLayouts[i],
+              settingsStore,
+              resolutions,
+              "timeframe",
+              activePriceScaleId,
+            );
+          }
+        } finally {
+          ctx._viewportRestorePending = false;
+        }
         return;
       }
       const pane = getActivePane();
       if (!pane) return;
+      const savedLayout = captureViewportBarLayout(pane, settingsStore, resolutions);
       stashPaneResolutionCache(pane, pane.resolution);
       pane.resolution = res;
       refreshWatermark();
       refreshStatusLine();
-      await loadPaneBars(pane, { force: true });
+      await loadPaneBars(pane, { force: true, skipPriceScaleMargins: true });
+      ctx._viewportRestorePending = true;
+      try {
+        await ctx.afterTimeframeChange?.();
+        restoreViewportBarLayout(
+          pane,
+          savedLayout,
+          settingsStore,
+          resolutions,
+          "timeframe",
+          activePriceScaleId,
+        );
+      } finally {
+        ctx._viewportRestorePending = false;
+      }
     },
 
     /**
@@ -186,5 +230,23 @@ export function createChartWidgetApi(ctx) {
       return drawing.drawShape(shape, points, opts);
     },
     barTimeLabel,
+
+    /**
+     * Visible bar range + replay cursor stats (console helper).
+     * @example window.__BWC_WIDGET__.visibleBars()
+     * @param {{ log?: boolean }} [opts] pass { log: false } to return data without printing
+     */
+    visibleBars(opts) {
+      return getChartViewportStats(
+        {
+          getActivePane,
+          settingsStore,
+          resolutions,
+          getReplayState,
+          replayEngine,
+        },
+        opts,
+      );
+    },
   };
 }

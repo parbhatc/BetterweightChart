@@ -8,12 +8,17 @@ import {
   chartDebugTimeAsync,
 } from "../../debug/chart/index.js";
 import {
+  alignBarTime,
   buildInitialPeriodParams,
   buildPrependPeriodParams,
   DEFAULT_HISTORY_CHUNK,
   estimateCountBackFromViewport,
   estimateHistoryCountBack,
 } from "./periodParams.js";
+import {
+  barsCoverReplayAnchor,
+  estimateReplayCountBack,
+} from "../../replay/persist.js";
 import {
   publishResolutionCache,
   seriesCacheKey,
@@ -80,6 +85,10 @@ export function createBarLoader(opts) {
     onPaneHistoryDataUpdated,
     syncPaneEmptyState,
     finishPaneAfterLoad,
+    isReplayLocked,
+    isReplayHistoryBlocked,
+    getReplayLoadCapTo,
+    getReplayLoadContext,
   } = opts;
 
   /** @type {Map<number, string>} */
@@ -132,6 +141,7 @@ export function createBarLoader(opts) {
    */
   function applyIncomingBar(pane, rawBar) {
     if (!pane.bars.length) return;
+    if (typeof opts.isReplayLocked === "function" && opts.isReplayLocked()) return;
 
     chartDebugCount("tick", "incoming");
     chartDebugTime("tick", `live tick pane ${pane.index}`, () => {
@@ -360,7 +370,11 @@ export function createBarLoader(opts) {
 
   async function finishPaneAfterBarsLoaded(pane, loadOpts = {}) {
     await ensurePaneSymbolInfo(pane);
-    refreshPaneCandleData(pane, loadOpts);
+    if (!loadOpts.deferChartRefresh) {
+      refreshPaneCandleData(pane, loadOpts);
+    } else {
+      chartDebug("data", "defer chart refresh", { pane: pane.index, bars: pane.bars.length });
+    }
     subscribePane(pane);
     publishResolutionCache(pane);
     if (pane.index === 0) setPrimaryBars(pane);
@@ -371,18 +385,6 @@ export function createBarLoader(opts) {
       finishPaneAfterLoad?.(pane, loadOpts);
     }
     return pane.bars.at(-1);
-  }
-
-  async function tryLoadPaneFromResolutionCache(pane, reason, loadOpts = {}) {
-    if (!tryRestorePaneResolutionCache(pane)) return null;
-    chartDebug("data", "loadPaneBars restored from cache", {
-      pane: pane.index,
-      symbol: pane.symbol,
-      resolution: pane.resolution,
-      bars: pane.bars.length,
-      reason,
-    });
-    return finishPaneAfterBarsLoaded(pane, loadOpts);
   }
 
   /**
@@ -422,6 +424,7 @@ export function createBarLoader(opts) {
 
   /** Burst load when panning near the left edge or into a gap. */
   async function ensureHistoryNearEdge(pane) {
+    if (typeof isReplayHistoryBlocked === "function" && isReplayHistoryBlocked()) return false;
     if (!needsMoreHistory(pane)) return false;
     chartDebug("data", "history edge prefetch", {
       pane: pane.index,
@@ -450,44 +453,92 @@ export function createBarLoader(opts) {
     }
 
     const task = chartDebugTimeAsync("data", `loadPaneBars pane ${pane.index}`, async () => {
+      const replayCtx =
+        typeof getReplayLoadContext === "function" ? getReplayLoadContext(pane) : null;
+      const replayCapTo =
+        replayCtx?.capDisplay ??
+        (typeof getReplayLoadCapTo === "function" ? getReplayLoadCapTo(pane) : null);
+
+      /** @param {object} loadOpts */
+      function applyReplayCapAfterLoad(loadOpts) {
+        if (replayCapTo != null && Number.isFinite(replayCapTo)) {
+          pane.bars = pane.bars.filter((b) => b.time <= replayCapTo);
+          invalidatePaneChartView(pane);
+          refreshPaneCandleData(pane, loadOpts);
+        }
+      }
+
+      /** @param {object} loadOpts */
+      async function tryReplayCacheLoad(loadOpts) {
+        if (replayCtx) return null;
+        if (!tryRestorePaneResolutionCache(pane)) return null;
+        chartDebug("data", "loadPaneBars restored from cache", {
+          pane: pane.index,
+          symbol: pane.symbol,
+          resolution: pane.resolution,
+          bars: pane.bars.length,
+        });
+        applyReplayCapAfterLoad(loadOpts);
+        return finishPaneAfterBarsLoaded(pane, loadOpts);
+      }
+
       if (opts.force) {
         unsubscribePane(pane.index);
         pane._historyErrorUntil = null;
         const loadOpts = { scrollToLatest: false };
-        const restored = await tryLoadPaneFromResolutionCache(pane, "force", loadOpts);
+        const restored = await tryReplayCacheLoad(loadOpts);
         if (restored) return restored;
         clearPaneBarState(pane);
       } else if (!pane.bars?.length) {
-        const restored = await tryLoadPaneFromResolutionCache(pane, "shared");
+        const restored = await tryReplayCacheLoad({ scrollToLatest: false });
         if (restored) return restored;
       }
 
       if (!pane.symbolInfo) pane.symbolInfo = await datafeed.resolveSymbol(pane.symbol);
       const barSec = getBarSecForPane?.(pane) ?? 60;
-      const firstDataRequest = pane._firstDataRequest !== false;
-      const requestCountBack = estimateCountBackFromViewport(pane, countBack);
-      const periodParams =
-        firstDataRequest || !pane.bars?.length
-          ? buildInitialPeriodParams(barSec, requestCountBack)
-          : buildPrependPeriodParams(
-              pane.bars[0].time,
-              barSec,
-              estimateHistoryCountBack(pane.chart, historyChunk, HISTORY_EDGE_BARS),
-            );
+      let requestCountBack = estimateCountBackFromViewport(pane, countBack);
+      let loadTo = replayCapTo ?? undefined;
+      if (replayCtx) {
+        const end =
+          replayCtx.loadTo ??
+          alignBarTime(Date.now() / 1000, barSec);
+        loadTo = end;
+        requestCountBack = Math.min(
+          2000,
+          estimateReplayCountBack(replayCtx.anchorFrom, end, barSec, requestCountBack),
+        );
+      }
+      const useInitialLoad = Boolean(replayCtx || !pane.bars?.length || pane._firstDataRequest !== false);
+      const periodParams = useInitialLoad
+        ? buildInitialPeriodParams(barSec, requestCountBack, loadTo)
+        : buildPrependPeriodParams(
+            pane.bars[0].time,
+            barSec,
+            estimateHistoryCountBack(pane.chart, historyChunk, HISTORY_EDGE_BARS),
+          );
       chartDebug("data", "loadPaneBars getBars", {
         pane: pane.index,
         firstDataRequest: periodParams.firstDataRequest,
         countBack: periodParams.countBack,
         fallback: countBack,
+        replay: replayCtx
+          ? { anchorFrom: replayCtx.anchorFrom, loadTo, capDisplay: replayCapTo ?? null }
+          : null,
         ...periodParams,
       });
-      const wasFirstRequest = firstDataRequest;
+      const wasFirstRequest = useInitialLoad;
       const loadOpts = {
         scrollToLatest: !opts.force && wasFirstRequest,
+        deferChartRefresh: Boolean(opts.deferChartRefresh),
+        skipPriceScaleMargins: Boolean(opts.skipPriceScaleMargins),
       };
       const result = await fetchBarsShared(pane, pane.symbolInfo, periodParams);
       pane._firstDataRequest = false;
-      pane.bars = result.bars.slice();
+      let bars = result.bars.slice();
+      if (replayCapTo != null && Number.isFinite(replayCapTo)) {
+        bars = bars.filter((b) => b.time <= replayCapTo);
+      }
+      pane.bars = bars;
       pane.futureWhitespaceBars = null;
       invalidatePaneChartView(pane);
       pane._historyExhausted = Boolean(result.noData);

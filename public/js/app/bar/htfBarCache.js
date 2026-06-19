@@ -246,6 +246,12 @@ export async function prependHtfBars(opts) {
   return entry;
 }
 
+/** Clear all cached HTF / security bar series. */
+export function clearAllHtfBars() {
+  store.clear();
+  chartDebug("data", "htf cache clear all");
+}
+
 /** @param {string} symbol @param {string} [resolution] */
 export function clearHtfBars(symbol, resolution) {
   if (!symbol) return;

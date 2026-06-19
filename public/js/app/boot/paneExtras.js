@@ -39,6 +39,7 @@ export function createPaneExtras(deps) {
     getDrawingHub,
     ui,
     viewportDeps,
+    getReplayActive,
   } = deps;
 
   /** @type {Map<number, object>} */
@@ -143,11 +144,14 @@ export function createPaneExtras(deps) {
       series: pane.series,
       getState: () => {
         const sc = settingsStore.get().scales ?? {};
+        const replayActive = getReplayActive?.() ?? false;
         const enabled = Boolean(sc.countdownToBarClose);
         const { close } = priceLineBarForPane(pane, settingsStore, symbolInfo);
         const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
         const placement = resolvePriceScalePlacement(sc.scalesPlacement);
-        const marketOpen = getMarketStatusDetails(pane.symbolInfo ?? symbolInfo).open;
+        const marketOpen = replayActive
+          ? false
+          : getMarketStatusDetails(pane.symbolInfo ?? symbolInfo).open;
         return {
           enabled,
           marketOpen,

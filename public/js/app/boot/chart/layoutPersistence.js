@@ -6,7 +6,7 @@ import {
 import { showLayoutNameDialog } from "../../../ui/header/layout/dialogs.js";
 import { getLayoutToolDefaultsSnapshot, setLayoutToolDefaults } from "../../../drawings/toolbars/defaults/layoutScope.js";
 import { getLayoutDrawingTemplatesSnapshot, setLayoutDrawingTemplates } from "../../../drawings/toolbars/defaults/layoutTemplates.js";
-import { ensureManualPriceScaleAfterLoad } from "../../../chart/settings/applier.js";
+import { applyPriceScaleMarginsAfterBarLoad } from "../../../chart/settings/applier.js";
 /**
  * @param {import("./state.js").BootContext} ctx
  */
@@ -160,7 +160,14 @@ export function attachLayoutPersistence(ctx) {
     if (opts.scrollToLatest) {
       ctx.scrollToLatest?.(pane.bars.length);
     }
-    ensureManualPriceScaleAfterLoad(pane, ctx.settingsStore, ctx.activePriceScaleId);
+    if (!opts.skipPriceScaleMargins) {
+      applyPriceScaleMarginsAfterBarLoad(pane, ctx.settingsStore, ctx.activePriceScaleId);
+    }
+  }
+
+  function applyPriceScaleMarginsForPane(pane) {
+    if (ctx._viewportRestorePending) return;
+    applyPriceScaleMarginsAfterBarLoad(pane, ctx.settingsStore, ctx.activePriceScaleId);
   }
 
   Object.assign(ctx, {
@@ -176,6 +183,7 @@ export function attachLayoutPersistence(ctx) {
     restoreLayoutDrawings,
     restoreLayoutIndicators,
     finishPaneAfterLoad,
+    applyPriceScaleMarginsForPane,
     uniqueLayoutName,
   });
 }

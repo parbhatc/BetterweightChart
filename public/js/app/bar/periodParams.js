@@ -76,8 +76,11 @@ export function alignBarTime(nowSec = Date.now() / 1000, barSec) {
  * @param {number} barSec
  * @param {number} countBack
  */
-export function buildInitialPeriodParams(barSec, countBack) {
-  const to = alignBarTime(Date.now() / 1000, barSec);
+export function buildInitialPeriodParams(barSec, countBack, toTime) {
+  const to =
+    toTime != null && Number.isFinite(toTime)
+      ? Number(toTime)
+      : alignBarTime(Date.now() / 1000, barSec);
   return buildTvPeriodParams({ barSec, countBack, to, firstDataRequest: true });
 }
 

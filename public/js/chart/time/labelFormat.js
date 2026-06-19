@@ -212,6 +212,26 @@ export function formatTimePart(d, timeZone, hour12, withSeconds = false) {
  * @param {string} timeZone
  * @param {{ includeTime?: boolean }} [opts]
  */
+/** TradingView replay cut label: `Re: Thu 18 Jun '26 03:17 PM` */
+export function formatReplayCutTimeLabel(utcSec, timeZone) {
+  const d = new Date(utcSec * 1000);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  }).formatToParts(d);
+  /** @param {string} type */
+  const pick = (type) => parts.find((p) => p.type === type)?.value ?? "";
+  const year = pick("year");
+  const period = pick("dayPeriod").toUpperCase();
+  return `Re: ${pick("weekday")} ${pick("day")} ${pick("month")} '${year.slice(-2)} ${pick("hour")}:${pick("minute")} ${period}`;
+}
+
 export function formatChartTimeLabel(t, scales, timeZone, opts = {}) {
   const d = toDate(t);
   const showDow = scales.dayOfWeekOnLabels !== false;

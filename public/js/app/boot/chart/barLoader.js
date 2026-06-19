@@ -9,6 +9,38 @@ import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
  * @param {import("./state.js").BootContext} ctx
  */
 export function attachBarLoader(ctx) {
+  /** @param {object} pane */
+  function replayLoadContextForPane(pane) {
+    const sym = pane?.symbol ?? ctx.symbol ?? "";
+    const res = pane?.resolution ?? ctx.resolution ?? "";
+
+    const pending = ctx.replayPendingRestore;
+    if (pending?.active) {
+      if (pending.symbol && sym && pending.symbol !== sym) return null;
+      if (pending.resolution && res && pending.resolution !== res) return null;
+      const anchorFrom = Math.min(pending.selectedBarTime, pending.currentBarTime);
+      return {
+        anchorFrom,
+        loadTo: pending.fullEndBarTime ?? pending.currentBarTime,
+        capDisplay: pending.currentBarTime,
+      };
+    }
+
+    const state = ctx.replay?.getState?.();
+    if (!state?.active || state.currentBarTime == null) return null;
+
+    const anchorFrom = Math.min(
+      state.selectedBarTime ?? state.currentBarTime,
+      state.currentBarTime,
+    );
+    const snap = (ctx.getActivePane?.() ?? ctx.chartPanes.get(0))?._replaySnapshot;
+    return {
+      anchorFrom,
+      loadTo: snap?.liveEndBarTime ?? ctx.replayLiveEndUtc ?? undefined,
+      capDisplay: null,
+    };
+  }
+
   const barLoader = createBarLoader({
     datafeed: ctx.datafeed,
     countBack: ctx.opts.countBack,
@@ -51,6 +83,8 @@ export function attachBarLoader(ctx) {
       }
     },
     onHistoryPrepended: (pane) => {
+      const added = ctx.replayEngine?.mergeHistoryIntoSnapshot?.(pane) ?? 0;
+      if (added > 0) ctx.replayFutureDim?.refreshAll?.();
       ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
       ctx.ensureSmtCompare?.();
       ctx.ensureFvgHistory?.();
@@ -77,6 +111,10 @@ export function attachBarLoader(ctx) {
         onChangeInterval: () => ctx.tfPickerUi?.openPanel?.(),
       }),
     finishPaneAfterLoad: (pane, opts) => ctx.finishPaneAfterLoad?.(pane, opts),
+    isReplayLocked: () => ctx.replayEngine?.isReplayLocked?.() ?? false,
+    isReplayHistoryBlocked: () => ctx.replayEngine?.isReplayHistoryBlocked?.() ?? false,
+    getReplayLoadCapTo: (pane) => replayLoadContextForPane(pane)?.capDisplay ?? null,
+    getReplayLoadContext: replayLoadContextForPane,
   });
 
   ctx.viewportDeps.maintainLockedRatio = ctx.maintainLockedRatio;

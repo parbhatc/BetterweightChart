@@ -182,14 +182,11 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
     if (!batch) return false;
 
     try {
-      if (batch.viewSynced) {
-        if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
-        pane.series.update(batch.newCandle, true);
-      } else if (batch.whitespace.length) {
+      if (batch.whitespace.length) {
         pane.series.setData(pane._chartView.seriesData);
       } else {
         if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
-        pane.series.update(batch.newCandle, true);
+        pane.series.update(batch.newCandle);
       }
       pane.timeAdapter = pane._chartView?.timeAdapter ?? pane.timeAdapter;
       delete pane.utcTimeToIdx;

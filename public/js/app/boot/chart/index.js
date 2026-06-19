@@ -28,7 +28,9 @@ import { wireKeyboardShortcuts } from "./keyboard.js";
 import { wireSymbolAndTimeframePickers } from "./pickers.js";
 import { mountChartToolbarTools } from "../../../ui/header/chartTools.js";
 import { attachIndicatorsBoot } from "./indicatorsBoot.js";
+import { attachReplayBoot, restoreReplayAfterLoad } from "./replayBoot.js";
 import {
+  CHART_FEATURES,
   createFeatureFlags,
   setBootFeatureFlags,
 } from "../../../chart/features.js";
@@ -132,10 +134,16 @@ export async function bootChart(overrides = {}) {
 
   await wireSymbolAndTimeframePickers(ctx);
 
+  const replayEnabled =
+    ctx.opts.replay !== false && ctx.featureFlags.isEnabled(CHART_FEATURES.REPLAY);
+
   if (ctx.opts.chrome && ctx.chromeEl) {
     const toolbarLeft = ctx.chromeEl.querySelector(".tv-toolbar__left");
-    if (toolbarLeft) ctx.chartToolbarTools = mountChartToolbarTools(toolbarLeft);
+    if (toolbarLeft) {
+      ctx.chartToolbarTools = mountChartToolbarTools(toolbarLeft, { replay: replayEnabled });
+    }
   }
+  if (replayEnabled) attachReplayBoot(ctx);
   attachIndicatorsBoot(ctx);
 
   ctx.symbolInfo = await ctx.datafeed.resolveSymbol(ctx.symbol);
@@ -146,6 +154,7 @@ export async function bootChart(overrides = {}) {
 
   try {
     const last = await chartDebugTimeAsync("boot", "loadBars", () => ctx.loadBars());
+    await restoreReplayAfterLoad(ctx);
     ctx.refreshIndicators?.();
     ctx.setOverlayLoaderEnabled(false);
     ctx.persistPaneSymbols();
@@ -188,6 +197,10 @@ export async function bootChart(overrides = {}) {
       drawing: ctx.drawing,
       lastBar: last,
       countBack: ctx.opts.countBack,
+      getReplayState: () => ctx.replay?.getState?.(),
+      replayEngine: ctx.replayEngine,
+      resolutions: ctx.resolutions,
+      activePriceScaleId: ctx.activePriceScaleId,
     });
     if (typeof window !== "undefined") {
       window.__BWC_WIDGET__ = widget;
@@ -195,7 +208,7 @@ export async function bootChart(overrides = {}) {
         chartDebug("boot", "widget API", {
           getBars: typeof widget.getBars === "function",
           fetchBars: typeof widget.fetchBars === "function",
-          hint: "window.__BWC_WIDGET__.getBars() or .fetchBars({ countBack: 200 })",
+          hint: "window.__BWC_WIDGET__.visibleBars() or .getBars()",
         });
       }
     }

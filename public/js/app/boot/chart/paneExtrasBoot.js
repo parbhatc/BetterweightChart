@@ -46,6 +46,7 @@ export function attachPaneExtrasBoot(ctx) {
     getDrawingHub: () => ctx.drawingHub,
     ui: ctx.ui,
     viewportDeps: ctx.viewportDeps,
+    getReplayActive: () => ctx.replay?.isActive?.() ?? false,
   });
 
   ctx.paneExtras = paneExtras;

@@ -16,6 +16,7 @@ import {
 } from "../time/labelFormat.js";
 import { toDate } from "../format.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
+import { enforcePriceBarRatio } from "../price/barRatio.js";
 
 /** Series times are pseudo-UTC (local wall clock); format as UTC, not with a tz offset. */
 const CHART_TIME_LABEL_TZ = "Etc/UTC";
@@ -156,35 +157,169 @@ export function applySettingsToChart(opts) {
 }
 
 /**
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ */
+export function scaleMarginsFromSettings(settingsStore) {
+  const cv = settingsStore.get().canvas ?? {};
+  const marginTop = Number(cv.marginTop);
+  const marginBottom = Number(cv.marginBottom);
+  return {
+    top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
+    bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
+  };
+}
+
+/**
+ * High/low of real bars in the visible logical range.
+ * @param {object} pane
+ * @param {{ from: number, to: number } | null | undefined} logical
+ */
+export function priceRangeFromVisibleLogicalRange(pane, logical) {
+  const bars = pane?.bars;
+  if (!bars?.length || !logical) return null;
+  const { from, to } = logical;
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return null;
+
+  const startIdx = Math.max(0, Math.floor(from));
+  const endIdx = Math.min(bars.length - 1, Math.ceil(to));
+  if (startIdx > endIdx) return null;
+
+  let minVal = Infinity;
+  let maxVal = -Infinity;
+  for (let i = startIdx; i <= endIdx; i += 1) {
+    const b = bars[i];
+    if (!b) continue;
+    for (const v of [b.low, b.high, b.open, b.close]) {
+      const n = Number(v);
+      if (!Number.isFinite(n)) continue;
+      minVal = Math.min(minVal, n);
+      maxVal = Math.max(maxVal, n);
+    }
+  }
+  if (!Number.isFinite(minVal) || !Number.isFinite(maxVal) || minVal >= maxVal) return null;
+  return { minValue: minVal, maxValue: maxVal };
+}
+
+/**
+ * Fit price scale to visible bar high/low, then lock manual scale (TradingView TF-change behavior).
+ * @param {object} pane
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {() => "left" | "right"} activePriceScaleId
+ * @param {{ margins?: { top: number, bottom: number }, lockAfter?: boolean, onDone?: () => void }} [opts]
+ */
+export function refitPriceScaleToVisibleBars(pane, settingsStore, activePriceScaleId, opts = {}) {
+  if (!pane?.chart || !pane?.series || !pane.bars?.length) return null;
+
+  const sc = settingsStore.get().scales ?? {};
+  const margins = opts.margins ?? scaleMarginsFromSettings(settingsStore);
+  const scaleId = activePriceScaleId();
+  const lockAfter = opts.lockAfter ?? (!sc.autoScale && !sc.lockPriceToBarRatio);
+
+  /** @param {import("lightweight-charts").PriceScaleOptions} scaleOpts */
+  const apply = (scaleOpts) => {
+    pane.series.priceScale().applyOptions(scaleOpts);
+    try {
+      pane.chart.priceScale(scaleId).applyOptions(scaleOpts);
+      pane.chart.priceScale("right").applyOptions(scaleOpts);
+      pane.chart.priceScale("left").applyOptions(scaleOpts);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const runFit = () => {
+    const logical = pane.chart.timeScale().getVisibleLogicalRange?.();
+    const barRange = priceRangeFromVisibleLogicalRange(pane, logical);
+    const provider = barRange
+      ? () => ({
+          priceRange: {
+            minValue: barRange.minValue,
+            maxValue: barRange.maxValue,
+          },
+        })
+      : undefined;
+
+    apply({
+      autoScale: true,
+      autoscaleInfoProvider: provider,
+      scaleMargins: margins,
+    });
+
+    requestAnimationFrame(() => {
+      if (sc.autoScale) {
+        pane._manualScaleLocked = false;
+        opts.onDone?.();
+        return;
+      }
+
+      if (sc.lockPriceToBarRatio) {
+        apply({ autoScale: false, autoscaleInfoProvider: undefined, scaleMargins: margins });
+        const target = Number(sc.lockPriceToBarRatioValue);
+        if (Number.isFinite(target) && target > 0) {
+          enforcePriceBarRatio(pane.chart, pane.series, scaleId, target);
+        }
+        opts.onDone?.();
+        return;
+      }
+
+      if (lockAfter) {
+        apply({ autoScale: false, autoscaleInfoProvider: undefined, scaleMargins: margins });
+        pane._manualScaleLocked = true;
+      }
+      opts.onDone?.();
+    });
+  };
+
+  requestAnimationFrame(() => requestAnimationFrame(runFit));
+
+  return { margins, barRange: priceRangeFromVisibleLogicalRange(pane, pane.chart.timeScale().getVisibleLogicalRange?.()) };
+}
+
+/**
+ * Apply price scale margins after bar data is on the chart (setData / refresh).
+ * @param {object} pane
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {() => "left" | "right"} activePriceScaleId
+ */
+export function applyPriceScaleMarginsAfterBarLoad(pane, settingsStore, activePriceScaleId) {
+  if (!pane?.chart || !pane?.series || !pane.bars?.length) return;
+
+  const sc = settingsStore.get().scales ?? {};
+  const margins = scaleMarginsFromSettings(settingsStore);
+  const priceScaleId = activePriceScaleId();
+
+  if (sc.autoScale) {
+    pane._manualScaleLocked = false;
+    pane.series.priceScale().applyOptions({ autoScale: true, scaleMargins: margins });
+    try {
+      pane.chart.priceScale(priceScaleId).applyOptions({ autoScale: true, scaleMargins: margins });
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  if (sc.lockPriceToBarRatio) {
+    pane.series.priceScale().applyOptions({ autoScale: false, scaleMargins: margins });
+    try {
+      pane.chart.priceScale(priceScaleId).applyOptions({ autoScale: false, scaleMargins: margins });
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
+  refitPriceScaleToVisibleBars(pane, settingsStore, activePriceScaleId, { margins });
+}
+
+/**
  * Lock manual price scale once after bars exist (LWC customization guide pattern).
  * @param {object} pane
  * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
  * @param {() => "left" | "right"} activePriceScaleId
  */
 export function ensureManualPriceScaleAfterLoad(pane, settingsStore, activePriceScaleId) {
-  const sc = settingsStore.get().scales ?? {};
-  if (sc.autoScale || sc.lockPriceToBarRatio) {
-    pane._manualScaleLocked = false;
-    return;
-  }
-  if (!pane?.chart || !pane?.series || !pane.bars?.length || pane._manualScaleLocked) return;
-
-  const cv = settingsStore.get().canvas ?? {};
-  const marginTop = Number(cv.marginTop);
-  const marginBottom = Number(cv.marginBottom);
-  const margins = {
-    top: Number.isFinite(marginTop) ? marginTop / 100 : 0.08,
-    bottom: Number.isFinite(marginBottom) ? marginBottom / 100 : 0.12,
-  };
-
-  pane._manualScaleLocked = true;
-  const priceScaleId = activePriceScaleId();
-  pane.series.priceScale().applyOptions({ autoScale: false, scaleMargins: margins });
-  try {
-    pane.chart.priceScale(priceScaleId).applyOptions({ autoScale: false, scaleMargins: margins });
-  } catch {
-    /* ignore */
-  }
+  applyPriceScaleMarginsAfterBarLoad(pane, settingsStore, activePriceScaleId);
 }
 
 /**

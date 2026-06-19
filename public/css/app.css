@@ -23,3 +23,25 @@
 @import "./indicators/dialog.css";
 @import "./indicators/legend.css";
 @import "./indicators/studyPaneLegend.css";
+@import "./replay/toolbar.css";
+@import "./replay/dateDialog.css";
+
+/* iOS Safari auto-zooms focused inputs below 16px — touch devices only. */
+@media (pointer: coarse) {
+  input:not(
+      :is(
+        [type="checkbox"],
+        [type="radio"],
+        [type="button"],
+        [type="submit"],
+        [type="reset"],
+        [type="hidden"],
+        [type="range"],
+        [type="color"]
+      )
+    ),
+  textarea,
+  select {
+    font-size: max(16px, 1em) !important;
+  }
+}

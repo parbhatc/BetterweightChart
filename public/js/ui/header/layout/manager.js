@@ -27,7 +27,11 @@ export function createLayoutManager(opts) {
   stageEl.insertBefore(gridEl, primaryWrapEl);
   gridEl.appendChild(primaryWrapEl);
 
+  const replayBar = primaryWrapEl.querySelector(".tv-chart-replay-bar");
   const bottomBar = primaryWrapEl.querySelector(".tv-chart-bottom-bar");
+  if (replayBar) {
+    stageEl.appendChild(replayBar);
+  }
   if (bottomBar) {
     stageEl.appendChild(bottomBar);
   }

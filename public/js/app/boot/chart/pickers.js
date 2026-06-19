@@ -2,6 +2,10 @@ import { mountSymbolSearch } from "../../../ui/symbol/search.js";
 import { mountTimeframePicker } from "../../../ui/timeframe/picker.js";
 import { debugSymbolChange, debugTimeframeChange } from "../../../debug/chart/symbolTimeframe.js";
 import { captureVisibleViewport, restoreVisibleViewport } from "../../../chart/pane/viewport.js";
+import {
+  captureViewportBarLayout,
+  restoreViewportBarLayout,
+} from "../../../chart/pane/viewportBarLayout.js";
 
 /**
  * @param {object[]} panes
@@ -20,6 +24,46 @@ function restorePaneViewports(panes, saved) {
     const captured = saved[i];
     if (!pane?.chart || !captured) continue;
     restoreVisibleViewport(pane.chart, captured);
+  }
+}
+
+/**
+ * @param {import("./state.js").BootContext} ctx
+ * @param {object[]} panes
+ */
+function capturePaneBarLayouts(ctx, panes) {
+  return panes.map((p) => captureViewportBarLayout(p, ctx.settingsStore, ctx.resolutions));
+}
+
+/**
+ * @param {import("./state.js").BootContext} ctx
+ * @param {object[]} panes
+ * @param {ReturnType<typeof captureViewportBarLayout>[]} saved
+ */
+function restorePaneBarLayouts(ctx, panes, saved) {
+  for (let i = 0; i < panes.length; i += 1) {
+    restoreViewportBarLayout(
+      panes[i],
+      saved[i],
+      ctx.settingsStore,
+      ctx.resolutions,
+      "timeframe",
+      ctx.activePriceScaleId,
+    );
+  }
+}
+
+/**
+ * @param {import("./state.js").BootContext} ctx
+ * @param {() => void} restoreLayout
+ */
+async function afterTimeframeChangeThenRestoreViewport(ctx, restoreLayout) {
+  ctx._viewportRestorePending = true;
+  try {
+    await ctx.afterTimeframeChange?.();
+    restoreLayout();
+  } finally {
+    ctx._viewportRestorePending = false;
   }
 }
 
@@ -131,16 +175,25 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             paneCount: panes.length,
           });
           preparePanesForSeriesReload(ctx, panes);
+          const savedLayouts = capturePaneBarLayouts(ctx, panes);
           for (const pane of panes) {
+            ctx.replayEngine?.beforeResolutionChange?.(pane);
             ctx.stashPaneResolutionCache(pane, pane.resolution);
             pane.resolution = res;
           }
           ctx.resolution = res;
           ctx.refreshWatermark();
           ctx.refreshStatusLine();
-          await ctx.loadBarsForPanes(panes, { force: true });
+          const deferChartRefresh = ctx.replayEngine?.isReplayLocked?.() ?? false;
+          await ctx.loadBarsForPanes(panes, {
+            force: true,
+            deferChartRefresh,
+            skipPriceScaleMargins: true,
+          });
           finishSeriesReload(ctx, panes);
-          ctx.afterTimeframeChange();
+          await afterTimeframeChangeThenRestoreViewport(ctx, () =>
+            restorePaneBarLayouts(ctx, panes, savedLayouts),
+          );
           return;
         }
         const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
@@ -153,15 +206,31 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           sync: false,
         });
         preparePanesForSeriesReload(ctx, [pane]);
+        const savedLayout = captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions);
+        ctx.replayEngine?.beforeResolutionChange?.(pane);
         ctx.stashPaneResolutionCache(pane, pane.resolution);
         pane.resolution = res;
         if (pane.index === 0) ctx.chartPanes.get(0).resolution = res;
         ctx.resolution = res;
         ctx.refreshWatermark();
         ctx.refreshStatusLine();
-        await ctx.loadPaneBars(pane, { force: true });
+        const deferChartRefresh = ctx.replayEngine?.isReplayLocked?.() ?? false;
+        await ctx.loadPaneBars(pane, {
+          force: true,
+          deferChartRefresh,
+          skipPriceScaleMargins: true,
+        });
         finishSeriesReload(ctx, [pane]);
-        ctx.afterTimeframeChange();
+        await afterTimeframeChangeThenRestoreViewport(ctx, () =>
+          restoreViewportBarLayout(
+            pane,
+            savedLayout,
+            ctx.settingsStore,
+            ctx.resolutions,
+            "timeframe",
+            ctx.activePriceScaleId,
+          ),
+        );
       },
     });
   }

@@ -292,7 +292,7 @@ export function mountHeaderToolbar(opts) {
     menu.innerHTML = `
       <label class="tv-header-menu__item tv-header-menu__item--switch">
         <span class="tv-header-menu__label">Auto-save</span>
-        <input type="checkbox" role="switch" data-save-action="autosave"${layoutManager.getAutoSave() ? " checked" : ""} />
+        <span class="tv-header-switch"><input type="checkbox" role="switch" data-save-action="autosave"${layoutManager.getAutoSave() ? " checked" : ""} /></span>
       </label>
       <div class="tv-header-menu__sep"></div>
       <button type="button" class="tv-header-menu__item" data-save-action="create">Create new layout…</button>
@@ -453,7 +453,7 @@ export function mountHeaderToolbar(opts) {
 function syncRow(key, label, tip, checked, disabled) {
   return `<label class="tv-header-sync__row" title="${tip}">
     <span class="tv-header-sync__label">${label}</span>
-    <input type="checkbox" role="switch" data-sync-key="${key}"${checked ? " checked" : ""}${disabled ? " disabled" : ""} />
+    <span class="tv-header-switch"><input type="checkbox" role="switch" data-sync-key="${key}"${checked ? " checked" : ""}${disabled ? " disabled" : ""} /></span>
   </label>`;
 }
 

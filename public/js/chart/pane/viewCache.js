@@ -157,15 +157,26 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
   }
   if (!view?.utcBars?.length) return null;
 
-  // pane.bars already includes utcBar — view may have been rebuilt to match.
+  // Callers push to pane.bars before append; getPaneChartView may rebuild the view to
+  // include the new bar while the LWC series still ends one bar earlier.
   if (view.utcBars.length === allUtc.length && view.utcBars.at(-1)?.time === utcBar.time) {
-    const seriesData = view.seriesData;
-    const newCandle = seriesData[seriesData.length - 1];
-    const prevCandle = seriesData.length >= 2 ? seriesData[seriesData.length - 2] : null;
-    pane.mapBars = view.mapBars;
-    pane.shiftedBars = view.chartBars;
-    pane._shiftedKey = view.utcKey;
-    return { newCandle, prevCandle, whitespace: [], viewSynced: true };
+    const ws = view.futureWhitespace;
+    if (ws > 0) {
+      view.mapBars.length -= ws;
+      view.seriesData.length -= ws;
+    } else {
+      view.mapBars.pop();
+      view.seriesData.pop();
+    }
+    view.utcBars.pop();
+    view.chartBars.pop();
+    view.utcKey = utcBarsKey(view.utcBars, session);
+    view.timeAdapter = createTimeAdapter({
+      utcBars: view.utcBars,
+      chartBars: view.chartBars,
+      mapBars: view.mapBars,
+      barSec: view.barSec,
+    });
   }
 
   if (view.utcBars.length !== allUtc.length - 1) return null;
