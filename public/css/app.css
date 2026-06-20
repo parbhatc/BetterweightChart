@@ -25,6 +25,7 @@
 @import "./indicators/studyPaneLegend.css";
 @import "./replay/toolbar.css";
 @import "./replay/dateDialog.css";
+@import "./strategy/report.css";
 
 /* iOS Safari auto-zooms focused inputs below 16px — touch devices only. */
 @media (pointer: coarse) {

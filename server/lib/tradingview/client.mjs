@@ -26,7 +26,7 @@ function randId(prefix, n = 10) {
 }
 
 /** @param {number[]} v */
-function barFromTv(v) {
+export function barFromTv(v) {
   return {
     time: Math.floor(v[0]),
     open: v[1],
@@ -38,7 +38,7 @@ function barFromTv(v) {
 }
 
 /** @param {object} meta */
-function symbolInfoFromResolved(tvSymbol, meta) {
+export function symbolInfoFromResolved(tvSymbol, meta) {
   const src = meta && typeof meta === "object" ? meta : {};
   const pricescale = src.pricescale ?? 100;
   const minmov = src.minmov ?? 1;
@@ -86,7 +86,7 @@ function symbolInfoFromResolved(tvSymbol, meta) {
 }
 
 /** @param {object[]} series @param {{ time: number }[]} bars */
-function mergeSeriesRows(series, bars) {
+export function mergeSeriesRows(series, bars) {
   for (const row of series) {
     if (!row?.v) continue;
     const bar = barFromTv(row.v);
@@ -231,13 +231,11 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
         return;
       }
       if (morePending || moreAttempts >= maxMore) {
-        if (oldest <= beforeTime) completeFetch();
-        else finish(new Error(`TradingView history depth exhausted at ${oldest}, need ${beforeTime}`));
+        completeFetch();
         return;
       }
       if (lastOldest != null && oldest >= lastOldest) {
-        if (oldest <= beforeTime) completeFetch();
-        else finish(new Error(`TradingView history stuck at ${oldest}, need ${beforeTime}`));
+        completeFetch();
         return;
       }
       lastOldest = oldest;

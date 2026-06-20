@@ -94,6 +94,7 @@ export function createLifecycle(deps) {
     if (patch.inputs) inst.inputs = { ...inst.inputs, ...patch.inputs };
     if (patch.style) inst.style = { ...inst.style, ...patch.style };
     if (patch.visibility) inst.visibility = { ...inst.visibility, ...patch.visibility };
+    if (patch.properties) inst.properties = { ...inst.properties, ...patch.properties };
     clearOverlayInstanceCache(inst);
     inst._overlayAppliedGeomKey = undefined;
     refreshInstance(inst);
@@ -124,6 +125,8 @@ export function createLifecycle(deps) {
         inputs: structuredClone(inst.inputs),
         style: structuredClone(inst.style),
         visibility: structuredClone(inst.visibility),
+        properties: structuredClone(inst.properties ?? {}),
+        backtestRange: structuredClone(inst.backtestRange ?? { id: "90d" }),
         hidden: inst.hidden,
       });
     }
@@ -149,6 +152,7 @@ export function createLifecycle(deps) {
       if (!Array.isArray(list)) continue;
       for (const raw of list) {
         if (!raw?.defId || !getIndicatorClass(raw.defId)) continue;
+        const Indicator = getIndicatorClass(raw.defId);
         /** @type {IndicatorInstance & { series: Map<string, import("lightweight-charts").ISeriesApi> }} */
         const entry = {
           instanceId: raw.instanceId ?? `${raw.defId}_${Math.random().toString(36).slice(2, 9)}`,
@@ -158,6 +162,8 @@ export function createLifecycle(deps) {
           inputs: { ...raw.inputs },
           style: { ...raw.style },
           visibility: { ...raw.visibility },
+          properties: { ...(Indicator?.defaultProperties?.() ?? {}), ...(raw.properties ?? {}) },
+          backtestRange: raw.backtestRange ?? { id: "90d" },
           hidden: Boolean(raw.hidden),
           series: new Map(),
         };

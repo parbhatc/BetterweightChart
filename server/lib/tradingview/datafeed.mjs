@@ -1,10 +1,38 @@
 import { fetchTradingViewBars } from "./client.mjs";
+import { fetchTradingViewBarsReplay } from "./replayClient.mjs";
 import { logoUrlFor, searchTradingViewSymbols } from "./search.mjs";
 import { chartConfig } from "../fakeBars.mjs";
 import { CHART_RESOLUTIONS, isSymbolResolutionSupported, resolutionSec } from "../resolutions.mjs";
 
 /** @type {Map<string, object>} */
 const symbolCache = new Map();
+
+/** Symbols where live TV history failed — subsequent requests use replay only. */
+/** @type {Set<string>} */
+const replayOnlyKeys = new Set();
+
+/** @param {string} symbol @param {string} resolution */
+function seriesReplayKey(symbol, resolution) {
+  return `${symbol}|${resolution}`;
+}
+
+/**
+ * @param {object} result
+ * @param {number} countBack
+ */
+function formatHistoryOk(result, countBack) {
+  const { bars, symbolInfo, noData, meta } = result;
+  return {
+    s: "ok",
+    t: bars.map((b) => b.time),
+    o: bars.map((b) => b.open),
+    h: bars.map((b) => b.high),
+    l: bars.map((b) => b.low),
+    c: bars.map((b) => b.close),
+    v: bars.map((b) => b.volume ?? 0),
+    meta: { symbolInfo, noData: Boolean(noData) || bars.length < countBack * 0.2, ...meta },
+  };
+}
 
 export function tradingViewDatafeedConfig() {
   const { themes } = chartConfig();
@@ -67,27 +95,46 @@ export async function tradingViewHistory(opts) {
     range = { from, to };
   }
 
-  try {
-    const { bars, symbolInfo, noData, meta } = await fetchTradingViewBars(
-      opts.symbol,
-      opts.resolution,
-      countBack,
-      range,
-    );
-    symbolCache.set(opts.symbol, symbolInfo);
+  const replayKey = seriesReplayKey(opts.symbol, opts.resolution);
+  const useReplayOnly = replayOnlyKeys.has(replayKey);
 
-    if (!bars.length) return { s: "no_data", bars: [], meta: meta ?? {} };
-    return {
-      s: "ok",
-      t: bars.map((b) => b.time),
-      o: bars.map((b) => b.open),
-      h: bars.map((b) => b.high),
-      l: bars.map((b) => b.low),
-      c: bars.map((b) => b.close),
-      v: bars.map((b) => b.volume ?? 0),
-      meta: { symbolInfo, noData: Boolean(noData) || bars.length < countBack * 0.2, ...meta },
-    };
+  /** @param {object} result */
+  function rememberSymbol(result) {
+    if (result?.symbolInfo) symbolCache.set(opts.symbol, result.symbolInfo);
+  }
+
+  try {
+    if (!useReplayOnly) {
+      const tv = await fetchTradingViewBars(opts.symbol, opts.resolution, countBack, range);
+      rememberSymbol(tv);
+      if (tv.bars.length) return formatHistoryOk(tv, countBack);
+
+      const replay = await fetchTradingViewBarsReplay(opts.symbol, opts.resolution, countBack, range);
+      rememberSymbol(replay);
+      if (replay.bars.length) {
+        replayOnlyKeys.add(replayKey);
+        return formatHistoryOk(replay, countBack);
+      }
+      return { s: "no_data", bars: [], meta: { ...(tv.meta ?? {}), ...(replay.meta ?? {}), noData: true } };
+    }
+
+    const replay = await fetchTradingViewBarsReplay(opts.symbol, opts.resolution, countBack, range);
+    rememberSymbol(replay);
+    if (replay.bars.length) return formatHistoryOk(replay, countBack);
+    return { s: "no_data", bars: [], meta: { ...(replay.meta ?? {}), noData: true, source: "replay" } };
   } catch (err) {
+    if (!useReplayOnly) {
+      try {
+        const replay = await fetchTradingViewBarsReplay(opts.symbol, opts.resolution, countBack, range);
+        rememberSymbol(replay);
+        if (replay.bars.length) {
+          replayOnlyKeys.add(replayKey);
+          return formatHistoryOk(replay, countBack);
+        }
+      } catch {
+        // fall through
+      }
+    }
     return { s: "no_data", bars: [], meta: { error: err?.message ?? String(err) } };
   }
 }

@@ -458,6 +458,7 @@
 }
 
 .tv-stage--with-bottom-bar .tv-chart-replay-bar,
+.tv-stage--with-bottom-bar .tv-strategy-report-slot,
 .tv-stage--with-bottom-bar .tv-chart-bottom-bar {
   flex-shrink: 0;
   width: 100%;

@@ -1,8 +1,8 @@
 export const DEFAULT_INITIAL_COUNT_BACK = 500;
 /** Scroll-back chunk cap — TV prefetches smaller batches than the first load. */
 export const DEFAULT_HISTORY_CHUNK = 200;
-const COUNT_BACK_MIN = 50;
-const COUNT_BACK_MAX = 2000;
+export const COUNT_BACK_MIN = 50;
+export const COUNT_BACK_MAX = 2000;
 
 /**
  * Estimate bars needed from chart viewport (TV derives countBack from pixel width / bar spacing).

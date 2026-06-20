@@ -152,10 +152,17 @@
 }
 
 .tv-ind-lib__item-title {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.tv-ind-lib__item-kind {
+  font-size: 10px;
+  color: var(--tv-color-text-secondary, #787b86);
+  margin-left: 6px;
 }
 
 .tv-ind-lib__empty {
@@ -305,6 +312,22 @@
 
 .tv-ind-settings .tv-set__field-row {
   padding: var(--space-3) var(--space-4);
+}
+
+.tv-ind-settings [data-panel="properties"] .tv-set__field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  align-items: center;
+}
+
+.tv-ind-settings [data-panel="properties"] .tv-set__field-label {
+  min-width: 0;
+}
+
+.tv-ind-settings [data-panel="properties"] .tv-drawing-settings__input {
+  min-width: 0;
+  width: 100%;
 }
 
 .tv-ind-settings .tv-set__field-label {

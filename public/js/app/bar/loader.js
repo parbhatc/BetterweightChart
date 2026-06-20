@@ -11,6 +11,8 @@ import {
   alignBarTime,
   buildInitialPeriodParams,
   buildPrependPeriodParams,
+  COUNT_BACK_MAX,
+  COUNT_BACK_MIN,
   DEFAULT_HISTORY_CHUNK,
   estimateCountBackFromViewport,
   estimateHistoryCountBack,
@@ -25,6 +27,7 @@ import {
   stashPaneResolutionCache,
   tryRestorePaneResolutionCache,
 } from "./resolutionCache.js";
+import { tryBacktestCacheBars } from "../../strategy/backtestBarCache.js";
 
 /** Load more when the visible range is within this many bars of the left edge. */
 export const HISTORY_EDGE_BARS = 80;
@@ -301,8 +304,9 @@ export function createBarLoader(opts) {
   /**
    * @param {object} pane
    * @param {number} [chunk]
+   * @param {{ forceCountBack?: number }} [opts]
    */
-  async function prependHistory(pane, chunk = historyChunk) {
+  async function prependHistory(pane, chunk = historyChunk, opts = {}) {
     if (pane._loadingHistory || !pane.bars.length) return false;
     if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
     await ensurePaneSymbolInfo(pane);
@@ -313,7 +317,10 @@ export function createBarLoader(opts) {
     try {
       const first = pane.bars[0];
       const barSec = getBarSecForPane?.(pane) ?? 60;
-      const requestCountBack = estimateHistoryCountBack(pane.chart, chunk, HISTORY_EDGE_BARS);
+      const requestCountBack =
+        opts.forceCountBack != null
+          ? Math.min(COUNT_BACK_MAX, Math.max(COUNT_BACK_MIN, Number(opts.forceCountBack) || COUNT_BACK_MIN))
+          : estimateHistoryCountBack(pane.chart, chunk, HISTORY_EDGE_BARS);
       const periodParams = buildPrependPeriodParams(first.time, barSec, requestCountBack);
       chartDebug("data", "prependHistory request", {
         pane: pane.index,
@@ -321,9 +328,12 @@ export function createBarLoader(opts) {
         maxChunk: chunk,
         ...periodParams,
       });
-      const result = await chartDebugTimeAsync("data", `prependHistory pane ${pane.index}`, () =>
-        datafeed.getBars(pane.symbolInfo, pane.resolution, periodParams),
-      );
+      const cached = tryBacktestCacheBars(pane.symbol, pane.resolution, periodParams);
+      const result =
+        cached ??
+        (await chartDebugTimeAsync("data", `prependHistory pane ${pane.index}`, () =>
+          datafeed.getBars(pane.symbolInfo, pane.resolution, periodParams),
+        ));
       if (!result.bars?.length || result.noData) {
         chartDebug("data", "prependHistory noData — history exhausted", {
           pane: pane.index,
@@ -393,6 +403,18 @@ export function createBarLoader(opts) {
    * @param {object} periodParams
    */
   function fetchBarsShared(pane, symbolInfo, periodParams) {
+    const cached = tryBacktestCacheBars(pane.symbol, pane.resolution, periodParams);
+    if (cached) {
+      chartDebug("data", "getBars from strategy cache", {
+        pane: pane.index,
+        symbol: pane.symbol,
+        resolution: pane.resolution,
+        bars: cached.bars.length,
+        ...periodParams,
+      });
+      return Promise.resolve(cached);
+    }
+
     const key = seriesCacheKey(pane.symbol, pane.resolution);
     let pending = seriesFetchInFlight.get(key);
     if (!pending) {
@@ -627,6 +649,7 @@ export function createBarLoader(opts) {
     loadBars,
     pushLiveBar: applyIncomingBar,
     prependHistory,
+    mergeOlderBarsIntoPane,
     ensureHistoryNearEdge,
     needsMoreHistory,
     setOverlayLoaderEnabled,

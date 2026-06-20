@@ -131,9 +131,10 @@ export function createBarScriptContext(opts) {
       return this.getFloat(key, def, min);
     },
 
-    /** @param {string} [fieldKey] */
+    /** @param {string} [fieldKey] input id for a source field, or omit for default "source" */
     source(fieldKey) {
-      const field = fieldKey ?? this.getSource("source", "close");
+      const key = fieldKey ?? "source";
+      const field = this.getSource(key, "close");
       return this.math.source(this.bar, field);
     },
 

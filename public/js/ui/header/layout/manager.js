@@ -28,9 +28,13 @@ export function createLayoutManager(opts) {
   gridEl.appendChild(primaryWrapEl);
 
   const replayBar = primaryWrapEl.querySelector(".tv-chart-replay-bar");
+  const strategyReportSlot = primaryWrapEl.querySelector(".tv-strategy-report-slot");
   const bottomBar = primaryWrapEl.querySelector(".tv-chart-bottom-bar");
   if (replayBar) {
     stageEl.appendChild(replayBar);
+  }
+  if (strategyReportSlot) {
+    stageEl.appendChild(strategyReportSlot);
   }
   if (bottomBar) {
     stageEl.appendChild(bottomBar);

@@ -69,6 +69,7 @@
  * @property {(userInput: string, exchange?: string, symbolType?: string, limit?: number) => Promise<object[]>} [searchSymbols]
  * @property {(symbolName: string) => Promise<SymbolInfo>} resolveSymbol
  * @property {(symbolInfo: SymbolInfo, resolution: string, periodParams?: PeriodParams) => Promise<GetBarsResult>} getBars
+ * @property {(symbolInfo: SymbolInfo, resolution: string, rangeOpts?: { rangeId?: string, from?: number, to?: number }) => Promise<GetBarsResult>} [getBacktestBars]
  * @property {(...args: unknown[]) => void} [subscribeBars]
  * @property {(...args: unknown[]) => void} [unsubscribeBars]
  */

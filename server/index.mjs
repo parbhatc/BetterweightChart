@@ -17,6 +17,7 @@ import {
   tradingViewResolve,
   tradingViewSearch,
 } from "./lib/tradingview/datafeed.mjs";
+import { tradingViewBacktestHistory } from "./lib/tradingview/backtestHistory.mjs";
 import { subscribeTradingViewBars } from "./lib/tradingview/client.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -106,6 +107,25 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
       json(res, 200, payload);
     } catch (err) {
       json(res, 200, { s: "error", errmsg: err.message || "History failed" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/tv/backtest-history") {
+    try {
+      const range = sp.get("range") || "90d";
+      const presetDays = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 };
+      const days = sp.get("days") != null ? Number(sp.get("days")) : (presetDays[range] ?? 90);
+      const payload = await tradingViewBacktestHistory({
+        symbol: sp.get("symbol") || "CME_MINI:NQ1!",
+        resolution: sp.get("resolution") || "1",
+        days,
+        from: sp.get("from") != null ? Number(sp.get("from")) : undefined,
+        to: sp.get("to") != null ? Number(sp.get("to")) : undefined,
+      });
+      json(res, 200, payload);
+    } catch (err) {
+      json(res, 200, { s: "error", errmsg: err.message || "Backtest history failed" });
     }
     return true;
   }

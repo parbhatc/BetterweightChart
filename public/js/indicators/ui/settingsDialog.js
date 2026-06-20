@@ -55,11 +55,13 @@ export function createIndicatorSettingsDialog(opts) {
     </div>
     <div class="tv-drawing-settings__tabs" role="tablist">
       <button type="button" class="tv-drawing-settings__tab is-selected" data-tab="inputs" role="tab">Inputs</button>
+      <button type="button" class="tv-drawing-settings__tab" data-tab="properties" role="tab" hidden>Properties</button>
       <button type="button" class="tv-drawing-settings__tab" data-tab="style" role="tab">Style</button>
       <button type="button" class="tv-drawing-settings__tab" data-tab="visibility" role="tab">Visibility</button>
     </div>
     <div class="tv-drawing-settings__body tv-ind-settings__body">
       <div class="tv-drawing-settings__panel" data-panel="inputs"></div>
+      <div class="tv-drawing-settings__panel" data-panel="properties" hidden></div>
       <div class="tv-drawing-settings__panel" data-panel="style" hidden></div>
       <div class="tv-drawing-settings__panel" data-panel="visibility" hidden>
         <div class="tv-set__section">
@@ -77,6 +79,7 @@ export function createIndicatorSettingsDialog(opts) {
   const dialog = root.querySelector(".tv-ind-settings__dialog");
   const titleEl = root.querySelector("[data-dialog-title]");
   const inputsPanel = root.querySelector('[data-panel="inputs"]');
+  const propertiesPanel = root.querySelector('[data-panel="properties"]');
   const stylePanel = root.querySelector('[data-panel="style"]');
   const visibilityList = root.querySelector("[data-visibility-list]");
   const dragHandle = root.querySelector("[data-drag-handle]");
@@ -85,6 +88,7 @@ export function createIndicatorSettingsDialog(opts) {
     !(dialog instanceof HTMLElement) ||
     !(titleEl instanceof HTMLElement) ||
     !(inputsPanel instanceof HTMLElement) ||
+    !(propertiesPanel instanceof HTMLElement) ||
     !(stylePanel instanceof HTMLElement) ||
     !(visibilityList instanceof HTMLElement)
   ) {
@@ -105,7 +109,7 @@ export function createIndicatorSettingsDialog(opts) {
   let instanceId = null;
   /** @type {object} */
   let draft = { inputs: {}, style: {}, visibility: {} };
-  /** @type {{ inputs: object, style: object, visibility: object } | null} */
+  /** @type {{ inputs: object, style: object, visibility: object, properties?: object } | null} */
   let baseline = null;
   let activeTab = "inputs";
   /** @type {((ev: PointerEvent) => void) | null} */
@@ -164,6 +168,50 @@ export function createIndicatorSettingsDialog(opts) {
       return Indicator.inputSchema(draft.inputs, chartResolution);
     }
     return [];
+  }
+
+  function isStrategyDialog() {
+    const Indicator = getActiveIndicator();
+    return Indicator?.kind === "strategy";
+  }
+
+  /** @returns {import("../types.js").InputDef[]} */
+  function getPropertySchema() {
+    const Indicator = getActiveIndicator();
+    if (Indicator && typeof Indicator.propertySchema === "function") {
+      return Indicator.propertySchema();
+    }
+    return [];
+  }
+
+  function syncStrategyTabVisibility() {
+    const show = isStrategyDialog();
+    const tab = root.querySelector('[data-tab="properties"]');
+    if (tab instanceof HTMLElement) tab.hidden = !show;
+  }
+
+  function renderPropertiesPanel() {
+    if (!isStrategyDialog()) {
+      propertiesPanel.innerHTML = "";
+      return;
+    }
+    if (!draft.properties) draft.properties = {};
+    propertiesPanel.innerHTML = renderInputsPanelHtml(
+      getPropertySchema(),
+      draft.properties,
+      draft.style,
+      {
+        propNumber,
+        propSelect,
+        propCheck,
+        propCheckOnly,
+        propText,
+        propSymbol,
+        propInputColor: (field, store) => renderInputColorField(field, store),
+        priceSources: PRICE_SOURCES,
+        timeframeOptions,
+      },
+    );
   }
 
   function renderInputsPanel() {
@@ -522,6 +570,9 @@ export function createIndicatorSettingsDialog(opts) {
 
   function readDraftFromUi() {
     readFieldsFromPanel(inputsPanel, draft.inputs);
+    if (isStrategyDialog() && draft.properties) {
+      readFieldsFromPanel(propertiesPanel, draft.properties);
+    }
     readFieldsFromPanel(stylePanel, draft.style);
     for (const input of getInputSchema()) {
       if (input.type === "symbolSizeRules") {
@@ -572,6 +623,7 @@ export function createIndicatorSettingsDialog(opts) {
       inputs: { ...inst.inputs },
       style: { ...inst.style },
       visibility: { ...inst.visibility },
+      properties: { ...(inst.properties ?? {}) },
     };
     if (typeof Indicator.mergeStyleDefaults === "function") {
       Indicator.mergeStyleDefaults(draft.style, draft.inputs);
@@ -580,10 +632,13 @@ export function createIndicatorSettingsDialog(opts) {
       inputs: structuredClone(inst.inputs),
       style: structuredClone(inst.style),
       visibility: structuredClone(inst.visibility),
+      properties: structuredClone(inst.properties ?? {}),
     };
-    titleEl.textContent = Indicator.shortTitle;
+    titleEl.textContent = Indicator.title ?? Indicator.shortTitle;
     activeTab = "inputs";
+    syncStrategyTabVisibility();
     renderInputsPanel();
+    renderPropertiesPanel();
     renderStylePanel();
     syncVisibilityUi();
     syncTabs();
@@ -626,18 +681,23 @@ export function createIndicatorSettingsDialog(opts) {
   /** @type {Map<string, { id: string, label: string }[]>} */
   const selectOptions = new Map([["precision", PRECISION_OPTIONS]]);
 
+  function inputFieldById(fieldId) {
+    return flattenInputFields(getInputSchema()).find((i) => i.id === fieldId);
+  }
+
   function optionsForInputField(field) {
     if (field === "timeframe") return timeframeOptions();
-    if (field === "source") return PRICE_SOURCES.map((s) => ({ id: s.id, label: s.label }));
-    const input = flattenInputFields(getInputSchema()).find((i) => i.id === field);
+    const input = inputFieldById(field);
+    if (input?.type === "source") return PRICE_SOURCES.map((s) => ({ id: s.id, label: s.label }));
     if (input?.type === "select") return input.options ?? [];
     return selectOptions.get(field) ?? [];
   }
 
   function openSelectMenu(anchor, field) {
     const options = optionsForInputField(field);
+    const input = inputFieldById(field);
     const currentVal = field in draft.inputs ? draft.inputs[field] : draft.style[field];
-    if (field === "source") {
+    if (input?.type === "source") {
       const menu = document.createElement("div");
       menu.className = "tv-ind-source-menu";
       menu.setAttribute("role", "listbox");
@@ -766,6 +826,7 @@ export function createIndicatorSettingsDialog(opts) {
     if (tab instanceof HTMLElement && tab.dataset.tab) {
       activeTab = tab.dataset.tab;
       if (activeTab === "style") renderStylePanel();
+      else if (activeTab === "properties") renderPropertiesPanel();
       syncTabs();
       return;
     }
