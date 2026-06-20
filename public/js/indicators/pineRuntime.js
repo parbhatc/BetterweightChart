@@ -1,13 +1,7 @@
 import { barSourceValue } from "./math/source.js";
 import { pivotHighAt, pivotLowAt } from "./math/pivots.js";
-
-/** @param {number} price @param {object | null | undefined} symbolInfo */
-function formatPrice(price, symbolInfo) {
-  const scale = symbolInfo?.pricescale ?? 100;
-  const minmov = symbolInfo?.minmov ?? 1;
-  const decimals = Math.max(2, Math.round(Math.log10(scale / minmov)));
-  return Number(price).toFixed(decimals);
-}
+import { formatSymbolPrice } from "./symbol.js";
+import { getSecuritySeries } from "./security/htfAccess.js";
 
 /**
  * Pine-style bar script context — one bar per callback, `this.plot()` / `this.drawLabel()`.
@@ -69,7 +63,7 @@ export function createBarScriptContext(opts) {
     },
 
     format: {
-      price: (n) => formatPrice(n, symbolInfo),
+      price: (n) => formatSymbolPrice(n, symbolInfo),
     },
 
     plot(key, value) {
@@ -93,18 +87,63 @@ export function createBarScriptContext(opts) {
       lines.push(line);
     },
 
+    /** @param {string} key @param {unknown} [def] */
+    getInput(key, def) {
+      const v = this.inputs[key];
+      return v === undefined || v === null ? def : v;
+    },
+
+    /** @param {string} key @param {boolean} [def] */
+    getBool(key, def = false) {
+      const v = this.inputs[key];
+      if (v === undefined || v === null) return def;
+      return v !== false;
+    },
+
+    /** @param {string} key @param {number} [def] @param {number} [min] */
+    getInt(key, def = 1, min = 1) {
+      return Math.max(min, Math.floor(Number(this.getInput(key, def)) || def));
+    },
+
+    /** @param {string} key @param {number} [def] @param {number} [min] */
+    getFloat(key, def = 0, min = 0) {
+      return Math.max(min, Number(this.getInput(key, def)) || def);
+    },
+
+    /** @param {string} key @param {string} [def] */
+    getString(key, def = "") {
+      const v = this.getInput(key, def);
+      return v == null ? def : String(v);
+    },
+
+    /** @param {string} key @param {string} [def] */
+    getSource(key, def = "close") {
+      return String(this.getInput(key, def) ?? def);
+    },
+
+    /** @param {string} key @param {number} [def] @param {number} [min] */
+    inputInt(key, def = 1, min = 1) {
+      return this.getInt(key, def, min);
+    },
+
+    /** @param {string} key @param {number} [def] @param {number} [min] */
+    inputFloat(key, def = 0, min = 0) {
+      return this.getFloat(key, def, min);
+    },
+
+    /** @param {string} [fieldKey] */
+    source(fieldKey) {
+      const field = fieldKey ?? this.getSource("source", "close");
+      return this.math.source(this.bar, field);
+    },
+
     request: {
       security(symbol, resolution, countBack = 300) {
         const fn = overlayCtx?.request?.security ?? overlayCtx?.lookupSecurity;
         if (typeof fn === "function") {
           return fn(symbol, resolution, countBack);
         }
-        return (
-          overlayCtx?.getSecurityBars?.(symbol, resolution) ??
-          overlayCtx?.getBars?.(resolution) ??
-          overlayCtx?.getHtfBars?.(resolution) ??
-          null
-        );
+        return getSecuritySeries(overlayCtx ?? {}, symbol, resolution);
       },
     },
   };
@@ -129,6 +168,15 @@ export function createBarScriptContext(opts) {
  * @property {{ pivotHigh: (left: number, right: number) => number | null, pivotLow: (left: number, right: number) => number | null, source: (bar?: object, field?: string) => number | null }} math
  * @property {{ price: (n: number) => string }} format
  * @property {(plotKey: string, value: number | null) => void} plot
+ * @property {(key: string, def?: unknown) => unknown} getInput
+ * @property {(key: string, def?: boolean) => boolean} getBool
+ * @property {(key: string, def?: number, min?: number) => number} getInt
+ * @property {(key: string, def?: number, min?: number) => number} getFloat
+ * @property {(key: string, def?: string) => string} getString
+ * @property {(key: string, def?: string) => string} getSource
+ * @property {(key: string, def?: number, min?: number) => number} inputInt
+ * @property {(key: string, def?: number, min?: number) => number} inputFloat
+ * @property {(fieldKey?: string) => number | null} source
  * @property {(label: object) => void} drawLabel
  * @property {(box: object) => void} drawBox
  * @property {(line: object) => void} drawLine

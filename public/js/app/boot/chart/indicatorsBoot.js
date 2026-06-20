@@ -10,12 +10,7 @@ import { attachStudyPaneScaleGuards } from "../../../chart/pane/studyScale.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { precisionFromSettings } from "../../../chart/timezone/list.js";
 import { listIndicators } from "../../../indicators/catalog.js";
-import { FvgIndicator, fvgEnabledHtfResolutions, fvgRequiredHtfBars, fvgRequiresCorrelatedCompare } from "../../../indicators/definitions/FvgIndicator.js";
-import { LevelsIndicator, levelsEnabledHtfResolutions, levelsRequiredHtfBars } from "../../../indicators/definitions/LevelsIndicator.js";
-import { SmtIndicator } from "../../../indicators/definitions/SmtIndicator.js";
-import { resolveSmtCompareSymbol } from "../../../indicators/definitions/SmtIndicator.js";
-import { ensureHtfBars, getHtfBars, prependHtfBars } from "../../bar/htfBarCache.js";
-import { ensureSymbolBars, lookupSymbolBars } from "../../bar/symbolBarCache.js";
+import { createIndicatorDataLoader } from "./indicatorDataLoader.js";
 import { createSecurityContext } from "../../bar/requestSecurity.js";
 import { priceLineBarForPane } from "../../symbol/lineStyle.js";
 import { symbolPriceLabelHeight } from "../../../primitives/priceLineLabel/index.js";
@@ -34,6 +29,9 @@ export function attachIndicatorsBoot(ctx) {
 
   /** @type {() => void} */
   let onControllerChange = () => {};
+
+  /** @type {ReturnType<typeof createIndicatorDataLoader>} */
+  let indicatorData;
 
   const controller = createIndicatorController({
     getAllChartPanes: ctx.getAllChartPanes,
@@ -57,24 +55,20 @@ export function attachIndicatorsBoot(ctx) {
         symbolInfo: ctx.symbolInfo,
         resolutions: ctx.resolutions,
         scheduleFetch: (symbol, resId, countBack) =>
-          scheduleHtfBarsFetch(pane, symbol, resId, countBack),
+          indicatorData.scheduleHtfBarsFetch(pane, symbol, resId, countBack),
         scheduleCompareFetch: (symbol, resolution, countBack) =>
-          scheduleCompareBarsFetch(pane, symbol, resolution, countBack),
+          indicatorData.scheduleCompareBarsFetch(pane, symbol, resolution, countBack),
       }),
   });
 
+  indicatorData = createIndicatorDataLoader({ ctx, controller });
   ctx.indicatorController = controller;
 
   const library = createIndicatorsLibraryDialog({
     onSelect: (defId) => {
       const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
       controller.addIndicator(defId, pane?.index ?? 0);
-      if (defId === FvgIndicator.id) {
-        scheduleFvgHistoryLoad();
-        scheduleFvgCompareLoad();
-      }
-      if (defId === SmtIndicator.id) scheduleSmtCompareLoad();
-      if (defId === LevelsIndicator.id) scheduleLevelsHistoryLoad(0);
+      indicatorData.scheduleLoad(0);
     },
   });
 
@@ -345,6 +339,7 @@ export function attachIndicatorsBoot(ctx) {
         if (defId) {
           const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
           controller.addIndicator(defId, pane?.index ?? 0);
+          indicatorData.scheduleLoad(0);
         }
         menu.remove();
       });
@@ -398,371 +393,10 @@ export function attachIndicatorsBoot(ctx) {
     ctx.refreshStatusLine();
     syncSettingsDialog();
     ctx.scheduleAutosaveLayout?.();
-    scheduleFvgCompareLoad();
+    indicatorData.scheduleLoad();
   };
 
-  /** One HTF fetch per idle window — loads 15m (etc.) from datafeed, not 15k 1m bars. */
-  const HTF_FETCH_IDLE_MS = 200;
-
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let fvgHistoryTimer = null;
-  /** @type {Set<number>} */
-  const fvgHistoryInFlight = new Set();
-  /** @type {Set<string>} */
-  const htfFetchInFlight = new Set();
-
-  /** @type {ReturnType<typeof setTimeout> | null} */
-  let levelsHistoryTimer = null;
-  /** @type {Set<number>} */
-  const levelsHistoryInFlight = new Set();
-  /** @type {Set<number>} */
-  const smtCompareInFlight = new Set();
-  const fvgCompareInFlight = new Set();
-
-  /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack @param {object} [symbolInfo] */
-  function htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo) {
-    const info = symbolInfo ?? pane.symbolInfo ?? ctx.symbolInfo;
-    return {
-      datafeed: ctx.datafeed,
-      symbolInfo: info,
-      symbol,
-      resolution,
-      countBack,
-      pane,
-      settingsStore: ctx.settingsStore,
-      symbolInfoExtra: info,
-      getAllChartPanes: ctx.getAllChartPanes,
-      resolutions: ctx.resolutions,
-    };
-  }
-
-  /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack */
-  function scheduleCompareBarsFetch(pane, symbol, resolution, countBack) {
-    if (!pane || !ctx.datafeed || !symbol || !resolution) return;
-    const want = Math.max(50, Number(countBack) || 300);
-    const key = `${symbol}|${resolution}`;
-    if (compareFetchInFlight.has(key)) return;
-
-    const hit = lookupSymbolBars({
-      symbol,
-      resolution,
-      pane,
-      getAllChartPanes: ctx.getAllChartPanes,
-      settingsStore: ctx.settingsStore,
-      symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
-      resolutions: ctx.resolutions,
-    });
-    if (hit && hit.utcBars.length >= want) return;
-
-    compareFetchInFlight.add(key);
-    void ctx.datafeed
-      .resolveSymbol(symbol)
-      .then((symbolInfo) =>
-        ensureSymbolBars({
-          datafeed: ctx.datafeed,
-          symbolInfo,
-          symbol,
-          resolution,
-          countBack: want,
-          pane,
-          settingsStore: ctx.settingsStore,
-          symbolInfoExtra: symbolInfo,
-          getAllChartPanes: ctx.getAllChartPanes,
-          resolutions: ctx.resolutions,
-        }),
-      )
-      .then(() => {
-        controller.invalidateOverlayCacheForPane(pane.index);
-        controller.refreshOverlaysImmediate(pane.index);
-      })
-      .finally(() => compareFetchInFlight.delete(key));
-  }
-
-  /** @param {object} pane */
-  async function ensureSmtCompareForPane(pane) {
-    if (!pane?.symbol || !ctx.datafeed) return;
-    if (smtCompareInFlight.has(pane.index)) return;
-
-    const compares = new Set();
-    for (const inst of controller.indicatorsForPane(pane.index)) {
-      if (inst.defId !== SmtIndicator.id) continue;
-      const sym = resolveSmtCompareSymbol(inst.inputs, pane.symbol);
-      compares.add(sym);
-    }
-    if (!compares.size) return;
-
-    smtCompareInFlight.add(pane.index);
-    try {
-      const want = Math.max(pane.bars?.length ?? 300, 300);
-      for (const symbol of compares) {
-        let hit = lookupSymbolBars({
-          symbol,
-          resolution: pane.resolution,
-          pane,
-          getAllChartPanes: ctx.getAllChartPanes,
-          settingsStore: ctx.settingsStore,
-          symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
-          resolutions: ctx.resolutions,
-        });
-        if (hit && hit.utcBars.length >= want) {
-          continue;
-        }
-        const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
-        hit = await ensureSymbolBars({
-          datafeed: ctx.datafeed,
-          symbolInfo,
-          symbol,
-          resolution: pane.resolution,
-          countBack: want,
-          pane,
-          settingsStore: ctx.settingsStore,
-          symbolInfoExtra: symbolInfo,
-          getAllChartPanes: ctx.getAllChartPanes,
-          resolutions: ctx.resolutions,
-        });
-        let entry = getHtfBars(symbol, pane.resolution);
-        let guard = 0;
-        while (entry && entry.utcBars.length < want && !entry.historyExhausted && guard < 8) {
-          entry = await prependHtfBars({
-            datafeed: ctx.datafeed,
-            symbolInfo,
-            symbol,
-            resolution: pane.resolution,
-            countBack: 200,
-            pane,
-            settingsStore: ctx.settingsStore,
-            symbolInfoExtra: symbolInfo,
-          });
-          guard += 1;
-        }
-      }
-      controller.invalidateOverlayCacheForPane(pane.index);
-      controller.refreshOverlaysImmediate(pane.index);
-    } finally {
-      smtCompareInFlight.delete(pane.index);
-    }
-  }
-
-  /** @param {number} [delayMs] */
-  function scheduleSmtCompareLoad(delayMs = HTF_FETCH_IDLE_MS) {
-    setTimeout(() => {
-      for (const pane of ctx.getAllChartPanes()) {
-        void ensureSmtCompareForPane(pane);
-      }
-    }, delayMs);
-  }
-
-  /** @param {object} pane */
-  async function ensureFvgCompareForPane(pane) {
-    if (!pane?.symbol || !ctx.datafeed) return;
-    if (fvgCompareInFlight.has(pane.index)) return;
-
-    /** @type {Map<string, number>} */
-    const compares = new Map();
-    /** @type {Map<string, Map<string, number>>} */
-    const compareHtfs = new Map();
-
-    for (const inst of controller.indicatorsForPane(pane.index)) {
-      if (inst.defId !== FvgIndicator.id || !fvgRequiresCorrelatedCompare(inst.inputs)) continue;
-      const sym = resolveSmtCompareSymbol(inst.inputs, pane.symbol);
-      const want = Math.max(pane.bars?.length ?? 300, 300);
-      compares.set(sym, Math.max(compares.get(sym) ?? 0, want));
-      for (const { tfId } of fvgEnabledHtfResolutions(inst.inputs, pane.resolution)) {
-        const htfWant = fvgRequiredHtfBars(inst.inputs) + 20;
-        if (!compareHtfs.has(sym)) compareHtfs.set(sym, new Map());
-        const perSym = compareHtfs.get(sym);
-        perSym.set(tfId, Math.max(perSym.get(tfId) ?? 0, htfWant));
-      }
-    }
-    if (!compares.size) return;
-
-    fvgCompareInFlight.add(pane.index);
-    try {
-      for (const [symbol, want] of compares) {
-        let hit = lookupSymbolBars({
-          symbol,
-          resolution: pane.resolution,
-          pane,
-          getAllChartPanes: ctx.getAllChartPanes,
-          settingsStore: ctx.settingsStore,
-          symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
-          resolutions: ctx.resolutions,
-        });
-        if (!hit || hit.utcBars.length < want) {
-          const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
-          hit = await ensureSymbolBars({
-            datafeed: ctx.datafeed,
-            symbolInfo,
-            symbol,
-            resolution: pane.resolution,
-            countBack: want,
-            pane,
-            settingsStore: ctx.settingsStore,
-            symbolInfoExtra: symbolInfo,
-            getAllChartPanes: ctx.getAllChartPanes,
-            resolutions: ctx.resolutions,
-          });
-        }
-        const htfs = compareHtfs.get(symbol);
-        if (!htfs?.size) continue;
-        const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
-        for (const [resId, htfWant] of htfs) {
-          let entry = await ensureHtfBars(htfEnsureOpts(pane, symbol, resId, htfWant, symbolInfo));
-          let guard = 0;
-          while (entry && entry.utcBars.length < htfWant && !entry.historyExhausted && guard < 8) {
-            entry = await prependHtfBars({
-              datafeed: ctx.datafeed,
-              symbolInfo,
-              symbol,
-              resolution: resId,
-              countBack: 200,
-              pane,
-              settingsStore: ctx.settingsStore,
-              symbolInfoExtra: symbolInfo,
-            });
-            guard += 1;
-          }
-        }
-      }
-      controller.invalidateOverlayCacheForPane(pane.index);
-      controller.refreshOverlaysImmediate(pane.index);
-    } finally {
-      fvgCompareInFlight.delete(pane.index);
-    }
-  }
-
-  /** @param {number} [delayMs] */
-  function scheduleFvgCompareLoad(delayMs = HTF_FETCH_IDLE_MS) {
-    setTimeout(() => {
-      for (const pane of ctx.getAllChartPanes()) {
-        void ensureFvgCompareForPane(pane);
-      }
-    }, delayMs);
-  }
-
-  /** @param {object} pane @param {string} [symbol] @param {string} resId @param {number} countBack */
-  function scheduleHtfBarsFetch(pane, symbol, resId, countBack) {
-    const sym = symbol ?? pane?.symbol;
-    if (!sym || !pane || !ctx.datafeed) return;
-    const key = `${sym}|${resId}`;
-    if (htfFetchInFlight.has(key)) return;
-    htfFetchInFlight.add(key);
-    void ensureHtfBars(htfEnsureOpts(pane, sym, resId, countBack))
-      .then(() => {
-        controller.invalidateOverlayCacheForPane(pane.index);
-        controller.refreshOverlaysImmediate(pane.index);
-      })
-      .finally(() => htfFetchInFlight.delete(key));
-  }
-
-  /** @param {object} pane */
-  async function ensureFvgHtfForPane(pane) {
-    if (!pane?.symbol || !ctx.datafeed) return;
-    if (fvgHistoryInFlight.has(pane.index)) return;
-
-    const resolutions = new Map();
-    for (const inst of controller.indicatorsForPane(pane.index)) {
-      if (inst.defId !== FvgIndicator.id) continue;
-      for (const { tfId } of fvgEnabledHtfResolutions(inst.inputs, pane.resolution)) {
-        const want = fvgRequiredHtfBars(inst.inputs) + 20;
-        resolutions.set(tfId, Math.max(resolutions.get(tfId) ?? 0, want));
-      }
-    }
-    if (!resolutions.size) return;
-
-    fvgHistoryInFlight.add(pane.index);
-    try {
-      for (const [resId, want] of resolutions) {
-        let entry = await ensureHtfBars(htfEnsureOpts(pane, pane.symbol, resId, want));
-        let guard = 0;
-        while (entry && entry.utcBars.length < want && !entry.historyExhausted && guard < 8) {
-          entry = await prependHtfBars({
-            datafeed: ctx.datafeed,
-            symbolInfo: pane.symbolInfo ?? ctx.symbolInfo,
-            symbol: pane.symbol,
-            resolution: resId,
-            countBack: 200,
-            pane,
-            settingsStore: ctx.settingsStore,
-            symbolInfoExtra: ctx.symbolInfo,
-          });
-          guard += 1;
-        }
-      }
-      controller.invalidateOverlayCacheForPane(pane.index);
-      controller.refreshOverlaysImmediate(pane.index);
-    } finally {
-      fvgHistoryInFlight.delete(pane.index);
-    }
-  }
-
-  /** @param {number} [delayMs] */
-  function scheduleFvgHistoryLoad(delayMs = HTF_FETCH_IDLE_MS) {
-    if (fvgHistoryTimer != null) clearTimeout(fvgHistoryTimer);
-    fvgHistoryTimer = setTimeout(() => {
-      fvgHistoryTimer = null;
-      for (const pane of ctx.getAllChartPanes()) {
-        void ensureFvgHtfForPane(pane);
-      }
-    }, delayMs);
-  }
-
-  /** @param {object} pane */
-  async function ensureLevelsHtfForPane(pane) {
-    if (!pane?.symbol || !ctx.datafeed) return;
-    if (levelsHistoryInFlight.has(pane.index)) return;
-
-    const resolutions = new Map();
-    for (const inst of controller.indicatorsForPane(pane.index)) {
-      if (inst.defId !== LevelsIndicator.id) continue;
-      for (const { tfId } of levelsEnabledHtfResolutions(inst.inputs, pane.resolution)) {
-        const want = levelsRequiredHtfBars(inst.inputs) + 20;
-        resolutions.set(tfId, Math.max(resolutions.get(tfId) ?? 0, want));
-      }
-    }
-    if (!resolutions.size) return;
-
-    levelsHistoryInFlight.add(pane.index);
-    try {
-      for (const [resId, want] of resolutions) {
-        let entry = await ensureHtfBars(htfEnsureOpts(pane, pane.symbol, resId, want));
-        let guard = 0;
-        while (entry && entry.utcBars.length < want && !entry.historyExhausted && guard < 8) {
-          entry = await prependHtfBars({
-            datafeed: ctx.datafeed,
-            symbolInfo: pane.symbolInfo ?? ctx.symbolInfo,
-            symbol: pane.symbol,
-            resolution: resId,
-            countBack: 200,
-            pane,
-            settingsStore: ctx.settingsStore,
-            symbolInfoExtra: ctx.symbolInfo,
-          });
-          guard += 1;
-        }
-      }
-      controller.invalidateOverlayCacheForPane(pane.index);
-      controller.refreshOverlaysImmediate(pane.index);
-    } finally {
-      levelsHistoryInFlight.delete(pane.index);
-    }
-  }
-
-  /** @param {number} [delayMs] */
-  function scheduleLevelsHistoryLoad(delayMs = HTF_FETCH_IDLE_MS) {
-    if (levelsHistoryTimer != null) clearTimeout(levelsHistoryTimer);
-    levelsHistoryTimer = setTimeout(() => {
-      levelsHistoryTimer = null;
-      for (const pane of ctx.getAllChartPanes()) {
-        void ensureLevelsHtfForPane(pane);
-      }
-    }, delayMs);
-  }
-
-  ctx.ensureFvgHistory = () => scheduleFvgHistoryLoad(0);
-  ctx.ensureFvgCompare = () => scheduleFvgCompareLoad(0);
-  ctx.ensureSmtCompare = () => scheduleSmtCompareLoad(0);
-  ctx.ensureLevelsHistory = () => scheduleLevelsHistoryLoad(0);
+  ctx.ensureIndicatorData = () => indicatorData.ensureNow();
 
   const origApplyChartSettings = ctx.applyChartSettings;
   ctx.applyChartSettings = () => {
@@ -791,7 +425,5 @@ export function attachIndicatorsBoot(ctx) {
   for (const pane of ctx.getAllChartPanes()) controller.refreshStudyPaneLegends(pane);
   refreshAllScaleLabels();
   refreshAllBandFills();
-  scheduleFvgHistoryLoad(4000);
-  scheduleLevelsHistoryLoad(4000);
-  scheduleSmtCompareLoad(4000);
+  indicatorData.scheduleLoad(4000);
 }

@@ -19,40 +19,272 @@ import {
 /** @typedef {import("./types.js").FillDef} FillDef */
 
 /**
- * Base class for chart indicators. Subclass with static metadata, plots, fills, and inputs.
+ * Base class for chart indicators. Subclass with a constructor that calls `super()`
+ * and chainable `this.set*` methods for metadata, plots, fills, and inputs. Finish with
+ * `BaseIndicator.define(MyIndicator)` at module bottom.
  *
  * @example
  * export class SmaIndicator extends BaseIndicator {
- *   static id = "Moving Average@tv-basicstudies";
- *   static type = "sma";
- *   static title = "Moving Average";
- *   static shortTitle = "SMA";
- *   static primaryPlotKey = "sma";
+ *   constructor() {
+ *     super("sma", "SMA", "Moving Average");
+ *     this.setPrimaryPlot("sma")
+ *       .setPlots([{ id: "sma", title: "SMA", color: "#2196f3", priceLine: true }])
+ *       .setInputs([
+ *         { id: "length", type: "int", title: "Length", defval: 20 },
+ *         { id: "source", type: "source", title: "Source", defval: "close" },
+ *       ]);
+ *   }
  *
- *   static plots = [
- *     { id: "sma", title: "SMA", color: "#2196f3", priceLine: true },
- *   ];
- *
- *   static inputs = [
- *     { id: "length", type: "int", title: "Length", defval: 20 },
- *     { id: "source", type: "source", title: "Source", defval: "close" },
- *   ];
+ *   legendParams(instance) {
+ *     return [String(instance.inputs.length)];
+ *   }
  *
  *   static compute(bars, instance) {
  *     return { sma: computeSma(bars, instance.inputs) };
  *   }
- *
- *   static legendParams(instance) {
- *     return [String(instance.inputs.length)];
- *   }
  * }
+ * BaseIndicator.define(SmaIndicator);
  */
-export class BaseIndicator {
-  /** @type {string} TradingView-style script id */
-  static id = "";
 
-  /** @type {string} Internal type slug */
-  static type = "";
+export class BaseIndicator {
+  /**
+   * Run the subclass constructor once to register metadata on the class.
+   * Call at module bottom: `BaseIndicator.define(MyIndicator)`.
+   *
+   * @template {typeof BaseIndicator} T
+   * @param {T} Cls
+   * @returns {T}
+   */
+  static define(Cls) {
+    if (!Cls._indicatorDefined) {
+      Cls._definitionInstance = new Cls();
+      Cls._indicatorDefined = true;
+    }
+    return Cls;
+  }
+
+  /** @param {string} name @returns {boolean} */
+  static _hasInstanceHook(name) {
+    const def = this._definitionInstance;
+    if (!def) return false;
+    const method = Object.getPrototypeOf(def)[name];
+    return typeof method === "function" && method !== BaseIndicator.prototype[name];
+  }
+
+  /**
+   * @param {string} [id] Registry key and instance id slug (e.g. `"ema"`)
+   * @param {string} [shortTitle] Legend / status-line abbreviation
+   * @param {string} [title] Full library display name (defaults to shortTitle)
+   */
+  constructor(id, shortTitle, title) {
+    const Cls = /** @type {typeof BaseIndicator} */ (new.target);
+    if (Cls === BaseIndicator) return;
+    if (id != null) this.setId(id);
+    if (shortTitle != null) this.setShortTitle(shortTitle);
+    if (title != null) this.setTitle(title);
+    else if (shortTitle != null) this.setTitle(shortTitle);
+  }
+
+  /** @param {string} id */
+  setId(id) {
+    this.constructor.id = id;
+    return this;
+  }
+
+  /** @param {string} title */
+  setTitle(title) {
+    this.constructor.title = title;
+    return this;
+  }
+
+  /** @param {string} shortTitle */
+  setShortTitle(shortTitle) {
+    this.constructor.shortTitle = shortTitle;
+    return this;
+  }
+
+  /** @param {string} title @param {string} shortTitle */
+  setDescription(title, shortTitle) {
+    return this.setTitle(title).setShortTitle(shortTitle);
+  }
+
+  /** @param {string} plotKey */
+  setPrimaryPlot(plotKey) {
+    this.constructor.primaryPlot = plotKey;
+    this.constructor.primaryPlotKey = plotKey;
+    return this;
+  }
+
+  /** @param {PlotDef[]} plots */
+  setPlots(plots) {
+    this.constructor.plots = plots;
+    return this;
+  }
+
+  /** @param {FillDef[]} fills */
+  setFills(fills) {
+    this.constructor.fills = fills;
+    return this;
+  }
+
+  /** @param {InputDef[]} inputs */
+  setInputs(inputs) {
+    this.constructor.inputs = inputs;
+    return this;
+  }
+
+  /** @param {boolean} enabled */
+  setEnabled(enabled) {
+    this.constructor.enabled = enabled;
+    return this;
+  }
+
+  /** @param {number | null} order */
+  setStudyPaneOrder(order) {
+    this.constructor.studyPaneOrder = order;
+    return this;
+  }
+
+  /** @param {number} height */
+  setStudyPaneHeight(height) {
+    this.constructor.studyPaneHeight = height;
+    return this;
+  }
+
+  /** @param {{ min: number, max: number }} scale */
+  setStudyPaneScale(scale) {
+    this.constructor.studyPaneScale = scale;
+    return this;
+  }
+
+  /** @param {string | null} scaleId */
+  setVolumeScaleId(scaleId) {
+    this.constructor.volumeScaleId = scaleId;
+    return this;
+  }
+
+  /** @param {string | null} kind */
+  setOverlayPrimitive(kind) {
+    this.constructor.overlayPrimitive = kind;
+    return this;
+  }
+
+  /** @param {import("./types.js").GraphicObjectDef[]} objects */
+  setGraphicObjects(objects) {
+    this.constructor.graphicObjects = objects;
+    return this;
+  }
+
+  /**
+   * Override for status-line params. Called via static {@link BaseIndicator.legendParams}.
+   * @param {IndicatorInstance} instance
+   * @param {{ primarySymbol?: string }} [ctx]
+   * @returns {string[] | undefined}
+   */
+  legendParams(instance, ctx = {}) {
+    void instance;
+    void ctx;
+  }
+
+  /**
+   * Extra style defaults after base merge. Called via static {@link BaseIndicator.mergeStyleDefaults}.
+   * @param {object} style
+   * @param {object} [inputValues]
+   */
+  mergeStyleDefaults(style, inputValues = {}) {
+    void style;
+    void inputValues;
+  }
+
+  /**
+   * React to a settings input change. Called via static {@link BaseIndicator.handleInputChange}.
+   * @param {object} inputValues
+   * @param {object} style
+   * @param {string} changedKey
+   */
+  handleInputChange(inputValues, style, changedKey) {
+    void inputValues;
+    void style;
+    void changedKey;
+  }
+
+  /** @returns {object | undefined} */
+  defaultStyle() {}
+
+  /**
+   * @param {object[]} _bars
+   * @param {object} _inputs
+   * @param {object} _style
+   * @param {IndicatorInstance} [_instance]
+   * @returns {Record<string, Array<number | null>> | undefined}
+   */
+  computeSeries(_bars, _inputs, _style, _instance) {}
+
+  /** @param {string} _plotKey @param {number | null} _raw @returns {string | null | undefined} */
+  formatPlotValue(_plotKey, _raw) {}
+
+  /** @param {IndicatorInstance} _instance @returns {ValueLabel[] | undefined} */
+  valueLabels(_instance) {}
+
+  /**
+   * @param {IndicatorInstance} _instance
+   * @param {string} _plotKey
+   * @returns {PlotStyle | undefined}
+   */
+  plotStyle(_instance, _plotKey) {}
+
+  /** @param {object} _inputValues @param {object} [_style] @returns {object[] | undefined} */
+  stylePlotRows(_inputValues, _style) {}
+
+  /**
+   * @param {IndicatorInstance} _instance
+   * @param {{ time: number }[]} _chartBars
+   * @returns {object[] | undefined}
+   */
+  getBandFills(_instance, _chartBars) {}
+
+  /** @param {object} [_inputs] @param {string} [_chartResolution] @returns {InputDef[] | undefined} */
+  inputSchema(_inputs, _chartResolution) {}
+
+  /** @param {object} _inputs @param {string} [_chartResolution] @returns {number | undefined} */
+  requiredChartBars(_inputs, _chartResolution) {}
+
+  /**
+   * Declare HTF / compare-symbol bars the boot loader should prefetch for this instance.
+   * @param {IndicatorInstance} _instance
+   * @param {{ symbol?: string, resolution?: string, bars?: object[] }} _pane
+   * @returns {import("./security/indicatorDataNeeds.js").IndicatorDataNeeds}
+   */
+  collectDataNeeds(_instance, _pane) {
+    return {};
+  }
+
+  /** @param {IndicatorInstance} instance @param {{ symbol?: string, resolution?: string, bars?: object[] }} pane */
+  static collectDataNeeds(instance, pane) {
+    if (this._hasInstanceHook("collectDataNeeds")) {
+      return this._definitionInstance.collectDataNeeds(instance, pane) ?? {};
+    }
+    return {};
+  }
+
+  /** @param {IndicatorInstance} _instance @param {object} [_ctx] @returns {boolean | undefined} */
+  overlayPending(_instance, _ctx) {}
+
+  /** @param {IndicatorInstance} _instance @param {object} [_ctx] @returns {string | undefined} */
+  overlayRecomputeExtra(_instance, _ctx) {}
+
+  /**
+   * @param {object[]} _utcBars
+   * @param {object[]} _chartBars
+   * @param {object} _inputs
+   * @param {object} _style
+   * @param {object} [_ctx]
+   * @returns {object[] | undefined}
+   */
+  overlay(_utcBars, _chartBars, _inputs, _style, _ctx) {}
+
+  /** @type {string} Registry key — used for lookup, defId, and instance ids */
+  static id = "";
 
   /** @type {string} Library display name */
   static title = "";
@@ -86,6 +318,9 @@ export class BaseIndicator {
 
   /** @type {number} Height in px when {@link studyPaneIndex} is used */
   static studyPaneHeight = 120;
+
+  /** @type {{ min: number, max: number } | null} Fixed Y range for study panes (e.g. RSI 0–100) */
+  static studyPaneScale = null;
 
   /** @type {string | null} Canvas overlay primitive (`labels`, etc.) — no LWC series plots */
   static overlayPrimitive = null;
@@ -127,7 +362,10 @@ export class BaseIndicator {
   }
 
   /** @returns {InputDef[]} */
-  static inputSchema() {
+  static inputSchema(inputs, chartResolution) {
+    if (this._hasInstanceHook("inputSchema")) {
+      return this._definitionInstance.inputSchema(inputs, chartResolution);
+    }
     return this.inputs;
   }
 
@@ -154,6 +392,9 @@ export class BaseIndicator {
 
   /** @returns {object} */
   static defaultStyle() {
+    if (this._hasInstanceHook("defaultStyle")) {
+      return this._definitionInstance.defaultStyle();
+    }
     return {
       precision: "default",
       labelsOnScale: true,
@@ -173,11 +414,11 @@ export class BaseIndicator {
    * @returns {IndicatorInstance | null}
    */
   static createInstance(paneIndex) {
-    if (!this.enabled || !this.id || !this.type) return null;
+    if (!this.enabled || !this.id) return null;
     return {
-      instanceId: `${this.type}_${Math.random().toString(36).slice(2, 9)}`,
+      instanceId: `${this.id}_${Math.random().toString(36).slice(2, 9)}`,
       defId: this.id,
-      type: this.type,
+      type: this.id,
       paneIndex,
       inputs: { ...this.defaultInputs() },
       style: { ...this.defaultStyle() },
@@ -196,12 +437,15 @@ export class BaseIndicator {
   }
 
   /**
-   * Status line params shown after the study title. Override in subclasses.
+   * Status line params shown after the study title. Delegates to instance hook when defined.
    * @param {IndicatorInstance} instance
    * @param {{ primarySymbol?: string }} [ctx]
    * @returns {string[]}
    */
   static legendParams(instance, ctx = {}) {
+    if (this._hasInstanceHook("legendParams")) {
+      return this._definitionInstance.legendParams(instance, ctx);
+    }
     return inputStatusLineParams(this.inputs, instance);
   }
 
@@ -226,6 +470,9 @@ export class BaseIndicator {
    * @returns {PlotStyle}
    */
   static plotStyle(instance, plotKey) {
+    if (this._hasInstanceHook("plotStyle")) {
+      return this._definitionInstance.plotStyle(instance, plotKey);
+    }
     const plot = this.getPlotDef(plotKey);
     if (!plot) return this.hiddenPlot();
     if (plot.type === "histogram") {
@@ -250,6 +497,9 @@ export class BaseIndicator {
    * @returns {ValueLabel[]}
    */
   static valueLabels(instance) {
+    if (this._hasInstanceHook("valueLabels")) {
+      return this._definitionInstance.valueLabels(instance);
+    }
     return this.activePlots(instance.inputs, instance.style).map((p) => ({
       key: p.id,
       title: p.title,
@@ -258,6 +508,9 @@ export class BaseIndicator {
 
   /** @param {object} inputValues @param {object} [style] */
   static stylePlotRows(inputValues, style = {}) {
+    if (this._hasInstanceHook("stylePlotRows")) {
+      return this._definitionInstance.stylePlotRows(inputValues, style);
+    }
     /** @type {object[]} */
     const rows = [];
     for (const plot of this.activePlots(inputValues, style)) {
@@ -287,6 +540,9 @@ export class BaseIndicator {
     for (const [key, val] of Object.entries(defs)) {
       if (style[key] === undefined) style[key] = val;
     }
+    if (this._hasInstanceHook("mergeStyleDefaults")) {
+      this._definitionInstance.mergeStyleDefaults(style, inputValues);
+    }
     return style;
   }
 
@@ -296,6 +552,9 @@ export class BaseIndicator {
    * @returns {{ color: string, segments: { time: number, upper: number, lower: number }[][] }[]}
    */
   static getBandFills(instance, chartBars) {
+    if (this._hasInstanceHook("getBandFills")) {
+      return this._definitionInstance.getBandFills(instance, chartBars);
+    }
     if (instance.hidden || !instance.lastPlots) return [];
     /** @type {{ color: string, segments: { time: number, upper: number, lower: number }[][] }[]} */
     const out = [];
@@ -318,11 +577,19 @@ export class BaseIndicator {
     return out;
   }
 
+  /** @param {string} plotKey @param {number | null} raw @returns {string | null} */
+  static formatPlotValue(plotKey, raw) {
+    if (this._hasInstanceHook("formatPlotValue")) {
+      return this._definitionInstance.formatPlotValue(plotKey, raw);
+    }
+    return null;
+  }
+
   /** @param {object} inputValues @param {object} style @param {string} changedKey */
   static handleInputChange(inputValues, style, changedKey) {
-    void inputValues;
-    void style;
-    void changedKey;
+    if (this._hasInstanceHook("handleInputChange")) {
+      this._definitionInstance.handleInputChange(inputValues, style, changedKey);
+    }
     const input = this.inputs.find((i) => i.id === changedKey);
     if (input?.affectsStyle) {
       this.mergeStyleDefaults(style, inputValues);

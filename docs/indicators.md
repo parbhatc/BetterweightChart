@@ -1,49 +1,49 @@
 # Indicators
 
-Add a custom indicator with **one file** and **`defineIndicator()`** — Pine Script style, one bar at a time.
+Add a custom indicator by extending **`BarScriptIndicator`** (per-bar / Pine-style) or **`ComputeIndicator`** (batch math). Use **`builders.js`** for plots, fills, and inputs.
 
 ---
 
-## Pine-style: `onBar()` (recommended)
-
-Your script runs **once per bar**, like Pine. Use `this.plot()`, `this.drawLabel()`, `this.math.*`:
+## Pine-style: `BarScriptIndicator` (recommended)
 
 ```javascript
-import { defineIndicator } from "../defineIndicator.js";
+import { BarScriptIndicator } from "../../BarScriptIndicator.js";
+import { createInput, plot } from "../../builders.js";
 
-export const MyIndicator = defineIndicator(class MyIndicator {
-  constructor() {}
-
-  static id = "My Study@tv-basicstudies";
-  static type = "my_study";
-  static title = "My Study";
-  static shortTitle = "MY";
-
-  static inputs = [
-    { id: "length", type: "int", title: "Length", defval: 14 },
-    { id: "source", type: "source", title: "Source", defval: "close" },
-  ];
-
-  static plots = [
-    { id: "line", title: "Line", color: "#2962ff" },
-  ];
-
-  onBar(bar) {
-    const value = this.math.source(bar, this.inputs.source);
-    this.plot("line", value);
+export class MyIndicator extends BarScriptIndicator {
+  constructor() {
+    super("my_study", "MY", "My Study");
+    this.setPrimaryPlot("line");
+    this.setPlots([plot("line", "Line", "#2962ff")]);
+    this.setInputs([
+      createInput("int", "length", "Length", 14),
+      createInput("source", "source", "Source", "close"),
+    ]);
   }
-});
+
+  onBar() {
+    this.plot("line", this.source());
+  }
+}
+
+BarScriptIndicator.define(MyIndicator);
 ```
 
 Add to `definitions/index.js`, reload — it appears in the **Indicators** library.
 
-### `this` inside `onBar()`
+Legacy `defineIndicator(class …)` still works for one-off studies but new code should extend the base classes directly.
+
+### `this` inside `onBar()` / `init()`
 
 | Property / method | Pine equivalent | Description |
 |-------------------|-----------------|-------------|
 | `this.bar` | `open`, `high`, `low`, `close` | Current OHLCV bar |
 | `this.index` | `bar_index` | 0-based bar index |
-| `this.inputs` | `input.*` | Study inputs |
+| `this.inputs` | `input.*` | Study inputs (raw object) |
+| `this.getInput(key, def?)` | `input.*` | Single input value with optional default |
+| `this.inputInt(key, def, min?)` | `input.int` | Parsed integer input |
+| `this.inputFloat(key, def, min?)` | `input.float` | Parsed float input |
+| `this.source(fieldKey?)` | `close`, `hl2`, etc. | Price source for current bar |
 | `this.style` | input colors | Style tab values |
 | `this.state` | `var` | Object that persists across bars |
 | `this.plot(key, value)` | `plot()` | Set plot value for this bar |
@@ -88,15 +88,41 @@ export const PivotPointsHlIndicator = defineIndicator({
 });
 ```
 
-Full source: `definitions/PivotPointsHlIndicator.js`
+Full source: `definitions/pivot/PivotPointsHlIndicator.js`
 
 ---
 
-## Batch mode (all bars at once)
+## Batch mode: `ComputeIndicator`
 
-For heavy vectorized math you can still use `compute(bars, inputs)` returning `{ plotKey: number[] }`, or `overlay(utcBars, chartBars, ...)` for labels. Most custom studies should use `onBar()` instead.
+For vectorized math, extend **`ComputeIndicator`** and implement `static computeSeries(bars, inputs, style, instance)`:
+
+```javascript
+export class RsiIndicator extends ComputeIndicator {
+  static computeSeries(bars, inputs, style) {
+    return computeRsiIndicator(bars, inputs, style);
+  }
+}
+```
+
+Or use `overlay(utcBars, chartBars, ...)` for batch labels. Legacy `defineIndicator({ compute })` still works.
 
 ---
+
+## Folder layout
+
+```
+definitions/
+  ema/EMAIndicator.js + rings.js
+  rsi/RsiIndicator.js
+  volume/VolumeIndicator.js
+  macd/MacdIndicator.js + constants.js
+  pivot/PivotPointsHlIndicator.js + labels.js
+  smt/SmtIndicator.js + compareSymbol.js + styleHelpers.js
+  levels/LevelsIndicator.js + htf.js + helpers.js
+  fvg/FvgIndicator.js + engine.js + init.js + inputs.js + htf.js
+```
+
+Input helper: `createInput("int", "length", "Length", 9)` — type is `int`, `float`, `bool`, `source`, `select`, `timeframe`, etc.
 
 ## Config reference
 
@@ -110,12 +136,12 @@ For heavy vectorized math you can still use `compute(bars, inputs)` returning `{
 | `graphicObjects` | Style tab: **Graphic objects** + **Input values** only |
 | `stylePlotRows()` | Extra style rows for line/histogram studies (not shown when `graphicObjects` is set) |
 | `studyPaneOrder` | RSI / MACD style pane below chart |
-| `legendParams(instance)` | Status line params (override); default: inputs with `showInStatusLine` |
+| `legendParams(instance)` | Status line params (instance method); default: inputs with `showInStatusLine` |
 
 Input types: `int`, `float`, `bool`, `source`, `select`, `timeframe`, `text`, `color`  
 Layout: `section` (group title), `inline: true` (legacy same-row numbers), `type: "row"` (checkbox + field), `type: "inlinePair"` (two fields side by side, e.g. Bullish | Bearish colors)
 
-**Status line** — each input can set `showInStatusLine` (default `true` for `int`, `float`, `select`, `source`, `timeframe`, `text`; default `false` for `bool` and `color` unless set to `true`). Values appear as chips after the study title (TradingView-style). Override entirely with `static legendParams(instance)`. Global toggle: Style → **Inputs in status line**.
+**Status line** — each input can set `showInStatusLine` (default `true` for `int`, `float`, `select`, `source`, `timeframe`, `text`; default `false` for `bool` and `color` unless set to `true`). Values appear as chips after the study title (TradingView-style). Override with instance method `legendParams(instance)`. Global toggle: Style → **Inputs in status line**.
 
 ```javascript
 static inputs = [
@@ -173,7 +199,7 @@ graphicObjects: [
 
 EMA, Volume, RSI, MACD, **Pivot Points High Low**
 
-Copy `TemplateIndicator.js` to get started (`enabled: false` by default).
+Copy an existing indicator folder (e.g. `definitions/ema/`) to get started.
 
 ---
 

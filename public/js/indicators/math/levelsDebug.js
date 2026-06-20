@@ -3,7 +3,7 @@ import {
   chartDebugThrottle,
   isChartDebugEnabled,
 } from "../../debug/chart/index.js";
-import { mapUtcTimeToChartTime } from "./levelsEngine.js";
+import { mapUtcTimeToChartTime } from "./barTimeMap.js";
 
 /** @param {unknown} sec */
 function fmtUnix(sec) {

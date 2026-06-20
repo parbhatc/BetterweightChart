@@ -151,7 +151,7 @@ export function createLifecycle(deps) {
         if (!raw?.defId || !getIndicatorClass(raw.defId)) continue;
         /** @type {IndicatorInstance & { series: Map<string, import("lightweight-charts").ISeriesApi> }} */
         const entry = {
-          instanceId: raw.instanceId ?? `${raw.type}_${Math.random().toString(36).slice(2, 9)}`,
+          instanceId: raw.instanceId ?? `${raw.defId}_${Math.random().toString(36).slice(2, 9)}`,
           defId: raw.defId,
           type: raw.type,
           paneIndex: Number(raw.paneIndex) || 0,

@@ -1,4 +1,6 @@
 import { BaseIndicator } from "./BaseIndicator.js";
+import { BarScriptIndicator } from "./BarScriptIndicator.js";
+import { ComputeIndicator } from "./ComputeIndicator.js";
 import { runBarScript } from "./pineRuntime.js";
 import { inputStatusLineParams } from "./schema.js";
 
@@ -130,15 +132,25 @@ function copyOwnStatics(from, to) {
 /**
  * Define a chart indicator from a config object or a named class.
  *
+ * Prefer extending {@link BarScriptIndicator} or {@link ComputeIndicator} directly instead.
+ *
  * @example
- * export const RsiIndicator = defineIndicator(class RsiIndicator {
- *   static id = "RSI@tv-basicstudies";
- *   static compute(bars, inputs, style) { ... }
- * });
+ * export class RsiIndicator extends ComputeIndicator {
+ *   static computeSeries(bars, inputs, style) { ... }
+ * }
  *
  * @param {IndicatorConfig | (new (...args: unknown[]) => unknown)} configOrClass
  */
 export function defineIndicator(configOrClass) {
+  if (typeof configOrClass === "function") {
+    if (configOrClass.prototype instanceof BarScriptIndicator) {
+      return configOrClass;
+    }
+    if (configOrClass.prototype instanceof ComputeIndicator) {
+      return configOrClass;
+    }
+  }
+
   const userClass = typeof configOrClass === "function" ? configOrClass : null;
   const config = userClass ? configFromClass(userClass) : configOrClass;
 

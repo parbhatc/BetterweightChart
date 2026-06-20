@@ -1,7 +1,7 @@
 import { CHECK_SVG, MENU_CHEVRON } from "../../drawings/settings/dialog/utils.js";
 import { ICON_CLOSE } from "./icons.js";
 import { normalizeResolutionId, resolutionDisplayTitle } from "../../chart/resolutionFormat.js";
-import { SESSION_DEFS } from "../math/levelsEngine.js";
+import { levelsSessionDefs } from "../definitions/levels/sessionDefs.js";
 
 /** @typedef {{ enabled: boolean, label: string, layer: string }} TimeLevelRow */
 /** @typedef {{ enabled: boolean, label: string, sessionId: string, startTime: string, endTime: string }} SessionLevelRow */
@@ -78,7 +78,7 @@ function migrateLegacyLevelLayers(inputs) {
     const enabled = row?.enabled !== false;
     if (layer.startsWith("session:")) {
       const sid = layer.slice(8);
-      const def = SESSION_DEFS[sid];
+      const def = levelsSessionDefs.get(sid);
       sessionLevels.push({
         enabled,
         label,
@@ -200,13 +200,7 @@ function layerOptionLabel(layerId, options) {
 
 /** @param {string} label @param {string} [storedId] */
 function resolveSessionIdFromLabel(label, storedId) {
-  const sid = String(storedId ?? "").trim();
-  if (sid && SESSION_DEFS[sid]) return sid;
-  const trimmed = String(label ?? "").trim();
-  for (const [id, def] of Object.entries(SESSION_DEFS)) {
-    if (def.label === trimmed) return id;
-  }
-  return sid || "asia";
+  return levelsSessionDefs.resolveIdFromLabel(label, storedId);
 }
 
 /**

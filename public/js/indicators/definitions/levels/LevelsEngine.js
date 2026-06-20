@@ -1,27 +1,26 @@
-import { normalizeResolutionId, resolutionDisplayTitle } from "../../chart/resolutionFormat.js";
-import { resolutionSec } from "../../chart/resolutions.js";
+import { normalizeResolutionId, resolutionDisplayTitle } from "../../../chart/resolutionFormat.js";
+import { resolutionSec } from "../../../chart/resolutions.js";
+import { mapUtcTimeToChartTime } from "../../math/barTimeMap.js";
+import { getSecuritySeries, requestSecuritySeries } from "../../security/htfAccess.js";
+import {
+  resolveSessionLevels,
+  resolveTimeLevels,
+} from "../../ui/levelsLayersPanel.js";
+import {
+  debugLevelsEngineResult,
+  debugLevelsOverlayStart,
+  debugLevelsPriceSanity,
+  debugLevelsTimeMapping,
+} from "../../math/levelsDebug.js";
+import { tickSizeFromSymbol } from "../../symbol.js";
+import { inputColorStr } from "../../styleColor.js";
+import { levelsHtfStyles } from "./htfStyles.js";
+import { levelsSessionDefs } from "./sessionDefs.js";
 
 const ET_ZONE = "America/New_York";
 
 /** @typedef {{ enabled: boolean, label: string, layer: string }} LevelLayerRow */
 /** @typedef {{ price: number; startTime: number; endTime: number; bornTime?: number; startChartTime?: number; endChartTime?: number; sweepChartTime?: number; label: string; color: string; lineWidth: number; kind: "high"|"low"; swept: boolean; sweepTime?: number; showLabel?: boolean; sessionBorn?: number; _drop?: boolean }} LiqLine */
-
-const HTF_STYLE = {
-  "240": { tag: "4H", hi: "#007fff", lo: "#ff7644" },
-  "60": { tag: "1H", hi: "#00ffcc", lo: "#ff4d4d" },
-  "15": { tag: "15m", hi: "#ffed4a", lo: "#e046ff" },
-  "5": { tag: "5m", hi: "#ffed4a", lo: "#e046ff" },
-  "10": { tag: "10m", hi: "#ffed4a", lo: "#e046ff" },
-};
-
-/** @type {Record<string, { label: string; startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean; color: string }>} */
-export const SESSION_DEFS = {
-  asia: { label: "Asia", startH: 20, startM: 0, endH: 0, endM: 0, crossesMidnight: true, color: "#00ffcc" },
-  london: { label: "London", startH: 2, startM: 0, endH: 5, endM: 0, crossesMidnight: false, color: "#9400d3" },
-  ny_am: { label: "New York AM", startH: 9, startM: 30, endH: 11, endM: 0, crossesMidnight: false, color: "#ff007f" },
-  ny_lunch: { label: "New York Lunch", startH: 12, startM: 0, endH: 13, endM: 0, crossesMidnight: false, color: "#ffaa00" },
-  ny_pm: { label: "New York PM", startH: 13, startM: 30, endH: 16, endM: 0, crossesMidnight: false, color: "#007fff" },
-};
 
 const etFmt = new Intl.DateTimeFormat("en-US", {
   timeZone: ET_ZONE,
@@ -381,10 +380,12 @@ function applyClusterConfluence(lines, proximity, confHi, confLo) {
 
 /**
  * @param {LevelLayerRow[]} timeRows
- * @param {import("../ui/levelsLayersPanel.js").SessionLevelRow[]} sessionRows
- * @returns {{ htf: { slot: string; label: string; tfSec: number; hiColor: string; loColor: string }[]; sessions: { label: string; color: string; startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean }[] }}
+ * @param {import("../../ui/levelsLayersPanel.js").SessionLevelRow[]} sessionRows
+ * @param {{ htfStyles?: Record<string, { tag?: string; hi: string; lo: string }>; sessionDefs?: Record<string, { label: string; startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean; color: string }> }} [palette]
  */
-export function buildLevelsEngineConfig(timeRows, sessionRows) {
+export function buildLevelsEngineConfig(timeRows, sessionRows, palette = {}) {
+  const htfStyles = palette.htfStyles ?? {};
+  const sessionDefs = palette.sessionDefs ?? {};
   /** @type {{ slot: string; label: string; tfSec: number; hiColor: string; loColor: string }[]} */
   const htf = [];
   /** @type {{ label: string; color: string; startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean }[]} */
@@ -402,7 +403,7 @@ export function buildLevelsEngineConfig(timeRows, sessionRows) {
     const tfSec = resolutionSec(tfId);
     if (!tfSec || seenHtf.has(tfId)) continue;
     seenHtf.add(tfId);
-    const style = HTF_STYLE[tfId] ?? { tag: resolutionDisplayTitle(tfId), hi: "#007fff", lo: "#ff7644" };
+    const style = htfStyles[tfId] ?? levelsHtfStyles.resolve(tfId);
     htf.push({
       slot: `htf_${tfId}`,
       tfId,
@@ -420,17 +421,17 @@ export function buildLevelsEngineConfig(timeRows, sessionRows) {
     const sid = String(row.sessionId ?? "asia").trim();
     if (seenSession.has(label)) continue;
     seenSession.add(label);
-    const cfg = sessionConfigFromRow(row);
+    const cfg = sessionConfigFromRow(row, sessionDefs);
     if (!cfg) continue;
     sessions.push({ ...cfg, label });
   }
   return { htf, sessions };
 }
 
-/** @param {{ sessionId?: string, startTime?: string, endTime?: string, label?: string }} row */
-export function sessionConfigFromRow(row) {
-  const sid = resolveSessionIdFromRow(row);
-  const def = SESSION_DEFS[sid];
+/** @param {{ sessionId?: string, startTime?: string, endTime?: string, label?: string }} row @param {Record<string, { label: string; startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean; color: string }>} [sessionDefs] */
+export function sessionConfigFromRow(row, sessionDefs = {}) {
+  const sid = resolveSessionIdFromRow(row, sessionDefs);
+  const def = sessionDefs[sid];
   const start = parseHm(row.startTime) ?? (def ? { h: def.startH, min: def.startM } : null);
   const end = parseHm(row.endTime) ?? (def ? { h: def.endH, min: def.endM } : null);
   if (!start || !end) return null;
@@ -447,12 +448,12 @@ export function sessionConfigFromRow(row) {
   };
 }
 
-/** @param {{ sessionId?: string, label?: string }} row */
-function resolveSessionIdFromRow(row) {
+/** @param {{ sessionId?: string, label?: string }} row @param {Record<string, { label: string }>} [sessionDefs] */
+function resolveSessionIdFromRow(row, sessionDefs = {}) {
   const sid = String(row.sessionId ?? "").trim();
-  if (sid && SESSION_DEFS[sid]) return sid;
+  if (sid && sessionDefs[sid]) return sid;
   const label = String(row.label ?? "").trim();
-  for (const [id, def] of Object.entries(SESSION_DEFS)) {
+  for (const [id, def] of Object.entries(sessionDefs)) {
     if (def.label === label) return id;
   }
   return sid || "asia";
@@ -503,10 +504,7 @@ function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
     return { agg, chartTimes: times, source: "chart" };
   }
 
-  const htf =
-    opts.getSecurityBars?.(opts.symbol, cfg.tfId) ??
-    opts.getBars?.(cfg.tfId) ??
-    opts.getHtfBars?.(cfg.tfId);
+  const htf = getSecuritySeries(opts, opts.symbol, cfg.tfId);
   if (htf?.utcBars?.length) {
     const offset = Math.max(0, htf.utcBars.length - maxBack);
     const sliceStart = htf.utcBars.length > maxBack ? offset : 0;
@@ -516,9 +514,7 @@ function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
     return { agg, chartTimes, source: "htf" };
   }
 
-  opts.requestSecurityBars?.(opts.symbol, cfg.tfId, opts.htfBarsNeeded ?? maxBack);
-  opts.requestBars?.(cfg.tfId, opts.htfBarsNeeded ?? maxBack);
-  opts.requestHtfBars?.(cfg.tfId, opts.htfBarsNeeded ?? maxBack);
+  requestSecuritySeries(opts, opts.symbol, cfg.tfId, opts.htfBarsNeeded ?? maxBack);
   return { agg: [], chartTimes: [], source: "pending" };
 }
 
@@ -574,7 +570,10 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
   const confLo = String(opts.confLoColor ?? "#ffaa00");
   const mergeConfluence = opts.mergeConfluence !== false;
 
-  const { htf, sessions } = buildLevelsEngineConfig(opts.timeLayers ?? [], opts.sessionLayers ?? []);
+  const { htf, sessions } = buildLevelsEngineConfig(opts.timeLayers ?? [], opts.sessionLayers ?? [], {
+    htfStyles: opts.htfStyles,
+    sessionDefs: opts.sessionDefs,
+  });
 
   /** @type {Record<string, { h: number[]; l: number[]; t: number[] }>} */
   const hists = {};
@@ -788,31 +787,6 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
 }
 
 /**
- * Map UTC unix to chart display time via aligned bar arrays (floor bracket).
- * @param {number} utc
- * @param {object[]} utcBars
- * @param {object[]} chartBars
- */
-export function mapUtcTimeToChartTime(utc, utcBars, chartBars) {
-  if (utc == null || !Number.isFinite(Number(utc)) || !utcBars?.length || !chartBars?.length) {
-    return utc;
-  }
-  const t = Number(utc);
-  if (t <= utcBars[0].time) return chartBars[0]?.time ?? t;
-  const last = utcBars.length - 1;
-  if (t >= utcBars[last].time) return chartBars[last]?.time ?? t;
-
-  let lo = 0;
-  let hi = last;
-  while (lo < hi) {
-    const mid = (lo + hi + 1) >> 1;
-    if (utcBars[mid].time <= t) lo = mid;
-    else hi = mid - 1;
-  }
-  return chartBars[lo]?.time ?? t;
-}
-
-/**
  * @param {LiqLine[]} lines
  * @param {object[]} utcBars
  * @param {object[]} chartBars
@@ -841,4 +815,94 @@ export function levelsToOverlayLines(lines, utcBars, chartBars, style) {
     labelAnchor: "right",
     kind: lvl.kind,
   }));
+}
+
+export class LevelsEngine {
+  /**
+   * @param {LevelsHtfStyles} [htfStyles]
+   * @param {LevelsSessionDefs} [sessionDefs]
+   */
+  constructor(htfStyles = levelsHtfStyles, sessionDefs = levelsSessionDefs) {
+    this.htfStyles = htfStyles;
+    this.sessionDefs = sessionDefs;
+  }
+
+  /**
+   * @param {object[]} bars
+   * @param {number} anchorUnix
+   * @param {object} opts
+   */
+  run(bars, anchorUnix, opts) {
+    return runLevelsEngine(bars, anchorUnix, {
+      ...opts,
+      htfStyles: opts.htfStyles ?? this.htfStyles.all(),
+      sessionDefs: opts.sessionDefs ?? this.sessionDefs.all(),
+    });
+  }
+
+  /**
+   * @param {LiqLine[]} lines
+   * @param {object[]} utcBars
+   * @param {object[]} chartBars
+   * @param {object} style
+   */
+  toOverlayLines(lines, utcBars, chartBars, style) {
+    return levelsToOverlayLines(lines, utcBars, chartBars, style);
+  }
+
+  /**
+   * @param {object[]} utcBars
+   * @param {object[]} chartBars
+   * @param {object} inputs
+   * @param {object} style
+   * @param {object} [ctx]
+   * @param {import("./htf.js").LevelsHtf} [levelsHtf]
+   */
+  computeOverlay(utcBars, chartBars, inputs, style, ctx = {}, levelsHtf) {
+    if (style.graphicLines === false) return [];
+    if (!utcBars?.length || utcBars.length !== chartBars?.length) return [];
+
+    const anchorUnix = utcBars.at(-1)?.time;
+    if (anchorUnix == null) return [];
+
+    const tick = tickSizeFromSymbol(ctx.symbolInfo);
+    const engineOpts = {
+      timeLayers: resolveTimeLevels(inputs),
+      sessionLayers: resolveSessionLevels(inputs),
+      pivotLeftBars: inputs.pivotLeftBars,
+      pivotRightBars: inputs.pivotRightBars,
+      maxUnswept: inputs.maxUnswept,
+      maxSwept: inputs.maxSwept,
+      maxSessions: inputs.maxSessions,
+      tickSize: tick,
+      chartSec: ctx.barSec ?? 60,
+      chartBars,
+      symbol: ctx.primarySymbol ?? ctx.symbol,
+      maxBarsBack: Math.max(10, Number(inputs.maxBarsBack) || 300),
+      htfBarsNeeded: levelsHtf?.requiredHtfBars(inputs) ?? Math.max(10, Number(inputs.maxBarsBack) || 300),
+      getSecurityBars: ctx.getSecurityBars,
+      getBars: ctx.getBars,
+      getHtfBars: ctx.getHtfBars,
+      requestSecurityBars: ctx.requestSecurityBars,
+      requestBars: ctx.requestBars,
+      requestHtfBars: ctx.requestHtfBars,
+      showLabels: style.graphicLabels !== false,
+      mergeConfluence: inputs.mergeConfluence !== false,
+      confHiColor: inputColorStr(inputs.confHiColor, "#9400d3"),
+      confLoColor: inputColorStr(inputs.confLoColor, "#ffaa00"),
+      htfStyles: this.htfStyles.all(),
+      sessionDefs: this.sessionDefs.all(),
+    };
+
+    debugLevelsOverlayStart(ctx, utcBars, chartBars, engineOpts);
+
+    const { lines, htfState } = this.run(utcBars, anchorUnix, engineOpts);
+    debugLevelsEngineResult(utcBars, anchorUnix, engineOpts, lines, htfState);
+
+    const overlay = this.toOverlayLines(lines, utcBars, chartBars, style);
+    debugLevelsTimeMapping(lines, overlay, utcBars, chartBars);
+    debugLevelsPriceSanity(overlay, chartBars);
+
+    return overlay;
+  }
 }

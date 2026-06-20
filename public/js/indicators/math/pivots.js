@@ -48,6 +48,14 @@ export function pivotBarIndex(confirmBarIndex, right) {
   return confirmBarIndex - right;
 }
 
+/** @param {object} inputs @param {string} leftKey @param {string} rightKey @param {number} [def] @returns {[number, number]} */
+export function pivotLens(inputs, leftKey, rightKey, def = 10) {
+  return [
+    Math.max(1, Number(inputs[leftKey]) || def),
+    Math.max(1, Number(inputs[rightKey]) || def),
+  ];
+}
+
 /**
  * Map compare OHLCV onto primary chart bar times (same length as primaryChart).
  * Missing bars are null — pivot helpers skip windows with gaps.

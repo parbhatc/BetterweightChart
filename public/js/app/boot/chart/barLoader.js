@@ -86,10 +86,7 @@ export function attachBarLoader(ctx) {
       const added = ctx.replayEngine?.mergeHistoryIntoSnapshot?.(pane) ?? 0;
       if (added > 0) ctx.replayFutureDim?.refreshAll?.();
       ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
-      ctx.ensureSmtCompare?.();
-      ctx.ensureFvgHistory?.();
-      ctx.ensureFvgCompare?.();
-      ctx.ensureLevelsHistory?.();
+      ctx.ensureIndicatorData?.();
       pane.priceLineLabel?.requestRefresh();
       if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
         ctx.refreshIndicatorsImmediate?.(pane.index);
