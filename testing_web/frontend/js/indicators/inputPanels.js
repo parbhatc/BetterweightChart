@@ -1,0 +1,34 @@
+import {
+  registerCustomInputReader,
+  registerCustomInputRenderer,
+} from "/js/indicators/ui/customInputPanels.js";
+import { registerTestingSettingsHandlers } from "./settingsHandlers.js";
+import { renderFvgTimeframesPanel } from "./ui/fvgTimeframesPanel.js";
+import { renderSessionLevelsPanel, renderTimeLevelsPanel } from "./ui/levelsLayersPanel.js";
+import { renderNewsLevelsPanel } from "./ui/newsLevelsPanel.js";
+import { readFvgTimeframesFromPanel } from "./ui/fvgTimeframesPanel.js";
+import {
+  readSessionLevelsFromPanel,
+  readTimeLevelsFromPanel,
+} from "./ui/levelsLayersPanel.js";
+
+/** Wire FVG / Levels custom input panels into the public chart settings UI. */
+export function registerTestingInputPanels() {
+  registerCustomInputRenderer("fvgTimeframes", (input, draftInputs, helpers) =>
+    renderFvgTimeframesPanel(input, draftInputs, helpers?.timeframeOptions ?? []),
+  );
+  registerCustomInputRenderer("timeLevels", (input, draftInputs, helpers) =>
+    renderTimeLevelsPanel(input, draftInputs, helpers?.timeframeOptions ?? []),
+  );
+  registerCustomInputRenderer("sessionLevels", (input, draftInputs) =>
+    renderSessionLevelsPanel(input, draftInputs),
+  );
+  registerCustomInputRenderer("newsLevels", (input, draftInputs) =>
+    renderNewsLevelsPanel(input, draftInputs),
+  );
+
+  registerCustomInputReader("fvgTimeframes", readFvgTimeframesFromPanel);
+  registerCustomInputReader("timeLevels", readTimeLevelsFromPanel);
+  registerCustomInputReader("sessionLevels", readSessionLevelsFromPanel);
+  registerTestingSettingsHandlers();
+}

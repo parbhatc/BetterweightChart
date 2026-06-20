@@ -25,9 +25,7 @@ export { default as VolumeIndicator } from "./definitions/volume/VolumeIndicator
 export { default as RsiIndicator } from "./definitions/rsi/RsiIndicator.js";
 export { default as MacdIndicator } from "./definitions/macd/MacdIndicator.js";
 export { default as PivotPointsHlIndicator } from "./definitions/pivot/PivotPointsHlIndicator.js";
-export { default as FvgIndicator } from "./definitions/fvg/FvgIndicator.js";
 export { default as SmtIndicator } from "./definitions/smt/SmtIndicator.js";
-export { default as LevelsIndicator } from "./definitions/levels/LevelsIndicator.js";
 export { compareSymbol } from "./security/compareSymbol.js";
 export {
   compareSymbolInputs,
@@ -47,8 +45,6 @@ export {
   htfPendingForLayers,
   htfSeriesRecomputeKey,
 } from "./security/htfPolicy.js";
-export { FvgHtf, fvgHtf } from "./definitions/fvg/htf.js";
-export { LevelsHtf, levelsHtf } from "./definitions/levels/htf.js";
 export {
   listIndicators,
   getIndicatorClass,

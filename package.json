@@ -15,13 +15,16 @@
   "files": [
     "public",
     "server",
+    "testing_web",
     "scripts"
   ],
   "scripts": {
     "postinstall": "node scripts/sync-vendor.mjs",
     "vendor": "node scripts/sync-vendor.mjs",
     "start": "node server/index.mjs",
-    "dev": "nodemon server/index.mjs"
+    "dev": "nodemon server/index.mjs",
+    "start:testing": "node testing_web/back_end/index.mjs",
+    "dev:testing": "nodemon testing_web/back_end/index.mjs"
   },
   "dependencies": {
     "lightweight-charts": "^5.0.3",

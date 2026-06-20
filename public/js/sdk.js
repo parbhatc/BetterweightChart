@@ -20,6 +20,7 @@ export {
   resolveDatafeed,
 } from "./datafeed/index.js";
 export { createDatafeed as createBrowserDatafeed } from "./datafeed/client.js";
+export { registerIndicator, listIndicators, getIndicatorClass } from "./indicators/catalog.js";
 export {
   chartDebug,
   chartDebugCount,

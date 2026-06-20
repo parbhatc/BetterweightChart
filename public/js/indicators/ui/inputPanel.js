@@ -1,9 +1,7 @@
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { symbolTicker } from "../../app/symbol/ticker.js";
 import { renderSymbolSizeRulesPanel } from "./symbolSizeRulesPanel.js";
-import { renderFvgTimeframesPanel } from "./fvgTimeframesPanel.js";
-import { renderSessionLevelsPanel, renderTimeLevelsPanel } from "./levelsLayersPanel.js";
-import { renderNewsLevelsPanel } from "./newsLevelsPanel.js";
+import { hasCustomInputRenderer, renderCustomInput } from "./customInputPanels.js";
 
 /**
  * @param {import("../types.js").InputFieldDef} field
@@ -53,17 +51,7 @@ export function renderInputsPanelHtml(schema, draftInputs, draftStyle, helpers) 
           inlineBatch = [];
         };
         for (const item of items) {
-          if (item.type === "symbolSizeRules") {
-            flushInline();
-            chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
-            continue;
-          }
-          if (item.type === "fvgTimeframes") {
-            flushInline();
-            chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
-            continue;
-          }
-          if (item.type === "levelsLayers" || item.type === "timeLevels" || item.type === "sessionLevels" || item.type === "newsLevels") {
+          if (item.type === "symbolSizeRules" || hasCustomInputRenderer(item.type)) {
             flushInline();
             chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
             continue;
@@ -110,17 +98,8 @@ function renderInputItem(input, draftInputs, draftStyle, helpers) {
   if (input.type === "symbolSizeRules") {
     return renderSymbolSizeRulesPanel(input, draftInputs);
   }
-  if (input.type === "fvgTimeframes") {
-    return renderFvgTimeframesPanel(input, draftInputs, helpers.timeframeOptions);
-  }
-  if (input.type === "timeLevels") {
-    return renderTimeLevelsPanel(input, draftInputs, helpers.timeframeOptions);
-  }
-  if (input.type === "sessionLevels") {
-    return renderSessionLevelsPanel(input, draftInputs);
-  }
-  if (input.type === "newsLevels") {
-    return renderNewsLevelsPanel(input, draftInputs);
+  if (hasCustomInputRenderer(input.type)) {
+    return renderCustomInput(input.type, input, draftInputs, helpers);
   }
   return renderInputField(input, draftInputs, draftStyle, helpers);
 }

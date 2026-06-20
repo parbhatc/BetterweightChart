@@ -1,60 +1,7 @@
 {
-  "trading_window": {
-    "enabled": false,
-    "times": [
-      { "start": "09:30", "end": "11:00" },
-      { "start": "18:00", "end": "22:00" }
-    ],
-    "release_start_after": { "type": "candles", "value": 1 }
-  },
-  "release_htf_gate": {
-    "enabled": true
-  },
-  "ifvg": {
-    "qualify": {
-      "enabled": false,
-      "maxFormationCandles": 7
-    },
-    "gapSize1m": {
-      "enabled": false,
-      "minTicks": 20,
-      "maxTicks": 160
-    },
-    "companionFvg": {
-      "enabled": false
-    }
-  },
-  "fvgTap": {
-    "gapSize": {
-      "enabled": false,
-      "minTicks": 4,
-      "maxTicks": 100
-    }
-  },
-  "setups": {
-    "1": { "enabled": true },
-    "2": { "enabled": true },
-    "3": { "enabled": true }
-  },
   "session": {
     "symbol": "NQ",
     "date": "2026-06-11",
     "open": "08:29"
-  },
-  "rithmic": {
-    "enabled": true,
-    "user": "",
-    "password": "",
-    "systemName": "LucidTrading",
-    "gatewayName": "Chicago Area"
-  },
-  "discord": {
-    "enabled": true,
-    "webhooks": {
-      "recap": { "enabled": true, "url": "" },
-      "1": { "enabled": true, "url": "" },
-      "2": { "enabled": true, "url": "" },
-      "3": { "enabled": true, "url": "" }
-    }
   }
 }

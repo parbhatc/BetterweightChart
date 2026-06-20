@@ -1,4 +1,4 @@
-import { defaultSessionDay, defaultSessionOpenHm, defaultSessionSymbol } from "../setups/setupGlobal.js";
+import settingsJson from "../../data/settings.json" with { type: "json" };
 
 /** Default how many bars to show width-wise — avoids fitContent zoom-out */
 export class Constants {
@@ -16,12 +16,11 @@ export class Constants {
   static LOAD_EDGE_BARS = 24;
   static MAX_CHAIN = 24;
   static ET_ZONE = "America/New_York";
-  static DEFAULT_SYMBOL = defaultSessionSymbol();
+  static DEFAULT_SYMBOL = settingsJson.session?.symbol ?? "NQ";
   static SYMBOL_STORAGE_KEY = "ifvg-replay-symbol-v1";
   static SESSION_DAY_STORAGE_KEY = "ifvg-replay-session-day-v1";
-  static DEFAULT_SESSION_DAY = defaultSessionDay();
-  static DEFAULT_SESSION_OPEN_HM = defaultSessionOpenHm();
-  static SETUP1_IFVG_MAX_AFTER_TAP_SEC = 35 * 60;
+  static DEFAULT_SESSION_DAY = settingsJson.session?.date ?? "2026-06-11";
+  static DEFAULT_SESSION_OPEN_HM = settingsJson.session?.open ?? "08:29";
   static INDICATOR_SETTINGS_KEY = "ifvg-replay-indicator-settings-v1";
   static TIMEFRAME_STORAGE_KEY = "ifvg-replay-timeframe-v1";
   static TIMEFRAME_FAVORITES_KEY = "ifvg-replay-timeframe-favorites-v1";
@@ -95,7 +94,6 @@ export const SYMBOL_STORAGE_KEY = Constants.SYMBOL_STORAGE_KEY;
 export const SESSION_DAY_STORAGE_KEY = Constants.SESSION_DAY_STORAGE_KEY;
 export const DEFAULT_SESSION_DAY = Constants.DEFAULT_SESSION_DAY;
 export const DEFAULT_SESSION_OPEN_HM = Constants.DEFAULT_SESSION_OPEN_HM;
-export const SETUP1_IFVG_MAX_AFTER_TAP_SEC = Constants.SETUP1_IFVG_MAX_AFTER_TAP_SEC;
 export const INDICATOR_SETTINGS_KEY = Constants.INDICATOR_SETTINGS_KEY;
 export const TIMEFRAME_STORAGE_KEY = Constants.TIMEFRAME_STORAGE_KEY;
 export const TIMEFRAME_FAVORITES_KEY = Constants.TIMEFRAME_FAVORITES_KEY;

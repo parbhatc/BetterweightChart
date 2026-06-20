@@ -14,4 +14,7 @@ export {
   mountDrawings,
   createDrawingController,
   createMultiPaneDrawingHub,
+  registerIndicator,
+  listIndicators,
+  getIndicatorClass,
 } from "../js/sdk.js";

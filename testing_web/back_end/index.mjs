@@ -3,28 +3,29 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
-import { chartConfig } from "./lib/fakeBars.mjs";
+import { chartConfig } from "../../server/lib/fakeBars.mjs";
 import {
   allSymbols,
   datafeedConfig,
   historyBars,
   resolveSymbol,
   searchDatafeed,
-} from "./lib/datafeed.mjs";
+} from "../../server/lib/datafeed.mjs";
 import {
   tradingViewDatafeedConfig,
   tradingViewHistory,
   tradingViewResolve,
   tradingViewSearch,
-} from "./lib/tradingview/datafeed.mjs";
-import { subscribeTradingViewBars } from "./lib/tradingview/client.mjs";
-import { newsCalendar, newsConfig } from "./lib/news/index.mjs";
-import { csvDatafeedSymbols } from "./lib/csv/history.mjs";
+} from "../../server/lib/tradingview/datafeed.mjs";
+import { subscribeTradingViewBars } from "../../server/lib/tradingview/client.mjs";
+import { newsCalendar, newsConfig } from "../../server/lib/news/index.mjs";
+import { csvDatafeedSymbols } from "../../server/lib/csv/history.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT = path.join(__dirname, "..");
+const ROOT = path.join(__dirname, "../..");
 const PUBLIC = path.resolve(ROOT, "public");
-const PORT = Number(process.env.PORT) || 3460;
+const TESTING = path.resolve(ROOT, "testing_web/frontend");
+const PORT = Number(process.env.TESTING_PORT || process.env.PORT) || 3461;
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -37,18 +38,30 @@ const MIME = {
   ".ico": "image/x-icon",
 };
 
-const HDR = { "X-Chart-Api": "custom-lightweight-chart" };
+const HDR = { "X-Chart-Api": "custom-lightweight-chart", "X-BWC-App": "testing-web" };
 
 function json(res, status, body) {
   res.writeHead(status, { ...HDR, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" });
   res.end(JSON.stringify(body));
 }
 
-function safePublic(relPath) {
+function safeUnder(root, relPath) {
   const rel = path.normalize(decodeURIComponent(relPath)).replace(/^(\.\.(\/|\\|$))+/, "");
-  const full = path.resolve(PUBLIC, rel);
-  if (!full.startsWith(PUBLIC + path.sep) && full !== PUBLIC) return null;
+  const full = path.resolve(root, rel);
+  if (!full.startsWith(root + path.sep) && full !== root) return null;
   return full;
+}
+
+function resolveStatic(filePathname) {
+  const testingPath = safeUnder(TESTING, filePathname);
+  if (testingPath && fs.existsSync(testingPath) && fs.statSync(testingPath).isFile()) {
+    return testingPath;
+  }
+  const publicPath = safeUnder(PUBLIC, filePathname);
+  if (publicPath && fs.existsSync(publicPath) && fs.statSync(publicPath).isFile()) {
+    return publicPath;
+  }
+  return null;
 }
 
 function serveFile(res, filePath) {
@@ -72,7 +85,6 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
     json(res, 200, tradingViewDatafeedConfig());
     return true;
   }
-
   if (pathname === "/datafeed/tv/search") {
     try {
       const query = sp.get("query") || sp.get("text") || "";
@@ -84,7 +96,6 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
     }
     return true;
   }
-
   if (pathname === "/datafeed/tv/symbols") {
     try {
       const symbol = sp.get("symbol") || "";
@@ -95,7 +106,6 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
     }
     return true;
   }
-
   if (pathname === "/datafeed/tv/history") {
     try {
       const payload = await tradingViewHistory({
@@ -111,7 +121,6 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
     }
     return true;
   }
-
   if (pathname === "/datafeed/tv/stream") {
     const symbol = sp.get("symbol") || "";
     const resolution = sp.get("resolution") || "5";
@@ -119,7 +128,6 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
       json(res, 400, { error: "symbol required" });
       return true;
     }
-
     res.writeHead(200, {
       ...HDR,
       "Content-Type": "text/event-stream; charset=utf-8",
@@ -127,11 +135,9 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
       Connection: "keep-alive",
     });
     res.write(": connected\n\n");
-
     const unsub = subscribeTradingViewBars(symbol, resolution, (bar) => {
       res.write(`data: ${JSON.stringify(bar)}\n\n`);
     });
-
     const ping = setInterval(() => res.write(": ping\n\n"), 15000);
     res.on("close", () => {
       clearInterval(ping);
@@ -139,25 +145,21 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
     });
     return true;
   }
-
   return false;
 }
 
 async function handleDatafeed(pathname, sp, res) {
   if (await handleTradingViewDatafeed(pathname, sp, res)) return true;
-
   if (pathname === "/datafeed/config") {
     json(res, 200, datafeedConfig());
     return true;
   }
-
   if (pathname === "/datafeed/search") {
     const query = sp.get("query") || "";
     const limit = sp.get("limit");
     json(res, 200, searchDatafeed(query, limit != null ? Number(limit) : 25));
     return true;
   }
-
   if (pathname === "/datafeed/symbols") {
     const symbol = sp.get("symbol") || "";
     const info = resolveSymbol(symbol);
@@ -168,7 +170,6 @@ async function handleDatafeed(pathname, sp, res) {
     json(res, 200, info);
     return true;
   }
-
   if (pathname === "/datafeed/history") {
     const payload = historyBars({
       symbol: sp.get("symbol") || "NQ",
@@ -183,12 +184,10 @@ async function handleDatafeed(pathname, sp, res) {
     json(res, 200, udf);
     return true;
   }
-
   if (pathname.startsWith("/datafeed/")) {
     json(res, 404, { s: "error", errmsg: "Unknown datafeed route" });
     return true;
   }
-
   return false;
 }
 
@@ -197,7 +196,6 @@ async function handleNews(pathname, sp, res) {
     json(res, 200, newsConfig());
     return true;
   }
-
   if (pathname === "/news/calendar") {
     try {
       const payload = await newsCalendar(sp);
@@ -208,12 +206,10 @@ async function handleNews(pathname, sp, res) {
     }
     return true;
   }
-
   if (pathname.startsWith("/news/")) {
     json(res, 404, { error: "Unknown news route" });
     return true;
   }
-
   return false;
 }
 
@@ -221,40 +217,27 @@ async function handleApi(pathname, sp, res) {
   if (pathname === "/api/health") {
     json(res, 200, {
       ok: true,
-      service: "betterweightchart",
+      service: "betterweightchart-testing-web",
       version: "1.0.0",
+      chartApi: "/chart/api.js",
       datafeed: "/datafeed/config",
-      news: "/news/config",
-      csvSymbols: csvDatafeedSymbols(),
-      testingWeb: "npm run start:testing",
-      endpoints: {
-        config: "/datafeed/config",
-        search: "/datafeed/search?query=nq",
-        symbols: "/datafeed/symbols?symbol=NQ",
-        history: "/datafeed/history?symbol=NQ&resolution=1&countback=500",
-        newsConfig: "/news/config",
-        newsCalendar: "/news/calendar?day=2026-06-11&types=ppi,cpi,fomc",
-      },
-      pages: { chart: "/", embed: "/embed?symbol=NQ&theme=dark&drawings=1" },
+      customIndicators: ["fvg", "levels"],
+      pages: { chart: "/" },
     });
     return true;
   }
-
   if (pathname === "/api/v1/config") {
     json(res, 200, chartConfig());
     return true;
   }
-
   if (pathname === "/api/v1/symbols") {
     json(res, 200, { symbols: allSymbols() });
     return true;
   }
-
   if (pathname.startsWith("/api/")) {
     json(res, 404, { error: "Unknown API route", path: pathname });
     return true;
   }
-
   return false;
 }
 
@@ -272,40 +255,48 @@ function handleRequest(req, res) {
     void handleNews(pathname, searchParams, res).then((newsHandled) => {
       if (newsHandled) return;
 
-    void handleApi(pathname, searchParams, res).then((apiHandled) => {
-      if (apiHandled) return;
+      void handleApi(pathname, searchParams, res).then((apiHandled) => {
+        if (apiHandled) return;
 
-      let filePathname = pathname === "/" ? "/index.html" : pathname;
-      if (!path.extname(filePathname)) {
-        const asHtml = safePublic(`${filePathname.slice(1)}.html`);
-        const asIndex = safePublic(path.join(filePathname.slice(1), "index.html"));
-        filePathname = asHtml && fs.existsSync(asHtml) ? `${filePathname}.html` : filePathname;
-        if (!path.extname(filePathname) && asIndex && fs.existsSync(asIndex)) {
-          filePathname = path.join(filePathname, "index.html");
+        let filePathname = pathname;
+        if (pathname === "/") {
+          filePathname = "/index.html";
+        } else if (pathname.startsWith("/testing/")) {
+          filePathname = pathname.slice("/testing".length) || "/index.html";
+        } else if (!path.extname(pathname)) {
+          const asHtml = resolveStatic(`${pathname.slice(1)}.html`);
+          const asIndex = resolveStatic(path.join(pathname.slice(1), "index.html"));
+          if (asHtml) filePathname = `${pathname}.html`;
+          else if (asIndex) filePathname = path.join(pathname, "index.html");
         }
-      }
 
-      const filePath = safePublic(filePathname.startsWith("/") ? filePathname.slice(1) : filePathname);
-      if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-        res.writeHead(404, HDR);
-        res.end("Not found");
-        return;
-      }
+        const rel = filePathname.startsWith("/") ? filePathname.slice(1) : filePathname;
+        let filePath = null;
+        if (pathname === "/" || pathname.startsWith("/testing/")) {
+          filePath = safeUnder(TESTING, rel);
+        } else {
+          filePath = resolveStatic(rel);
+        }
 
-      if (req.method === "HEAD") {
-        res.writeHead(200, HDR);
-        res.end();
-        return;
-      }
+        if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+          res.writeHead(404, HDR);
+          res.end("Not found");
+          return;
+        }
 
-      serveFile(res, filePath);
-    });
+        if (req.method === "HEAD") {
+          res.writeHead(200, HDR);
+          res.end();
+          return;
+        }
+
+        serveFile(res, filePath);
+      });
     });
   });
 }
 
 const server = http.createServer(handleRequest);
-
 const wss = new WebSocketServer({ server, path: "/ws/ping" });
 wss.on("connection", (ws) => {
   ws.on("message", (data, isBinary) => {
@@ -315,9 +306,7 @@ wss.on("connection", (ws) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Chart UI:  http://127.0.0.1:${PORT}/`);
-  console.log(`Embed:     http://127.0.0.1:${PORT}/embed?symbol=NQ&theme=dark`);
-  console.log(`Datafeed:  http://127.0.0.1:${PORT}/datafeed/config`);
-  console.log(`News:      http://127.0.0.1:${PORT}/news/config`);
-  console.log(`WS ping:   ws://127.0.0.1:${PORT}/ws/ping`);
+  console.log(`Testing web:  http://127.0.0.1:${PORT}/`);
+  console.log(`Chart API:    http://127.0.0.1:${PORT}/chart/sdk.js`);
+  console.log(`Datafeed:     http://127.0.0.1:${PORT}/datafeed/config`);
 });
