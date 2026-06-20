@@ -16,6 +16,8 @@
  * @property {string} cancelButtonBorderColor
  * @property {string} cancelButtonIconColor
  * @property {string} cancelTooltip
+ * @property {string} bodyTooltip
+ * @property {string} quantityTooltip
  * @property {boolean} removed
  * @property {{ price: number, type: string | null } | null} target
  * @property {boolean} isMoving

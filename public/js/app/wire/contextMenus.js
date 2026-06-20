@@ -47,6 +47,8 @@ export function wirePaneContextMenus(opts) {
       lockCursorByTime: ui.lockCursorByTime,
       canPaste: Boolean(getDrawing()?.hasDrawingClipboard?.()) || true,
       hasSelectedDrawing: Boolean(getDrawing()?.getSelectedDrawing?.()),
+      crosshairTime:
+        ui.lockedCrosshairTime ?? pane.hoverBar?.time ?? pane.bars.at(-1)?.time ?? null,
     }),
     actions: {
       resetChart: () => resetChartView(pane),

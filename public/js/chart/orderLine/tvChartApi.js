@@ -6,9 +6,10 @@
  * @param {(sym: string) => void | Promise<void>} opts.setSymbol
  * @param {() => string} opts.getResolution
  * @param {import("./OrderLineManager.js").OrderLineManager} opts.orderLines
+ * @param {import("../executionShape/ExecutionShapeManager.js").ExecutionShapeManager} opts.executionShapes
  */
 export function createTradingViewChartApi(opts) {
-  const { getSymbol, setSymbol, getResolution, orderLines } = opts;
+  const { getSymbol, setSymbol, getResolution, orderLines, executionShapes } = opts;
 
   return {
     symbol() {
@@ -27,6 +28,10 @@ export function createTradingViewChartApi(opts) {
 
     createOrderLine() {
       return orderLines.createOrderLine();
+    },
+
+    createExecutionShape() {
+      return executionShapes.createExecutionShape();
     },
   };
 }

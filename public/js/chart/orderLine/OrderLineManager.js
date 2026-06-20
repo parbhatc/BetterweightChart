@@ -1,13 +1,14 @@
 import { createOrderLineAdapter } from "./createOrderLineAdapter.js";
+import { createOrderLineControlsOverlay } from "./orderLineControlsOverlay.js";
 import { OrderLinesPrimitive } from "./OrderLinesPrimitive.js";
+import {
+  layoutOrderLineGeometry,
+  ORDER_LINE_CANCEL_W,
+  ORDER_LINE_ROW_H,
+} from "./rowLayout.js";
 
 const ROW_HIT_PAD = 8;
-const CANCEL_W = 20;
-const GAP = 2;
-const PAD_X = 8;
-const ROW_H = 20;
-const FONT =
-  "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
+const CLICK_DRAG_THRESHOLD_SQ = 36;
 
 let nextId = 1;
 
@@ -26,13 +27,25 @@ export class OrderLineManager {
     this._paneRef = null;
     /** @type {{ adapter: object, startY: number, startPrice: number } | null} */
     this._drag = null;
+    /** @type {{ adapter: object, startX: number, startY: number, part: string } | null} */
+    this._pendingModify = null;
     this._listenersBound = false;
     /** @type {HTMLElement | null} */
     this._mountEl = null;
+    /** @type {ReturnType<typeof createOrderLineControlsOverlay> | null} */
+    this._overlay = null;
+    /** @type {object | null} */
+    this._overlayPane = null;
+    /** @type {number} */
+    this._overlayRaf = 0;
+    /** @type {(() => void) | null} */
+    this._rangeUnsub = null;
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
     this._onPointerUp = this._onPointerUp.bind(this);
+    this._onPointerLeave = this._onPointerLeave.bind(this);
     this._onContextMenu = this._onContextMenu.bind(this);
+    this._onOverlayPointerDown = this._onOverlayPointerDown.bind(this);
   }
 
   /** @returns {import("./types.js").OrderLineState[]} */
@@ -52,10 +65,40 @@ export class OrderLineManager {
     this._paneRef = pane;
     this._primitive = new OrderLinesPrimitive(() => this._activeStates());
     pane.series.attachPrimitive(this._primitive);
+    this._ensureOverlay(pane);
     this._ensureListeners(pane);
+    this._bindRangeSync(pane);
+    this._scheduleOverlaySync();
+  }
+
+  _bindRangeSync(pane) {
+    this._rangeUnsub?.();
+    const ts = pane.chart.timeScale();
+    const onRange = () => this._scheduleOverlaySync();
+    ts.subscribeVisibleLogicalRangeChange(onRange);
+    this._rangeUnsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
+  }
+
+  /** @param {object} pane */
+  _ensureOverlay(pane) {
+    if (this._overlayPane === pane && this._overlay) return;
+    this._destroyOverlay();
+    if (!(pane.el instanceof HTMLElement)) return;
+    this._overlayPane = pane;
+    this._overlay = createOrderLineControlsOverlay(pane.el);
+    this._overlay.root.addEventListener("pointerdown", this._onOverlayPointerDown, true);
+  }
+
+  _destroyOverlay() {
+    this._overlay?.root.removeEventListener("pointerdown", this._onOverlayPointerDown, true);
+    this._overlay?.destroy();
+    this._overlay = null;
+    this._overlayPane = null;
   }
 
   _detachPrimitive() {
+    this._rangeUnsub?.();
+    this._rangeUnsub = null;
     if (this._primitive && this._paneRef?.series) {
       try {
         this._paneRef.series.detachPrimitive(this._primitive);
@@ -65,6 +108,7 @@ export class OrderLineManager {
     }
     this._primitive = null;
     this._paneRef = null;
+    this._destroyOverlay();
   }
 
   /** @param {object} pane */
@@ -75,6 +119,7 @@ export class OrderLineManager {
     mount.addEventListener("pointerdown", this._onPointerDown, true);
     mount.addEventListener("pointermove", this._onPointerMove, true);
     mount.addEventListener("pointerup", this._onPointerUp, true);
+    mount.addEventListener("pointerleave", this._onPointerLeave, true);
     mount.addEventListener("contextmenu", this._onContextMenu, true);
     this._listenersBound = true;
     this._mountEl = mount;
@@ -106,6 +151,31 @@ export class OrderLineManager {
 
   requestRefresh() {
     this._primitive?.requestRefresh();
+    this._scheduleOverlaySync();
+  }
+
+  _scheduleOverlaySync() {
+    if (this._overlayRaf) return;
+    this._overlayRaf = requestAnimationFrame(() => {
+      this._overlayRaf = 0;
+      this._syncOverlay();
+    });
+  }
+
+  _syncOverlay() {
+    const overlay = this._overlay;
+    const primitive = this._primitive;
+    if (!overlay || !primitive) return;
+
+    const layouts = primitive.layoutAll();
+    overlay.sync(
+      layouts.map((layout) => ({
+        id: layout.state.id,
+        left: layout.rowLeft,
+        y: layout.y,
+        state: layout.state,
+      })),
+    );
   }
 
   /** @param {PointerEvent} ev */
@@ -116,46 +186,89 @@ export class OrderLineManager {
     return { pane, x: ev.clientX - rect.left, y: ev.clientY - rect.top, rect };
   }
 
-  /** @param {import("./types.js").OrderLineState} state @param {number} scaleW */
+  /**
+   * @param {import("./types.js").OrderLineState} state
+   * @param {object} pane
+   * @param {number} px
+   * @param {number} py
+   * @param {number} scaleW
+   */
   _axisHit(state, pane, px, py, scaleW) {
     const series = pane.series;
     const y = series.priceToCoordinate(state.price);
     if (y == null) return null;
 
-    const ctx = document.createElement("canvas").getContext("2d");
-    if (!ctx) return null;
-    ctx.font = `600 11px ${FONT}`;
-    const bodyW = Math.max(36, ctx.measureText(state.text || " ").width + PAD_X * 2);
-    const qtyW = state.quantity
-      ? Math.max(28, ctx.measureText(state.quantity).width + PAD_X * 2)
-      : 0;
-    const totalW = bodyW + (qtyW ? GAP + qtyW : 0) + GAP + CANCEL_W;
     const plotW = pane.el.getBoundingClientRect().width;
-    const left = plotW - scaleW;
-    const top = y - ROW_H / 2;
-    const row = { left, top, width: totalW, height: ROW_H, cancelLeft: left + totalW - CANCEL_W };
+    const { totalW, rowLeft } = layoutOrderLineGeometry(state, plotW, scaleW);
+    const top = y - ORDER_LINE_ROW_H / 2;
+    const row = {
+      left: rowLeft,
+      top,
+      width: totalW,
+      height: ORDER_LINE_ROW_H,
+      cancelLeft: rowLeft + totalW - ORDER_LINE_CANCEL_W,
+    };
 
     if (px < row.left || px > row.left + row.width || py < row.top - ROW_HIT_PAD || py > row.top + row.height + ROW_HIT_PAD) {
-      if (Math.abs(py - y) <= ROW_HIT_PAD && px >= 0 && px <= plotW - scaleW) {
+      if (Math.abs(py - y) <= ROW_HIT_PAD && px >= 0 && px <= plotW) {
         return { kind: "line", adapter: this._adapters.get(state.id) };
       }
       return null;
     }
 
-    if (px >= row.cancelLeft) return { kind: "cancel", adapter: this._adapters.get(state.id) };
-    return { kind: "line", adapter: this._adapters.get(state.id) };
+    if (px >= row.cancelLeft) {
+      return { kind: "cancel", adapter: this._adapters.get(state.id), row };
+    }
+    return { kind: "pill", adapter: this._adapters.get(state.id), row };
+  }
+
+  /** @param {PointerEvent} ev */
+  _onOverlayPointerDown(ev) {
+    if (ev.button !== 0) return;
+    const part = ev.target instanceof Element ? ev.target.closest("[data-ol-part]") : null;
+    if (!part) return;
+    const id = part.closest("[data-ol-id]")?.getAttribute("data-ol-id");
+    if (!id) return;
+    const adapter = this._adapters.get(id);
+    if (!adapter) return;
+
+    ev.preventDefault();
+    ev.stopPropagation();
+    this._pendingModify = {
+      adapter,
+      startX: ev.clientX,
+      startY: ev.clientY,
+      part: part.getAttribute("data-ol-part") || "body",
+    };
   }
 
   /** @param {PointerEvent} ev */
   _onPointerDown(ev) {
     if (ev.button !== 0) return;
+    if (ev.target instanceof Element && ev.target.closest(".order-line-control")) return;
+
     const hit = this._hitTest(ev);
     if (!hit?.adapter) return;
 
     if (hit.kind === "cancel") {
       ev.preventDefault();
       ev.stopPropagation();
-      hit.adapter._handlers.cancel?.();
+      this._pendingModify = {
+        adapter: hit.adapter,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        part: "cancel",
+      };
+      return;
+    }
+
+    if (hit.kind === "pill") {
+      this._pendingModify = {
+        adapter: hit.adapter,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        part: "body",
+      };
       return;
     }
 
@@ -163,10 +276,16 @@ export class OrderLineManager {
     if (!pane) return;
     ev.preventDefault();
     ev.stopPropagation();
-    const price = hit.adapter.getPrice();
-    this._drag = { adapter: hit.adapter, startY: ev.clientY, startPrice: price };
-    hit.adapter.isMoving = true;
-    hit.adapter._state.isMoving = true;
+    this._startDrag(hit.adapter, ev);
+  }
+
+  /** @param {object} adapter @param {PointerEvent} ev */
+  _startDrag(adapter, ev) {
+    this._pendingModify = null;
+    this._drag = { adapter, startY: ev.clientY, startPrice: adapter.getPrice() };
+    adapter.isMoving = true;
+    adapter._state.isMoving = true;
+    this._scheduleOverlaySync();
     try {
       (ev.target instanceof Element ? ev.target : this._mountEl)?.setPointerCapture?.(ev.pointerId);
     } catch {
@@ -176,26 +295,73 @@ export class OrderLineManager {
 
   /** @param {PointerEvent} ev */
   _onPointerMove(ev) {
-    if (!this._drag) return;
-    const pane = this._paneRef ?? this._getActivePane();
-    if (!pane?.series) return;
-    const rect = pane.el.getBoundingClientRect();
-    const y = ev.clientY - rect.top;
-    const price = pane.series.coordinateToPrice(y);
-    if (price == null || !Number.isFinite(price)) return;
-    ev.preventDefault();
-    this._drag.adapter.setPrice(price);
-    this._drag.adapter._handlers.moving?.();
+    if (this._pendingModify && !this._drag) {
+      const dx = ev.clientX - this._pendingModify.startX;
+      const dy = ev.clientY - this._pendingModify.startY;
+      if (this._pendingModify.part !== "cancel" && dx * dx + dy * dy >= CLICK_DRAG_THRESHOLD_SQ) {
+        this._startDrag(this._pendingModify.adapter, ev);
+      }
+    }
+
+    if (this._drag) {
+      const pane = this._paneRef ?? this._getActivePane();
+      if (!pane?.series) return;
+      const rect = pane.el.getBoundingClientRect();
+      const y = ev.clientY - rect.top;
+      const price = pane.series.coordinateToPrice(y);
+      if (price == null || !Number.isFinite(price)) return;
+      ev.preventDefault();
+      this._drag.adapter.setPrice(price);
+      this._drag.adapter._handlers.moving?.();
+      return;
+    }
+
+    this._updateHoverCursor(ev);
   }
 
   /** @param {PointerEvent} ev */
   _onPointerUp(ev) {
+    if (this._pendingModify && !this._drag) {
+      const dx = ev.clientX - this._pendingModify.startX;
+      const dy = ev.clientY - this._pendingModify.startY;
+      if (dx * dx + dy * dy < CLICK_DRAG_THRESHOLD_SQ) {
+        const { adapter, part } = this._pendingModify;
+        if (part === "cancel") adapter._handlers.cancel?.();
+        else adapter._handlers.modify?.();
+      }
+      this._pendingModify = null;
+    }
+
     if (!this._drag) return;
     const adapter = this._drag.adapter;
     adapter.isMoving = false;
     adapter._state.isMoving = false;
     this._drag = null;
+    this._scheduleOverlaySync();
     adapter._handlers.move?.();
+  }
+
+  /** @param {PointerEvent} ev */
+  _onPointerLeave(ev) {
+    if (this._drag || this._pendingModify) return;
+    if (this._mountEl) this._mountEl.style.cursor = "";
+  }
+
+  /** @param {PointerEvent | MouseEvent} ev */
+  _updateHoverCursor(ev) {
+    const mount = this._mountEl;
+    if (!mount) return;
+    if (ev.target instanceof Element && ev.target.closest(".order-line-control")) {
+      mount.style.cursor = "pointer";
+      return;
+    }
+    const hit = this._hitTest(ev);
+    if (!hit) {
+      mount.style.cursor = "";
+      return;
+    }
+    if (hit.kind === "line") mount.style.cursor = "ns-resize";
+    else mount.style.cursor = "pointer";
   }
 
   /** @param {MouseEvent} ev */

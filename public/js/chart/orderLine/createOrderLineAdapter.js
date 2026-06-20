@@ -15,13 +15,15 @@ export function createOrderLineAdapter(manager, id) {
     lineColor: "#089981",
     bodyBackgroundColor: "#089981",
     bodyTextColor: "#ffffff",
-    bodyBorderColor: "#000000",
+    bodyBorderColor: "transparent",
     quantityBackgroundColor: "#089981",
     quantityTextColor: "#ffffff",
-    quantityBorderColor: "#000000",
-    cancelButtonBorderColor: "#000000",
-    cancelButtonIconColor: "#000000",
+    quantityBorderColor: "transparent",
+    cancelButtonBorderColor: "rgba(0,0,0,0.12)",
+    cancelButtonIconColor: "rgba(0,0,0,0.55)",
     cancelTooltip: "",
+    bodyTooltip: "",
+    quantityTooltip: "",
     removed: false,
     target: null,
     isMoving: false,
@@ -41,15 +43,39 @@ export function createOrderLineAdapter(manager, id) {
     isMoving: false,
 
     onModify(fn) {
-      handlers.modify = typeof fn === "function" ? fn : null;
+      if (typeof fn === "function") {
+        handlers.modify = fn;
+      } else if (arguments.length >= 2 && typeof arguments[1] === "function") {
+        const data = fn;
+        const cb = arguments[1];
+        handlers.modify = () => cb.call(adapter, data);
+      } else {
+        handlers.modify = null;
+      }
       return adapter;
     },
     onCancel(fn) {
-      handlers.cancel = typeof fn === "function" ? fn : null;
+      if (typeof fn === "function") {
+        handlers.cancel = fn;
+      } else if (arguments.length >= 2 && typeof arguments[1] === "function") {
+        const data = fn;
+        const cb = arguments[1];
+        handlers.cancel = () => cb.call(adapter, data);
+      } else {
+        handlers.cancel = null;
+      }
       return adapter;
     },
     onMove(fn) {
-      handlers.move = typeof fn === "function" ? fn : null;
+      if (typeof fn === "function") {
+        handlers.move = fn;
+      } else if (arguments.length >= 2 && typeof arguments[1] === "function") {
+        const data = fn;
+        const cb = arguments[1];
+        handlers.move = () => cb.call(adapter, data);
+      } else {
+        handlers.move = null;
+      }
       return adapter;
     },
     onMoving(fn) {
@@ -138,6 +164,17 @@ export function createOrderLineAdapter(manager, id) {
     },
     setCancelTooltip(text) {
       state.cancelTooltip = String(text ?? "");
+      manager.requestRefresh();
+      return adapter;
+    },
+    setBodyTooltip(text) {
+      state.bodyTooltip = String(text ?? "");
+      manager.requestRefresh();
+      return adapter;
+    },
+    setQuantityTooltip(text) {
+      state.quantityTooltip = String(text ?? "");
+      manager.requestRefresh();
       return adapter;
     },
 

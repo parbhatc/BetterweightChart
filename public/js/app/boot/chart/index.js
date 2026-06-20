@@ -220,6 +220,7 @@ export async function bootChart(overrides = {}) {
         });
       }
     }
+    widget._notifyChartReady?.();
     return widget;
   } finally {
     ctx.loader.hide();

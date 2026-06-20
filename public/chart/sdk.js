@@ -19,4 +19,9 @@ export {
   getIndicatorClass,
   createTradingViewChartApi,
   createOrderLineManager,
+  createExecutionShapeManager,
+  registerTradeContextActions,
+  clearChartContextActions,
+  getTradeContextActions,
+  hasTradeContextActions,
 } from "../js/sdk.js";

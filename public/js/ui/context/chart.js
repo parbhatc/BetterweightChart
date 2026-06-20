@@ -2,6 +2,7 @@ import { closeAllContextMenus, registerContextMenu } from "./registry.js";
 import { hitPriceScale, hitTimeScale } from "../../chart/scale/settings.js";
 import { DRAWING_UI_SELECTOR } from "../../drawings/constants.js";
 import { runContextMenuAction } from "../../debug/chart/contextMenu.js";
+import { getTradeContextActions, hasTradeContextActions } from "../../chart/hostHooks.js";
 
 const ICONS = {
   reset: `<svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true"><g fill="none" fill-rule="evenodd" stroke="currentColor"><path d="M6.5 15A8.5 8.5 0 1 0 15 6.5H8.5"></path><path d="M12 10 8.5 6.5 12 3"></path></g></svg>`,
@@ -20,6 +21,7 @@ const ICONS = {
  *   lockCursorByTime: boolean,
  *   canPaste: boolean,
  *   hasSelectedDrawing: boolean,
+ *   crosshairTime: number | null,
  * }} MenuState
  */
 
@@ -56,18 +58,27 @@ export function mountChartContextMenu(opts) {
 
   let openX = 0;
   let openY = 0;
+  /** @type {HTMLElement | null} */
+  let submenuEl = null;
+
+  function closeSubmenu() {
+    submenuEl?.remove();
+    submenuEl = null;
+  }
 
   function close() {
     root.hidden = true;
+    closeSubmenu();
   }
 
   function rowDivider() {
     return `<tr class="ctx-menu__divider-row"><td><div class="ctx-menu__divider"></div></td><td><div class="ctx-menu__divider"></div></td></tr>`;
   }
 
-  function rowItem({ id, label, shortcut, icon = "", disabled = false, checked = false }) {
+  function rowItem({ id, label, shortcut, icon = "", disabled = false, checked = false, hasSubmenu = false }) {
     const dis = disabled ? " ctx-menu__row--disabled" : "";
     const shortcutHtml = shortcut ? `<span class="ctx-menu__shortcut">${shortcut}</span>` : "";
+    const arrowHtml = hasSubmenu ? `<span class="ctx-menu__arrow">${ICONS.chevron}</span>` : "";
     const iconCell = icon
       ? `<span class="ctx-menu__icon">${icon}</span>`
       : checked
@@ -79,7 +90,7 @@ export function mountChartContextMenu(opts) {
       <td class="ctx-menu__content-cell">
         <div class="ctx-menu__content-inner">
           <span class="${labelCls}">${label}</span>
-          ${shortcutHtml}
+          ${shortcutHtml}${arrowHtml}
         </div>
       </td>
     </tr>`;
@@ -95,7 +106,15 @@ export function mountChartContextMenu(opts) {
         ? `Remove ${s.indicatorCount} indicator${s.indicatorCount === 1 ? "" : "s"}`
         : "Remove indicators";
 
+    const trade = getTradeContextActions();
+    const tradeRows = [];
+    if (hasTradeContextActions() && trade) {
+      tradeRows.push(rowItem({ id: "trade", label: "Trade", hasSubmenu: true }));
+      tradeRows.push(rowDivider());
+    }
+
     root.innerHTML = `<div class="ctx-menu__scroll"><table class="ctx-menu__table"><tbody>
+      ${tradeRows.join("")}
       ${rowItem({ id: "reset", label: "Reset chart view", shortcut: "Alt + R", icon: ICONS.reset })}
       ${rowDivider()}
       ${rowItem({ id: "copy-price", label: copyLabel })}
@@ -129,7 +148,93 @@ export function mountChartContextMenu(opts) {
     root.style.top = `${Math.max(pad, top)}px`;
   }
 
-  function runAction(id) {
+  function runTradeAction(id) {
+    const s = getState();
+    const trade = getTradeContextActions();
+    const price = s.price ?? 0;
+    const time = s.crosshairTime ?? undefined;
+    const qty = 1;
+
+    runContextMenuAction("chart", id, close, () => {
+      switch (id) {
+        case "trade-market-buy":
+          trade?.onMarketBuy?.(qty, price, time);
+          break;
+        case "trade-market-sell":
+          trade?.onMarketSell?.(qty, price, time);
+          break;
+        case "trade-limit-buy":
+          trade?.onLimitBuy?.(qty, price, price, time);
+          break;
+        case "trade-stop-sell":
+          trade?.onStopSell?.(qty, price, price, time);
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
+  /** @param {HTMLElement} anchorRow */
+  function openTradeSubmenu(anchorRow) {
+    closeSubmenu();
+    const s = getState();
+    const trade = getTradeContextActions();
+    if (!trade) return;
+
+    const priceSuffix = s.price != null ? ` @ ${s.priceText}` : "";
+    /** @type {Array<{ id: string; label: string; shortcut?: string }>} */
+    const items = [];
+    if (trade.onMarketBuy) {
+      items.push({ id: "trade-market-buy", label: `Market Buy 1${priceSuffix}`, shortcut: "Ctrl + B" });
+    }
+    if (trade.onMarketSell) {
+      items.push({ id: "trade-market-sell", label: `Market Sell 1${priceSuffix}`, shortcut: "Ctrl + S" });
+    }
+    if (trade.onLimitBuy) {
+      items.push({ id: "trade-limit-buy", label: `Limit Buy 1${priceSuffix}` });
+    }
+    if (trade.onStopSell) {
+      items.push({ id: "trade-stop-sell", label: `Stop Sell 1${priceSuffix}` });
+    }
+    if (!items.length) return;
+
+    const rows = items.map((item) => rowItem(item)).join("");
+    submenuEl = document.createElement("div");
+    submenuEl.className = "ctx-menu ctx-menu--sub ctx-menu--trade-sub";
+    submenuEl.innerHTML = `<div class="ctx-menu__scroll"><table class="ctx-menu__table"><tbody>${rows}</tbody></table></div>`;
+    document.body.appendChild(submenuEl);
+
+    const rect = anchorRow.getBoundingClientRect();
+    const menuRect = root.getBoundingClientRect();
+    const pad = 8;
+    let left = menuRect.right - 2;
+    let top = rect.top;
+    submenuEl.style.left = `${left}px`;
+    submenuEl.style.top = `${top}px`;
+    const subRect = submenuEl.getBoundingClientRect();
+    if (subRect.right > window.innerWidth - pad) {
+      left = menuRect.left - subRect.width + 2;
+      submenuEl.style.left = `${Math.max(pad, left)}px`;
+    }
+    if (subRect.bottom > window.innerHeight - pad) {
+      top = Math.max(pad, window.innerHeight - subRect.height - pad);
+      submenuEl.style.top = `${top}px`;
+    }
+
+    submenuEl.addEventListener("click", (ev) => {
+      const row = ev.target.closest("[data-action]");
+      if (!row) return;
+      runTradeAction(row.dataset.action);
+    });
+  }
+
+  function runAction(id, row) {
+    if (id === "trade") {
+      openTradeSubmenu(row);
+      return;
+    }
+
     const detail =
       id === "remove-drawings"
         ? { drawingCount: getState().drawingCount }
@@ -177,7 +282,7 @@ export function mountChartContextMenu(opts) {
   root.addEventListener("click", (ev) => {
     const row = ev.target.closest("[data-action]");
     if (!row || row.classList.contains("ctx-menu__row--disabled")) return;
-    runAction(row.dataset.action);
+    runAction(row.dataset.action, row);
   });
 
   container.addEventListener("contextmenu", async (ev) => {
@@ -221,8 +326,8 @@ export function mountChartContextMenu(opts) {
 
   registerContextMenu({
     close,
-    isOpen: () => !root.hidden,
-    contains: (node) => root.contains(node),
+    isOpen: () => !root.hidden || Boolean(submenuEl),
+    contains: (node) => root.contains(node) || Boolean(submenuEl?.contains(node)),
   });
 
   return { close, openAt: positionMenu };

@@ -22,6 +22,13 @@ export {
 export { createDatafeed as createBrowserDatafeed } from "./datafeed/client.js";
 export { registerIndicator, listIndicators, getIndicatorClass } from "./indicators/catalog.js";
 export { createTradingViewChartApi, createOrderLineManager } from "./chart/orderLine/index.js";
+export { createExecutionShapeManager } from "./chart/executionShape/index.js";
+export {
+  registerTradeContextActions,
+  clearChartContextActions,
+  getTradeContextActions,
+  hasTradeContextActions,
+} from "./chart/hostHooks.js";
 export {
   chartDebug,
   chartDebugCount,

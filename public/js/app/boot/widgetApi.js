@@ -8,6 +8,8 @@ import {
   createOrderLineManager,
   createTradingViewChartApi,
 } from "../../chart/orderLine/index.js";
+import { createExecutionShapeManager } from "../../chart/executionShape/index.js";
+import { createWidgetShortcutRegistry } from "../../chart/widgetShortcuts.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -52,8 +54,13 @@ export function createChartWidgetApi(ctx) {
   } = ctx;
 
   const orderLines = createOrderLineManager(getActivePane);
+  const executionShapes = createExecutionShapeManager(getActivePane);
+  const shortcutRegistry = createWidgetShortcutRegistry(getActivePane);
   /** @type {ReturnType<typeof createTradingViewChartApi> | null} */
   let tvChartApi = null;
+  /** @type {Array<() => void>} */
+  const readyCallbacks = [];
+  let chartReady = false;
 
   const widget = {
     /** Raw lightweight-charts IChartApi instance. */
@@ -84,9 +91,43 @@ export function createChartWidgetApi(ctx) {
           setSymbol: (sym) => widget.setSymbol(sym),
           getResolution,
           orderLines,
+          executionShapes,
         });
       }
       return tvChartApi;
+    },
+
+    /** TV widget API — run after chart history is loaded. */
+    onChartReady(cb) {
+      if (typeof cb !== "function") return;
+      if (chartReady) {
+        cb();
+        return;
+      }
+      readyCallbacks.push(cb);
+    },
+
+    /**
+     * TV widget API — register keyboard shortcut (e.g. `["ctrl", 66]`).
+     * @param {(string | number)[]} shortcut
+     * @param {() => void} cb
+     */
+    onShortcut(shortcut, cb) {
+      shortcutRegistry.onShortcut(shortcut, cb);
+    },
+
+    /** @internal Called by bootChart when the widget is ready. */
+    _notifyChartReady() {
+      if (chartReady) return;
+      chartReady = true;
+      const cbs = readyCallbacks.splice(0);
+      for (const cb of cbs) {
+        try {
+          cb();
+        } catch (err) {
+          console.error("[BWC] onChartReady callback failed:", err);
+        }
+      }
     },
 
     /** Active symbol metadata from datafeed.resolveSymbol(). */

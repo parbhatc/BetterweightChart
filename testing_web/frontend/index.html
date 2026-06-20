@@ -7,6 +7,22 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/css/app.css" />
+    <style>
+      .trade-demo-toast {
+        position: absolute;
+        top: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 30;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font: 600 12px system-ui, sans-serif;
+        color: #fff;
+        background: rgba(8, 153, 129, 0.92);
+        pointer-events: none;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      }
+    </style>
     <script type="importmap">
       {
         "imports": {
@@ -68,6 +84,7 @@
               </div>
               <div id="chart"></div>
               <div class="status-line tv-ohlc" id="ohlc" aria-live="polite"></div>
+              <div id="trade-demo-toast" class="trade-demo-toast" hidden aria-live="polite"></div>
             </div>
             <footer class="tv-chart-replay-bar" aria-label="Bar replay" hidden>
               <div class="tv-chart-replay-bar__grow"></div>
