@@ -17,8 +17,9 @@ import {
   tradingViewResolve,
   tradingViewSearch,
 } from "./lib/tradingview/datafeed.mjs";
-import { tradingViewBacktestHistory } from "./lib/tradingview/backtestHistory.mjs";
 import { subscribeTradingViewBars } from "./lib/tradingview/client.mjs";
+import { newsCalendar, newsConfig } from "./lib/news/index.mjs";
+import { csvDatafeedSymbols } from "./lib/csv/history.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
@@ -111,25 +112,6 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
     return true;
   }
 
-  if (pathname === "/datafeed/tv/backtest-history") {
-    try {
-      const range = sp.get("range") || "90d";
-      const presetDays = { "7d": 7, "30d": 30, "90d": 90, "365d": 365 };
-      const days = sp.get("days") != null ? Number(sp.get("days")) : (presetDays[range] ?? 90);
-      const payload = await tradingViewBacktestHistory({
-        symbol: sp.get("symbol") || "CME_MINI:NQ1!",
-        resolution: sp.get("resolution") || "1",
-        days,
-        from: sp.get("from") != null ? Number(sp.get("from")) : undefined,
-        to: sp.get("to") != null ? Number(sp.get("to")) : undefined,
-      });
-      json(res, 200, payload);
-    } catch (err) {
-      json(res, 200, { s: "error", errmsg: err.message || "Backtest history failed" });
-    }
-    return true;
-  }
-
   if (pathname === "/datafeed/tv/stream") {
     const symbol = sp.get("symbol") || "";
     const resolution = sp.get("resolution") || "5";
@@ -210,6 +192,31 @@ async function handleDatafeed(pathname, sp, res) {
   return false;
 }
 
+async function handleNews(pathname, sp, res) {
+  if (pathname === "/news/config") {
+    json(res, 200, newsConfig());
+    return true;
+  }
+
+  if (pathname === "/news/calendar") {
+    try {
+      const payload = await newsCalendar(sp);
+      const status = payload.error && !payload.events?.length ? 404 : 200;
+      json(res, status, payload);
+    } catch (err) {
+      json(res, 502, { error: err.message || "Calendar failed", events: [] });
+    }
+    return true;
+  }
+
+  if (pathname.startsWith("/news/")) {
+    json(res, 404, { error: "Unknown news route" });
+    return true;
+  }
+
+  return false;
+}
+
 async function handleApi(pathname, sp, res) {
   if (pathname === "/api/health") {
     json(res, 200, {
@@ -217,11 +224,15 @@ async function handleApi(pathname, sp, res) {
       service: "custom-lightweight-chart",
       version: "1.0.0",
       datafeed: "/datafeed/config",
+      news: "/news/config",
+      csvSymbols: csvDatafeedSymbols(),
       endpoints: {
         config: "/datafeed/config",
         search: "/datafeed/search?query=nq",
         symbols: "/datafeed/symbols?symbol=NQ",
         history: "/datafeed/history?symbol=NQ&resolution=1&countback=500",
+        newsConfig: "/news/config",
+        newsCalendar: "/news/calendar?day=2026-06-11&types=ppi,cpi,fomc",
       },
       pages: { chart: "/", embed: "/embed?symbol=NQ&theme=dark&drawings=1" },
     });
@@ -257,6 +268,9 @@ function handleRequest(req, res) {
   void handleDatafeed(pathname, searchParams, res).then((handled) => {
     if (handled) return;
 
+    void handleNews(pathname, searchParams, res).then((newsHandled) => {
+      if (newsHandled) return;
+
     void handleApi(pathname, searchParams, res).then((apiHandled) => {
       if (apiHandled) return;
 
@@ -285,6 +299,7 @@ function handleRequest(req, res) {
 
       serveFile(res, filePath);
     });
+    });
   });
 }
 
@@ -302,5 +317,6 @@ server.listen(PORT, () => {
   console.log(`Chart UI:  http://127.0.0.1:${PORT}/`);
   console.log(`Embed:     http://127.0.0.1:${PORT}/embed?symbol=NQ&theme=dark`);
   console.log(`Datafeed:  http://127.0.0.1:${PORT}/datafeed/config`);
+  console.log(`News:      http://127.0.0.1:${PORT}/news/config`);
   console.log(`WS ping:   ws://127.0.0.1:${PORT}/ws/ping`);
 });

@@ -93,7 +93,6 @@ export function attachBarLoader(ctx) {
       } else {
         ctx.refreshOverlaysImmediate?.(pane.index);
       }
-      ctx.scheduleStrategyBacktestHistory?.(pane.index);
       if (!ctx.layoutManager?.getSync().dateRange) return;
       const panes = ctx.getAllChartPanes();
       const source = panes.reduce((best, p) => (p.bars.length > best.bars.length ? p : best), pane);
@@ -125,7 +124,6 @@ export function attachBarLoader(ctx) {
     loadBarsForPanes: barLoader.loadBarsForPanes,
     pushLiveBar: barLoader.pushLiveBar,
     prependHistory: barLoader.prependHistory,
-    mergeOlderBarsIntoPane: barLoader.mergeOlderBarsIntoPane,
     ensureHistoryNearEdge: barLoader.ensureHistoryNearEdge,
     setOverlayLoaderEnabled: barLoader.setOverlayLoaderEnabled,
     stashPaneResolutionCache: barLoader.stashPaneResolutionCache,

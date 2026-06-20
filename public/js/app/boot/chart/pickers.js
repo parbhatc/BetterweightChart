@@ -6,6 +6,8 @@ import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
 } from "../../../chart/pane/viewportBarLayout.js";
+import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { seedHtfBars } from "../../bar/htfBarCache.js";
 
 /**
  * @param {object[]} panes
@@ -78,10 +80,35 @@ function preparePanesForSeriesReload(ctx, panes) {
 }
 
 /**
+ * Seed current pane bars into HTF cache for its current resolution.
+ * Helps indicators (Levels/FVG) avoid waiting after timeframe switches.
+ * @param {import("./state.js").BootContext} ctx
+ * @param {object} pane
+ */
+function seedPaneResolutionAsHtf(ctx, pane) {
+  if (!pane?.symbol || !pane?.resolution) return;
+  const view = getPaneChartView(
+    pane,
+    ctx.settingsStore,
+    pane.symbolInfo ?? ctx.symbolInfo,
+    ctx.resolutions,
+  );
+  if (!view?.utcBars?.length) return;
+  seedHtfBars(
+    pane.symbol,
+    pane.resolution,
+    view.utcBars,
+    view.chartBars,
+    "timeframe-switch",
+  );
+}
+
+/**
  * @param {import("./state.js").BootContext} ctx
  * @param {object[]} panes
  */
 function finishSeriesReload(ctx, panes) {
+  ctx.ensureIndicatorData?.();
   ctx.refreshIndicatorsImmediate?.();
   for (const pane of panes) {
     pane.priceLineLabel?.requestRefresh();
@@ -177,6 +204,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           preparePanesForSeriesReload(ctx, panes);
           const savedLayouts = capturePaneBarLayouts(ctx, panes);
           for (const pane of panes) {
+            seedPaneResolutionAsHtf(ctx, pane);
             ctx.replayEngine?.beforeResolutionChange?.(pane);
             ctx.stashPaneResolutionCache(pane, pane.resolution);
             pane.resolution = res;
@@ -207,6 +235,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         });
         preparePanesForSeriesReload(ctx, [pane]);
         const savedLayout = captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions);
+        seedPaneResolutionAsHtf(ctx, pane);
         ctx.replayEngine?.beforeResolutionChange?.(pane);
         ctx.stashPaneResolutionCache(pane, pane.resolution);
         pane.resolution = res;

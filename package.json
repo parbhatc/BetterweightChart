@@ -9,7 +9,8 @@
     "./chart": "./public/chart/sdk.js",
     "./api": "./public/chart/api.js",
     "./app": "./public/chart/app.js",
-    "./datafeed": "./public/js/datafeed/index.js"
+    "./datafeed": "./public/js/datafeed/index.js",
+    "./news": "./public/js/news/index.js"
   },
   "files": [
     "public",

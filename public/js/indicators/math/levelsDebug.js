@@ -5,6 +5,11 @@ import {
 } from "../../debug/chart/index.js";
 import { mapUtcTimeToChartTime } from "./barTimeMap.js";
 
+let lastOverlaySig = "";
+let lastEngineSig = "";
+let lastTimeMapSig = "";
+let lastPriceWarnSig = "";
+
 /** @param {unknown} sec */
 function fmtUnix(sec) {
   if (sec == null || !Number.isFinite(Number(sec))) return String(sec);
@@ -37,6 +42,19 @@ function barSpan(bars) {
  */
 export function debugLevelsOverlayStart(ctx, utcBars, chartBars, opts) {
   if (!isChartDebugEnabled()) return;
+  const overlaySig = [
+    ctx.chartResolution ?? "",
+    ctx.barSec ?? "",
+    opts.tickSize ?? "",
+    utcBars?.length ?? 0,
+    utcBars?.at?.(-1)?.time ?? "",
+    chartBars?.length ?? 0,
+    chartBars?.at?.(-1)?.time ?? "",
+    (opts.timeLayers ?? []).filter((r) => r.enabled).map((r) => r.label).join(","),
+    (opts.sessionLayers ?? []).filter((r) => r.enabled).map((r) => r.label).join(","),
+  ].join("|");
+  if (overlaySig === lastOverlaySig) return;
+  lastOverlaySig = overlaySig;
   chartDebugThrottle(
     "levels",
     "overlay-input",
@@ -70,6 +88,22 @@ export function debugLevelsOverlayStart(ctx, utcBars, chartBars, opts) {
  */
 export function debugLevelsEngineResult(bars, anchorUnix, opts, lines, htfState) {
   if (!isChartDebugEnabled()) return;
+  const activeCount = lines.filter((l) => !l.swept).length;
+  const sweptCount = lines.filter((l) => l.swept).length;
+  const lineSig = lines
+    .slice(0, 20)
+    .map((l) => `${l.label}:${l.kind}:${l.price}:${l.swept ? 1 : 0}:${l.startTime}:${l.endTime}`)
+    .join(";");
+  const engineSig = [
+    anchorUnix ?? "",
+    bars?.length ?? 0,
+    lines.length,
+    activeCount,
+    sweptCount,
+    lineSig,
+  ].join("|");
+  if (engineSig === lastEngineSig) return;
+  lastEngineSig = engineSig;
 
   /** @type {Record<string, { aggBars: number, lastAgg?: object, source?: string }>} */
   const htfSummary = {};
@@ -98,8 +132,8 @@ export function debugLevelsEngineResult(bars, anchorUnix, opts, lines, htfState)
       anchor: fmtUnix(anchorUnix),
       inputBars: barSpan(bars),
       lineCount: lines.length,
-      active: lines.filter((l) => !l.swept).length,
-      swept: lines.filter((l) => l.swept).length,
+      active: activeCount,
+      swept: sweptCount,
       htf: htfSummary,
       lines: lines.map((l) => ({
         label: l.label,
@@ -168,6 +202,18 @@ export function debugLevelsTimeMapping(rawLines, overlayLines, utcBars, chartBar
       mappedEnd: endChart,
     });
   }
+
+  const timeMapSig = [
+    rawLines.length,
+    overlayLines.length,
+    mappingIssues.length,
+    rawLines[0]?.startTime ?? "",
+    rawLines.at?.(-1)?.endTime ?? "",
+    overlayLines[0]?.timeStart ?? "",
+    overlayLines.at?.(-1)?.timeEnd ?? "",
+  ].join("|");
+  if (timeMapSig === lastTimeMapSig) return;
+  lastTimeMapSig = timeMapSig;
 
   if (mappingIssues.length) {
     chartDebugThrottle(
@@ -261,6 +307,12 @@ export function debugLevelsPriceSanity(overlayLines, chartBars) {
   }
 
   if (suspicious.length) {
+    const warnSig = `${suspicious.length}|${suspicious
+      .slice(0, 5)
+      .map((s) => `${s.label}:${s.kind}:${s.price}:${s.startChart}:${s.endChart}`)
+      .join(";")}`;
+    if (warnSig === lastPriceWarnSig) return;
+    lastPriceWarnSig = warnSig;
     chartDebug("levels", "price sanity WARN — level price outside segment H/L", {
       count: suspicious.length,
       samples: suspicious.slice(0, 10),

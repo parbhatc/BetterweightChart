@@ -2,8 +2,9 @@
  * @typedef {{ symbol: string, resolution: string, countBack: number }} HtfNeed
  * @typedef {{ resolution: string, countBack: number }} CompareHtfNeed
  * @typedef {{ symbol: string, chartCountBack: number, htf?: CompareHtfNeed[] }} CompareNeed
- * @typedef {{ htf?: HtfNeed[], compare?: CompareNeed[] }} IndicatorDataNeeds
- * @typedef {{ htf: Map<string, number>, compareChart: Map<string, number>, compareHtf: Map<string, number> }} PaneDataNeeds
+ * @typedef {{ source: string, types: string[], days: string[] }} NewsNeed
+ * @typedef {{ htf?: HtfNeed[], compare?: CompareNeed[], news?: NewsNeed }} IndicatorDataNeeds
+ * @typedef {{ htf: Map<string, number>, compareChart: Map<string, number>, compareHtf: Map<string, number>, news?: NewsNeed | null }} PaneDataNeeds
  */
 
 /** @param {string} symbol @param {string} resolution */
@@ -17,6 +18,7 @@ export function emptyPaneDataNeeds() {
     htf: new Map(),
     compareChart: new Map(),
     compareHtf: new Map(),
+    news: null,
   };
 }
 
@@ -43,6 +45,16 @@ export function mergeDataNeeds(target, partial) {
       target.compareHtf.set(key, Math.max(target.compareHtf.get(key) ?? 0, htf.countBack));
     }
   }
+  if (partial.news?.days?.length) {
+    const prev = target.news;
+    const types = new Set([...(prev?.types ?? []), ...(partial.news.types ?? [])]);
+    const days = new Set([...(prev?.days ?? []), ...(partial.news.days ?? [])]);
+    target.news = {
+      source: partial.news.source ?? prev?.source ?? "forexfactory",
+      types: [...types],
+      days: [...days],
+    };
+  }
   return target;
 }
 
@@ -63,5 +75,5 @@ export function collectPaneDataNeeds(instances, pane, getIndicatorClass) {
 
 /** @param {PaneDataNeeds} needs */
 export function paneDataNeedsEmpty(needs) {
-  return !needs.htf.size && !needs.compareChart.size && !needs.compareHtf.size;
+  return !needs.htf.size && !needs.compareChart.size && !needs.compareHtf.size && !needs.news?.days?.length;
 }

@@ -1,0 +1,19 @@
+{
+  "id": 3,
+  "name": "Setup #3",
+  "checklist": [
+    {
+      "step": 1,
+      "id": "last_candle_sweep",
+      "label": "{tf} Last Candle Low Swept",
+      "accept": ["15m"],
+      "freshMax": { "type": "candles", "value": 60 }
+    },
+    {
+      "step": 2,
+      "id": "close_above_sweep",
+      "label": "Close above sweep {tf} high",
+      "freshMax": { "type": "candles", "value": 60 }
+    }
+  ]
+}

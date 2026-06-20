@@ -5,6 +5,15 @@ import {
 } from "../../../indicators/security/indicatorDataNeeds.js";
 import { ensureHtfBars, getHtfBars, prependHtfBars } from "../../bar/htfBarCache.js";
 import { ensureSymbolBars, lookupSymbolBars } from "../../bar/symbolBarCache.js";
+import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { uniqueEtDaysFromBars } from "../../../core/etTime.js";
+import {
+  fetchNewsCalendarDay,
+  getCachedNewsDay,
+  newsDaysReady,
+} from "../../news/newsCache.js";
+import { getNewsSettingsStore } from "../../../news/settings.js";
+import { enabledNewsTypeIds } from "../../../news/events.js";
 
 const HTF_FETCH_IDLE_MS = 200;
 const PREPEND_GUARD = 8;
@@ -113,20 +122,98 @@ export function createIndicatorDataLoader({ ctx, controller }) {
     }
   }
 
+  /** @param {import("../../../indicators/security/indicatorDataNeeds.js").NewsNeed} newsNeed */
+  async function fillNewsCalendar(newsNeed) {
+    if (!newsNeed?.days?.length) return;
+    const opts = { source: newsNeed.source, types: newsNeed.types };
+    await Promise.all(
+      newsNeed.days.map(async (day) => {
+        if (getCachedNewsDay(day, opts)) return;
+        await fetchNewsCalendarDay(day, opts);
+      }),
+    );
+  }
+
+  /** @param {object} pane */
+  function newsContextForPane(pane) {
+    const view = getPaneChartView(
+      pane,
+      ctx.settingsStore,
+      pane.symbolInfo ?? ctx.symbolInfo,
+      ctx.resolutions,
+    );
+    const newsStore = getNewsSettingsStore();
+    const days = uniqueEtDaysFromBars(view.utcBars);
+    const enabled = newsStore.isEnabled();
+    const settings = newsStore.get();
+    const opts = {
+      source: settings.source ?? "forexfactory",
+      // Always fetch full day events; filter client-side for release levels.
+      types: [],
+    };
+    return {
+      newsOpts: opts,
+      days,
+      isNewsEnabled: () => enabled,
+      getNewsRows: () =>
+        enabled ? (settings.eventTypes ?? []).filter((r) => r.enabled !== false) : [],
+      newsPending: () =>
+        Boolean(enabled && days.length && !newsDaysReady(days, opts)),
+      getNewsByDay: () => {
+        if (!enabled) return {};
+        /** @type {Record<string, object>} */
+        const out = {};
+        for (const day of days) {
+          const hit = getCachedNewsDay(day, opts);
+          if (hit) out[day] = hit;
+        }
+        return out;
+      },
+    };
+  }
+
+  /** @param {object} pane */
+  async function ensureGlobalNews(pane) {
+    const newsStore = getNewsSettingsStore();
+    if (!newsStore.isEnabled()) return;
+    const view = getPaneChartView(
+      pane,
+      ctx.settingsStore,
+      pane.symbolInfo ?? ctx.symbolInfo,
+      ctx.resolutions,
+    );
+    const days = uniqueEtDaysFromBars(view.utcBars);
+    const settings = newsStore.get();
+    if (!days.length) return;
+    await fillNewsCalendar({ source: settings.source ?? "forexfactory", types: [], days });
+  }
+
   /** @param {object} pane */
   async function ensurePaneData(pane) {
-    if (!pane?.symbol || !ctx.datafeed) return;
+    if (!pane?.symbol) return;
     if (paneInFlight.has(pane.index)) return;
 
+    const view = getPaneChartView(
+      pane,
+      ctx.settingsStore,
+      pane.symbolInfo ?? ctx.symbolInfo,
+      ctx.resolutions,
+    );
     const needs = collectPaneDataNeeds(
       controller.indicatorsForPane(pane.index),
-      pane,
+      { ...pane, bars: view.utcBars },
       getIndicatorClass,
     );
     if (paneDataNeedsEmpty(needs)) return;
 
     paneInFlight.add(pane.index);
     try {
+      await ensureGlobalNews(pane);
+      if (!ctx.datafeed) {
+        controller.invalidateOverlayCacheForPane(pane.index);
+        controller.refreshOverlaysImmediate(pane.index);
+        return;
+      }
       for (const [key, countBack] of needs.htf) {
         const sep = key.indexOf("|");
         const symbol = key.slice(0, sep);
@@ -222,5 +309,6 @@ export function createIndicatorDataLoader({ ctx, controller }) {
     ensureNow: () => scheduleLoad(0),
     scheduleCompareBarsFetch,
     scheduleHtfBarsFetch,
+    newsContextForPane,
   };
 }

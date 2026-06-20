@@ -1,11 +1,7 @@
 import { LineSeries, AreaSeries, HistogramSeries } from "lightweight-charts";
 import { getIndicatorClass } from "../catalog.js";
 import { indicatorPriceFormatFromSetting } from "../../chart/timezone/list.js";
-import { resolutionSec } from "../../chart/resolutions.js";
-import { getBacktestBars } from "../../strategy/backtestBarCache.js";
 import { attachIndicatorBandFillPrimitive } from "../primitives/bandFill.js";
-import { attachLabelsPrimitive } from "../primitives/labels.js";
-import { tradeExecutionLabels } from "../../strategy/executionLabels.js";
 import {
   seriesKindForPlotType,
   lineOptionsForPlotType,
@@ -52,19 +48,6 @@ export function createSeriesSync(deps) {
     return deps.getAllChartPanes().find((p) => p.index === paneIndex);
   }
 
-  /** @param {import("../types.js").IndicatorInstance & { _executionPrimitive?: { setLabels: (l: object[]) => void, destroy: () => void } }} instance */
-  function syncStrategyExecutions(instance, pane) {
-    const trades = instance.backtest?.trades;
-    if (instance.hidden || !trades?.length || !pane?.series) {
-      instance._executionPrimitive?.setLabels([]);
-      return;
-    }
-    if (!instance._executionPrimitive) {
-      instance._executionPrimitive = attachLabelsPrimitive({ series: pane.series });
-    }
-    instance._executionPrimitive.setLabels(tradeExecutionLabels(trades));
-  }
-
   /** @param {import("../types.js").IndicatorInstance & { series?: Map<string, import("lightweight-charts").ISeriesApi> }} instance */
   function destroySeries(instance) {
     const pane = paneByIndex(instance.paneIndex);
@@ -74,8 +57,6 @@ export function createSeriesSync(deps) {
     instance._studyPaneLegend = null;
     instance._overlayPrimitive?.destroy?.();
     instance._overlayPrimitive = null;
-    instance._executionPrimitive?.destroy?.();
-    instance._executionPrimitive = null;
     if (!pane || !instance.series) return;
     for (const s of instance.series.values()) {
       try {
@@ -215,26 +196,7 @@ export function createSeriesSync(deps) {
     if (!instance.series) instance.series = new Map();
     if (!instance.seriesRender) instance.seriesRender = new Map();
 
-    instance._symbolInfo = symbolInfo;
-    const barSec = pane._chartView?.barSec ?? resolutionSec(pane.resolution ?? "1");
-    const backtestRange = instance.backtestRange ?? { id: "90d" };
-    const cached = getBacktestBars(pane.symbol, pane.resolution);
-    const backtestLoading =
-      Indicator.kind === "strategy" &&
-      (!cached || (!cached.complete && !cached.historyExhausted));
-
-    const plots =
-      Indicator.kind === "strategy"
-        ? Indicator.compute(utcBars, instance, {
-            symbolInfo,
-            chartBars,
-            chart: pane.chart,
-            symbol: pane.symbol,
-            resolution: pane.resolution,
-            barSec,
-            backtestLoading,
-          })
-        : Indicator.compute(utcBars, instance);
+    const plots = Indicator.compute(utcBars, instance);
     instance.lastPlots = plots;
     const plotKeys = numericPlotKeys(plots);
     const histogramColors = plots.histColors ?? plots.volColors;
@@ -411,9 +373,6 @@ export function createSeriesSync(deps) {
 
     syncStudyPaneScale(instance, Indicator);
     syncStudyBandFill(instance, Indicator);
-    if (Indicator.kind === "strategy") {
-      syncStrategyExecutions(instance, pane);
-    }
     collapseEmptyStudyPanes(pane.chart, pane.index);
   }
 

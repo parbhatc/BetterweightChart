@@ -10,10 +10,6 @@
  * @property {boolean} hidden
  * @property {boolean} [_initPending] True while init() waits on external data (compare/HTF bars).
  * @property {Record<string, Array<number | null>>} [lastPlots]
- * @property {object} [properties] Strategy tester properties (initial capital, commission, …)
- * @property {object} [backtest] Latest backtest report from strategy compute
- * @property {{ id: string, from?: number, to?: number, fromDate?: string, toDate?: string }} [backtestRange] Backtest period preset or custom range
- * @property {object[]} [_backtestBars] Bars used for last backtest run
  */
 
 /**
@@ -135,7 +131,17 @@
  */
 
 /**
- * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef} InputDef
+ * @typedef {object} NewsLevelsInputDef
+ * @property {"newsLevels"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {{ enabled: boolean, label: string, eventId: string }[]} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef | NewsLevelsInputDef} InputDef
  */
 
 /**

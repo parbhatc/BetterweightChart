@@ -104,7 +104,7 @@ export function createIndicatorsLibraryDialog(opts) {
         const fav = favorites.has(d.id);
         return `<button type="button" class="tv-ind-lib__item" role="option" data-id="${d.id}">
           <span class="tv-ind-lib__fav${fav ? " is-active" : ""}" data-fav="${d.id}" role="img" aria-label="${fav ? "Remove from favorites" : "Add to favorites"}" title="${fav ? "Remove from favorites" : "Add to favorites"}">${ICON_STAR}</span>
-          <span class="tv-ind-lib__item-title">${d.title}${d.kind === "strategy" ? ' <span class="tv-ind-lib__item-kind">Strategy</span>' : ""}</span>
+          <span class="tv-ind-lib__item-title">${d.title}</span>
         </button>`;
       })
       .join("")}`;

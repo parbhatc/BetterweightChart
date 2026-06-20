@@ -1,0 +1,132 @@
+.chart-table-overlay {
+  position: absolute;
+  top: calc(var(--space-2) + 1.35rem);
+  left: var(--space-2);
+  z-index: 14;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: min(15rem, 42vw);
+  pointer-events: none;
+}
+
+.chart-table {
+  font-size: 11px;
+  line-height: 1.25;
+  color: #d1d4dc;
+  border: 1px solid #050608;
+  border-radius: 2px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  background: #131722;
+}
+
+.chart-table__grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.chart-table__row--title .chart-table__cell {
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.chart-table__cell {
+  padding: 2px 6px;
+  border: 1px solid #050608;
+  vertical-align: middle;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chart-table__cell:first-child {
+  width: 62%;
+}
+
+.chart-table__cell--title {
+  text-align: center;
+  padding: 3px 8px;
+}
+
+.chart-table__cell--header,
+.chart-table__cell--title.chart-table__cell--header,
+.chart-table__cell--title.chart-table__cell--neutral {
+  background: #2962ff;
+  color: #fff;
+}
+
+.chart-table__cell--bull {
+  background: #1b5e20;
+  color: #e8f5e9;
+}
+
+.chart-table__cell--bear {
+  background: #7f1d1d;
+  color: #ffebee;
+}
+
+.chart-table__cell--done {
+  background: #1e3a2f;
+  color: #b9f6ca;
+}
+
+.chart-table__cell--current {
+  background: #3e2723;
+  color: #ffe0b2;
+}
+
+.chart-table__cell--pending {
+  background: #1e222d;
+  color: #b2b5be;
+}
+
+.chart-table__cell--muted {
+  background: #1e222d;
+  color: #787b86;
+}
+
+.chart-table__cell--title.chart-table__cell--bull {
+  background: #1b5e20;
+}
+
+.chart-table__cell--title.chart-table__cell--bear {
+  background: #7f1d1d;
+}
+
+.chart-table__cell--title.chart-table__cell--done {
+  background: #2962ff;
+}
+
+.chart-table__cell--title.chart-table__cell--current {
+  background: #e65100;
+}
+
+.chart-table__progress {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 5px 4px;
+  background: #0f121a;
+  border-top: 1px solid #050608;
+}
+
+.chart-table__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.chart-table__dot--done {
+  background: #26a69a;
+}
+
+.chart-table__dot--current {
+  background: #ef5350;
+}
+
+.chart-table__dot--pending {
+  background: #ffb74d;
+}

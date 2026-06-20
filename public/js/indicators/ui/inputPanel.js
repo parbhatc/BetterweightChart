@@ -3,6 +3,7 @@ import { symbolTicker } from "../../app/symbol/ticker.js";
 import { renderSymbolSizeRulesPanel } from "./symbolSizeRulesPanel.js";
 import { renderFvgTimeframesPanel } from "./fvgTimeframesPanel.js";
 import { renderSessionLevelsPanel, renderTimeLevelsPanel } from "./levelsLayersPanel.js";
+import { renderNewsLevelsPanel } from "./newsLevelsPanel.js";
 
 /**
  * @param {import("../types.js").InputFieldDef} field
@@ -62,7 +63,7 @@ export function renderInputsPanelHtml(schema, draftInputs, draftStyle, helpers) 
             chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
             continue;
           }
-          if (item.type === "levelsLayers" || item.type === "timeLevels" || item.type === "sessionLevels") {
+          if (item.type === "levelsLayers" || item.type === "timeLevels" || item.type === "sessionLevels" || item.type === "newsLevels") {
             flushInline();
             chunks.push(renderInputItem(item, draftInputs, draftStyle, helpers));
             continue;
@@ -117,6 +118,9 @@ function renderInputItem(input, draftInputs, draftStyle, helpers) {
   }
   if (input.type === "sessionLevels") {
     return renderSessionLevelsPanel(input, draftInputs);
+  }
+  if (input.type === "newsLevels") {
+    return renderNewsLevelsPanel(input, draftInputs);
   }
   return renderInputField(input, draftInputs, draftStyle, helpers);
 }

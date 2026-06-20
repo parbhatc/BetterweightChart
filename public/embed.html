@@ -36,7 +36,7 @@
               <div class="tv-chart-replay-bar__controls" id="chart-replay-toolbar" role="toolbar" aria-label="Bar replay controls"></div>
               <div class="tv-chart-replay-bar__grow"></div>
             </footer>
-            <div id="strategy-report-slot" class="tv-strategy-report-slot" hidden></div>
+            <div id="bottom-pane-slot" class="tv-strategy-report-slot tv-bottom-pane-slot" hidden></div>
             <footer class="tv-chart-bottom-bar" aria-label="Chart bottom bar">
               <div class="tv-chart-bottom-bar__grow"></div>
               <div class="tv-chart-bottom-bar__right" id="chart-bottom-toolbar"></div>
@@ -46,6 +46,7 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
     <script type="module">
       import { bootChart } from "/js/app.js";
       import { readPageOptions } from "/js/datafeed/client.js";

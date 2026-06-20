@@ -6,6 +6,7 @@ import {
   overlayGeometryKey,
   overlayRecomputeKey,
 } from "../overlayCache.js";
+import { logIndicatorLoad } from "./indicatorLoadLog.js";
 
 /** @param {object} timeCtx */
 function overlayTimeCtxKey(timeCtx) {
@@ -70,6 +71,7 @@ export function createOverlaySync(deps) {
     const pane = paneByIndex(instance.paneIndex);
     if (!pane?.series) return;
 
+    const indicatorName = Indicator.id ?? instance.defId;
     const paneKey = `${pane.resolution}|${pane.symbol ?? ""}`;
     if (instance._overlayPaneKey !== paneKey) {
       instance._overlayPrimitive?.destroy?.();
@@ -122,6 +124,11 @@ export function createOverlaySync(deps) {
     const prevPending = instance._initPending === true;
     instance._initPending = overlayPending === true;
 
+    if (instance._initPending && instance._loadStartAt == null) {
+      instance._loadStartAt = performance.now();
+      logIndicatorLoad(indicatorName, "loading");
+    }
+
     let overlayData;
     const cacheHit =
       !instance._initPending &&
@@ -136,6 +143,15 @@ export function createOverlaySync(deps) {
       instance._overlayRecomputeKey = recomputeKey;
       instance._overlayBoxCache = overlayData;
       instance._overlayGeomKey = overlayGeometryKey(overlayData);
+    }
+
+    if (prevPending && !instance._initPending) {
+      const ms =
+        instance._loadStartAt != null
+          ? Number((performance.now() - instance._loadStartAt).toFixed(1))
+          : undefined;
+      logIndicatorLoad(indicatorName, "loaded", { ms });
+      delete instance._loadStartAt;
     }
 
     if (prevPending !== instance._initPending) {

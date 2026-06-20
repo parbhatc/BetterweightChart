@@ -4,6 +4,8 @@ import {
   resolveSessionLevels,
   resolveTimeLevels,
 } from "../../ui/levelsLayersPanel.js";
+import { DEFAULT_NEWS_LEVELS } from "../../ui/newsLevelsPanel.js";
+import { resolveNewsLevels } from "../../../news/events.js";
 import { LevelsEngine } from "./LevelsEngine.js";
 import { BarScriptIndicator } from "../../BarScriptIndicator.js";
 import {
@@ -32,6 +34,11 @@ class LevelsIndicator extends BarScriptIndicator {
       createField("sessionLevels", "sessionLevels", DEFAULT_SESSION_LEVELS, {
         title: "Sessions",
         section: "Sessions",
+      }),
+      createBool("newsEnabled", "News", true, { section: "News" }),
+      createField("newsLevels", "newsLevels", DEFAULT_NEWS_LEVELS, {
+        title: "Event types",
+        section: "News",
       }),
       createInt("pivotLeftBars", "Pivot left bars", 1, { min: 1, section: "Pivot", inline: true }),
       createInt("pivotRightBars", "Pivot right bars", 1, { min: 1, section: "Pivot", inline: true }),
@@ -97,6 +104,9 @@ class LevelsIndicator extends BarScriptIndicator {
       ...resolveTimeLevels(instance.inputs).filter((r) => r.enabled),
       ...resolveSessionLevels(instance.inputs).filter((r) => r.enabled),
     ];
+    if (instance.inputs.newsEnabled !== false) {
+      enabled.push(...resolveNewsLevels(instance.inputs).filter((r) => r.enabled !== false));
+    }
     if (!enabled.length) return [];
     return [enabled.map((r) => r.label).join(", ")];
   }
@@ -105,13 +115,19 @@ class LevelsIndicator extends BarScriptIndicator {
   overlayRecomputeExtra(instance, ctx) {
     const time = JSON.stringify(resolveTimeLevels(instance.inputs));
     const sessions = JSON.stringify(resolveSessionLevels(instance.inputs));
+    const newsRows = instance.inputs.newsEnabled !== false ? resolveNewsLevels(instance.inputs) : [];
+    const news = instance.inputs.newsEnabled !== false ? JSON.stringify(newsRows) : "";
+    const newsSource = ctx.newsOpts?.source ?? "forexfactory";
+    const newsKey = Object.keys(ctx.getNewsByDay?.() ?? {})
+      .sort()
+      .join(",");
     const symbol = ctx.primarySymbol ?? ctx.symbol;
     const htfKey = htfSeriesRecomputeKey(
       ctx,
       symbol,
       levelsHtf.enabledResolutions(instance.inputs, ctx.chartResolution ?? "1").map(({ tfId }) => tfId),
     );
-    return `${time}|${sessions}|${htfKey}|${instance.inputs.maxBarsBack}|${instance.inputs.pivotLeftBars}|${instance.inputs.pivotRightBars}|${instance.inputs.maxUnswept}|${instance.inputs.maxSwept}|${instance.inputs.mergeConfluence}|${instance.inputs.confHiColor}|${instance.inputs.confLoColor}|${instance.style.graphicLabels}`;
+    return `${time}|${sessions}|${news}|${newsSource}|${newsKey}|${htfKey}|${instance.inputs.maxBarsBack}|${instance.inputs.pivotLeftBars}|${instance.inputs.pivotRightBars}|${instance.inputs.maxUnswept}|${instance.inputs.maxSwept}|${instance.inputs.mergeConfluence}|${instance.inputs.confHiColor}|${instance.inputs.confLoColor}|${instance.style.graphicLabels}`;
   }
 
   /**

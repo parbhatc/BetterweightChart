@@ -72,40 +72,6 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
       return { bars, meta: data.meta, noData: Boolean(data.meta?.noData) };
     },
 
-    /**
-     * Deep history for strategy backtests — server pages backward with replay fallback.
-     * Not used by the chart scroll loader.
-     * @param {object} symbolInfo
-     * @param {string} resolution
-     * @param {{ rangeId?: string, from?: number, to?: number }} [rangeOpts]
-     */
-    async getBacktestBars(symbolInfo, resolution, rangeOpts = {}) {
-      const q = new URLSearchParams({
-        symbol: symbolInfo.ticker || symbolInfo.name,
-        resolution,
-        range: rangeOpts.rangeId ?? "90d",
-      });
-      if (rangeOpts.from != null) q.set("from", String(rangeOpts.from));
-      if (rangeOpts.to != null) q.set("to", String(rangeOpts.to));
-
-      const data = await getJson(`/backtest-history?${q}`);
-      if (data.s === "no_data") return { bars: [], noData: true, meta: data.meta };
-      if (data.s === "error") return { bars: [], noData: true, meta: data.meta };
-
-      const bars = data.t.map((time, i) =>
-        normalizeBar({
-          time,
-          open: data.o[i],
-          high: data.h[i],
-          low: data.l[i],
-          close: data.c[i],
-          volume: data.v?.[i],
-        }),
-      );
-
-      return { bars, meta: data.meta, noData: !bars.length };
-    },
-
     subscribeBars(symbolInfo, resolution, onTick, subscriberUID) {
       const sym = symbolInfo.ticker || symbolInfo.name;
       const q = new URLSearchParams({ symbol: sym, resolution });

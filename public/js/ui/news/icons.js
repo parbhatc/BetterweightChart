@@ -1,0 +1,2 @@
+/** Calendar / news icon for bottom toolbar. */
+export const NEWS_ICON = `<svg viewBox="0 0 28 28" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 5a1 1 0 0 0-1 1v1H6a3 3 0 0 0-3 3v11a3 3 0 0 0 3 3h16a3 3 0 0 0 3-3V10a3 3 0 0 0-3-3h-1V6a1 1 0 1 0-2 0v1H9V6a1 1 0 0 0-1-1Zm13 6H7v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V11ZM10 14.5a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2h-1a1 1 0 0 1-1-1Zm4 0a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2h-1a1 1 0 0 1-1-1Zm4 0a1 1 0 0 1 1-1h1a1 1 0 0 1 0 2h-1a1 1 0 0 1-1-1Z"/></svg>`;

@@ -2,7 +2,6 @@ import { getPaneChartView } from "../../chart/pane/viewCache.js";
 import { shiftBarsToChartTime, chartTimeZoneForPane } from "../../chart/timezone/chartTime.js";
 import { getResolutionCacheBars } from "./resolutionCache.js";
 import { getHtfBars } from "./htfBarCache.js";
-import { getBacktestBars } from "../../strategy/backtestBarCache.js";
 import { requestSecuritySeries } from "./requestSecurity.js";
 
 /** @param {string} symbol */
@@ -62,17 +61,6 @@ export function lookupSymbolBars(opts) {
       utcBars: stored.utcBars,
       chartBars: stored.chartBars,
       source: "htf-store",
-    };
-  }
-
-  const backtest = symbolLookupKeys(symbol)
-    .map((sym) => getBacktestBars(sym, resolution))
-    .find((entry) => entry?.utcBars?.length);
-  if (backtest?.utcBars?.length) {
-    return {
-      utcBars: backtest.utcBars,
-      chartBars: backtest.chartBars,
-      source: "backtest-cache",
     };
   }
 

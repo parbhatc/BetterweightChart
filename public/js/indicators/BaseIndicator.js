@@ -163,6 +163,18 @@ export class BaseIndicator {
     return this;
   }
 
+  /** @param {boolean} use */
+  setUseBottomPane(use) {
+    this.constructor.useBottomPane = use === true;
+    return this;
+  }
+
+  /** @param {boolean} use */
+  setUseChartTable(use) {
+    this.constructor.useChartTable = use === true;
+    return this;
+  }
+
   /** @param {string | null} kind */
   setOverlayPrimitive(kind) {
     this.constructor.overlayPrimitive = kind;
@@ -270,6 +282,14 @@ export class BaseIndicator {
   /** @param {IndicatorInstance} _instance @param {object} [_ctx] @returns {boolean | undefined} */
   overlayPending(_instance, _ctx) {}
 
+  /**
+   * On-chart tables (TradingView-style). Override or register a boot provider.
+   * @param {IndicatorInstance} _instance
+   * @param {object} [_ctx]
+   * @returns {import("../chart/table/types.js").ChartTable[] | undefined}
+   */
+  chartTables(_instance, _ctx) {}
+
   /** @param {IndicatorInstance} _instance @param {object} [_ctx] @returns {string | undefined} */
   overlayRecomputeExtra(_instance, _ctx) {}
 
@@ -316,6 +336,12 @@ export class BaseIndicator {
   /** @type {string | null} Dedicated overlay price scale for volume-style histograms */
   static volumeScaleId = null;
 
+  /** @type {boolean} When true, indicator may render in the global bottom pane */
+  static useBottomPane = false;
+
+  /** @type {boolean} When true, indicator may render on-chart tables */
+  static useChartTable = false;
+
   /** @type {number} Height in px when {@link studyPaneIndex} is used */
   static studyPaneHeight = 120;
 
@@ -324,9 +350,6 @@ export class BaseIndicator {
 
   /** @type {string | null} Canvas overlay primitive (`labels`, etc.) — no LWC series plots */
   static overlayPrimitive = null;
-
-  /** @type {"indicator" | "strategy"} */
-  static kind = "indicator";
 
   /** @type {import("./types.js").GraphicObjectDef[]} Style-tab Graphic objects toggles */
   static graphicObjects = [];
@@ -450,6 +473,18 @@ export class BaseIndicator {
       return this._definitionInstance.legendParams(instance, ctx);
     }
     return inputStatusLineParams(this.inputs, instance);
+  }
+
+  /**
+   * @param {IndicatorInstance} instance
+   * @param {object} [ctx]
+   * @returns {import("../chart/table/types.js").ChartTable[]}
+   */
+  static chartTables(instance, ctx = {}) {
+    if (this._hasInstanceHook("chartTables")) {
+      return this._definitionInstance.chartTables(instance, ctx) ?? [];
+    }
+    return [];
   }
 
   /**

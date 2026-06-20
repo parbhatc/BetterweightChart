@@ -7,7 +7,7 @@ import { supportsAnnotationStyleSettings } from "../../tools/annotation/style.js
 import { shapeHidesCoordsTab, shapeHidesTextTab } from "../../tools/shape/index.js";
 
 export const MENU_CHEVRON = `<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3.92 7.83 9 12.29l5.08-4.46-1-1.13L9 10.29l-4.09-3.6-.99 1.14Z"/></svg>`;
-export const CHECK_SVG = `<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M7.5 12.5 3.5 8.5l1-1 3 3 7-7 1 1z"></path></svg>`;
+export const CHECK_SVG = `<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path d="M3.5 9.5l3 3L14.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 export const VISIBILITY_KEYS = ["ticks", "seconds", "minutes", "hours", "days", "weeks", "months", "ranges"];
 

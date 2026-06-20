@@ -10,12 +10,6 @@ import { attachStudyPaneScaleGuards } from "../../../chart/pane/studyScale.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { precisionFromSettings } from "../../../chart/timezone/list.js";
 import { listIndicators, getIndicatorClass } from "../../../indicators/catalog.js";
-import { createStrategyReportPanel } from "../../../strategy/reportPanel.js";
-import { createStrategyReportReopenButton } from "../../../strategy/reportReopenButton.js";
-import { scrollPaneToBarTime } from "../../../strategy/navigateTrade.js";
-import { deepestBacktestRangeForPane, ensureBacktestHistory, isBacktestHistoryLoading } from "../../../strategy/backtestHistory.js";
-import { backtestRangeLabel, backtestPeriodLabel } from "../../../strategy/backtestRange.js";
-import { clearBacktestBars, getBacktestBars } from "../../../strategy/backtestBarCache.js";
 import { createIndicatorDataLoader } from "./indicatorDataLoader.js";
 import { createSecurityContext } from "../../bar/requestSecurity.js";
 import { priceLineBarForPane } from "../../symbol/lineStyle.js";
@@ -52,121 +46,31 @@ export function attachIndicatorsBoot(ctx) {
     },
     useStackedScaleLabels,
     onChange: () => onControllerChange(),
-    getOverlayContext: (pane) =>
-      createSecurityContext({
-        pane,
-        getAllChartPanes: ctx.getAllChartPanes,
-        settingsStore: ctx.settingsStore,
-        datafeed: ctx.datafeed,
-        symbolInfo: ctx.symbolInfo,
-        resolutions: ctx.resolutions,
-        scheduleFetch: (symbol, resId, countBack) =>
-          indicatorData.scheduleHtfBarsFetch(pane, symbol, resId, countBack),
-        scheduleCompareFetch: (symbol, resolution, countBack) =>
-          indicatorData.scheduleCompareBarsFetch(pane, symbol, resolution, countBack),
-      }),
+    getOverlayContext: (pane) => {
+      const newsCtx = indicatorData.newsContextForPane(pane);
+      return {
+        ...createSecurityContext({
+          pane,
+          getAllChartPanes: ctx.getAllChartPanes,
+          settingsStore: ctx.settingsStore,
+          datafeed: ctx.datafeed,
+          symbolInfo: ctx.symbolInfo,
+          resolutions: ctx.resolutions,
+          scheduleFetch: (symbol, resId, countBack) =>
+            indicatorData.scheduleHtfBarsFetch(pane, symbol, resId, countBack),
+          scheduleCompareFetch: (symbol, resolution, countBack) =>
+            indicatorData.scheduleCompareBarsFetch(pane, symbol, resolution, countBack),
+        }),
+        getNewsByDay: newsCtx.getNewsByDay,
+        newsPending: newsCtx.newsPending,
+        isNewsEnabled: newsCtx.isNewsEnabled,
+        getNewsRows: newsCtx.getNewsRows,
+      };
+    },
   });
 
   indicatorData = createIndicatorDataLoader({ ctx, controller });
   ctx.indicatorController = controller;
-
-  const reportSlot =
-    document.getElementById("strategy-report-slot") ??
-    document.querySelector(".tv-strategy-report-slot");
-  /** @type {Set<number>} */
-  const backtestHistoryInFlight = new Set();
-
-  /** @param {number} paneIndex */
-  async function ensureStrategyBacktestHistory(paneIndex) {
-    if (backtestHistoryInFlight.has(paneIndex)) return;
-    const pane = ctx.getAllChartPanes().find((p) => p.index === paneIndex);
-    if (!pane?.bars?.length) return;
-
-    const backtestRange = deepestBacktestRangeForPane(
-      controller.indicatorsForPane(paneIndex),
-      getIndicatorClass,
-    );
-    if (!backtestRange) return;
-
-    backtestHistoryInFlight.add(paneIndex);
-    syncStrategyReport();
-    try {
-      const loaded = await ensureBacktestHistory(ctx, pane, backtestRange, () => {
-        syncStrategyReport();
-        ctx.refreshIndicatorsImmediate(paneIndex);
-      });
-      if (loaded) {
-        ctx.refreshIndicatorsImmediate(paneIndex);
-      }
-    } finally {
-      backtestHistoryInFlight.delete(paneIndex);
-      syncStrategyReport();
-    }
-  }
-
-  /** @param {object} pane */
-  function strategyBacktestLoadingForPane(pane) {
-    const backtestRange = deepestBacktestRangeForPane(
-      controller.indicatorsForPane(pane.index),
-      getIndicatorClass,
-    );
-    if (!backtestRange) return false;
-    const barSec = ctx.barSecForPaneLocal?.(pane) ?? 60;
-    return isBacktestHistoryLoading(
-      pane,
-      backtestRange,
-      barSec,
-      backtestHistoryInFlight.has(pane.index),
-    );
-  }
-
-  function scheduleStrategyBacktestHistory(paneIndex) {
-    const pane = ctx.getAllChartPanes().find((p) => p.index === paneIndex);
-    if (!pane) return;
-    const backtestRange = deepestBacktestRangeForPane(
-      controller.indicatorsForPane(paneIndex),
-      getIndicatorClass,
-    );
-    if (!backtestRange) return;
-    const cached = getBacktestBars(pane.symbol, pane.resolution);
-    if (cached?.complete) return;
-    void ensureStrategyBacktestHistory(paneIndex);
-  }
-
-  const strategyReport = createStrategyReportPanel({
-    mountEl: reportSlot instanceof HTMLElement ? reportSlot : undefined,
-    onDismiss: () => syncStrategyReport(),
-    onGoToBarTime: (chartTime, paneIndex) => {
-      const pane =
-        ctx.getAllChartPanes().find((p) => p.index === paneIndex) ?? ctx.getActivePane();
-      if (!pane) return;
-      scrollPaneToBarTime(pane, chartTime, {
-        settingsStore: ctx.settingsStore,
-        symbolInfo: pane.symbolInfo ?? ctx.symbolInfo,
-        resolutions: ctx.resolutions,
-      });
-    },
-    onRangeChange: (instanceId, range) => {
-      const inst = controller.getInstance(instanceId);
-      if (!inst) return;
-      const pane = ctx.getAllChartPanes().find((p) => p.index === inst.paneIndex);
-      if (pane) clearBacktestBars(pane.symbol, pane.resolution);
-      inst.backtestRange =
-        typeof range === "string"
-          ? { id: range }
-          : { ...range, id: range.id ?? "custom" };
-      syncStrategyReport();
-      scheduleStrategyBacktestHistory(inst.paneIndex);
-      ctx.refreshIndicatorsImmediate(inst.paneIndex);
-    },
-  });
-
-  const strategyReportReopen = createStrategyReportReopenButton({
-    onReopen: () => {
-      strategyReport.reopen();
-      syncStrategyReport();
-    },
-  });
 
   const library = createIndicatorsLibraryDialog({
     onSelect: (defId) => {
@@ -186,70 +90,11 @@ export function attachIndicatorsBoot(ctx) {
       const pane = ctx.getAllChartPanes?.().find((p) => p.index === inst.paneIndex);
       return pane?.resolution ?? "1";
     },
-  });
-
-  function syncStrategyReport() {
-    const pane = ctx.getActivePane() ?? ctx.getAllChartPanes()[0];
-    if (!pane) {
-      strategyReport.hide();
-      strategyReportReopen.sync(null);
-      return;
-    }
-    let strategyInst = null;
-    for (const inst of controller.indicatorsForPane(pane.index)) {
-      if (inst.hidden) continue;
+    onApplied: (inst) => {
       const Indicator = getIndicatorClass(inst.defId);
-      if (Indicator?.kind === "strategy") {
-        strategyInst = inst;
-        break;
-      }
-    }
-    if (!strategyInst) {
-      strategyReport.hide();
-      strategyReportReopen.sync(null);
-      return;
-    }
-
-    const strategyTitle = getIndicatorClass(strategyInst.defId)?.title ?? "Strategy";
-    const loading = strategyBacktestLoadingForPane(pane);
-
-    if (strategyReport.isUserDismissed()) {
-      strategyReportReopen.sync({
-        title: strategyTitle,
-        subtitle: loading ? "Running backtest…" : "Strategy report",
-        loading,
-      });
-      return;
-    }
-
-    strategyReportReopen.sync(null);
-
-    const view = getPaneChartView(
-      pane,
-      ctx.settingsStore,
-      pane.symbolInfo ?? ctx.symbolInfo,
-      ctx.resolutions,
-    );
-    const backtestRange = strategyInst.backtestRange ?? { id: "90d" };
-    const backtestBars = strategyInst._backtestBars ?? view.utcBars;
-    const currency = pane.symbolInfo?.currency_code ?? ctx.symbolInfo?.currency_code ?? "USD";
-
-    strategyReport.render(strategyInst.backtest ?? null, strategyInst.instanceId, {
-      rangeLabel: backtestRangeLabel(backtestRange, backtestBars, pane.resolution),
-      periodLabel: backtestPeriodLabel(
-        backtestRange,
-        backtestBars,
-        pane.symbolInfo?.timezone ?? ctx.symbolInfo?.timezone ?? "America/New_York",
-      ),
-      backtestRange,
-      currency,
-      mode: "Deep",
-      strategyName: strategyTitle,
-      loading,
-      loadingMessage: loading ? "Running backtest…" : undefined,
-      paneIndex: pane.index,
-    });
-  }
+      if (Indicator?.useBottomPane) ctx.openBottomPane?.(inst.instanceId);
+    },
+  });
 
   function syncSettingsDialog() {
     const openId = settings.getOpenInstanceId();
@@ -421,7 +266,6 @@ export function attachIndicatorsBoot(ctx) {
     refreshAllLegends();
     refreshScaleLabelsForPane(paneIndex);
     refreshBandFillsForPane(paneIndex);
-    syncStrategyReport();
     if (paneIndex != null) {
       const pane = ctx.getAllChartPanes().find((p) => p.index === paneIndex);
       controller.refreshStudyPaneLegends(pane);
@@ -557,16 +401,15 @@ export function attachIndicatorsBoot(ctx) {
     refreshAllBandFills();
     for (const pane of ctx.getAllChartPanes()) {
       controller.refreshStudyPaneLegends(pane);
-      scheduleStrategyBacktestHistory(pane.index);
     }
     ctx.refreshStatusLine();
     syncSettingsDialog();
-    syncStrategyReport();
     ctx.scheduleAutosaveLayout?.();
     indicatorData.scheduleLoad();
+    ctx.syncBottomPane?.();
+    ctx.syncChartTables?.();
   };
 
-  ctx.scheduleStrategyBacktestHistory = scheduleStrategyBacktestHistory;
   ctx.ensureIndicatorData = () => indicatorData.ensureNow();
 
   const origApplyChartSettings = ctx.applyChartSettings;
@@ -584,10 +427,6 @@ export function attachIndicatorsBoot(ctx) {
   };
 
   ctx.restoreLayoutIndicators?.();
-
-  for (const pane of ctx.getAllChartPanes()) {
-    scheduleStrategyBacktestHistory(pane.index);
-  }
 
   for (const pane of ctx.getAllChartPanes()) {
     ensureLegend(pane);

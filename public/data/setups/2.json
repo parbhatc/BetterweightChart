@@ -1,0 +1,43 @@
+{
+  "id": 2,
+  "name": "Setup #2",
+  "cycle": {
+    "reset_on_opposite_fvg_tap": true
+  },
+  "checklist": [
+    {
+      "step": 1,
+      "id": "fvg_tap",
+      "label": "{tf} FVG Tapped",
+      "accept": ["15m"],
+      "freshMax": { "type": "candles", "value": 60 }
+    },
+    {
+      "step": 2,
+      "id": "internal_sweep",
+      "label": "Internal Sweep",
+      "pivots_after_start": true,
+      "freshMax": { "type": "candles", "value": 60 }
+    },
+    {
+      "step": 3,
+      "id": "smt",
+      "label": "SMT",
+      "pivot_left": 1,
+      "pivot_right": 1,
+      "freshMax": { "type": "candles", "value": 60 }
+    },
+    {
+      "step": 4,
+      "id": "ifvg",
+      "label": "IFVG",
+      "freshMax": { "type": "candles", "value": 60 }
+    },
+    {
+      "step": 5,
+      "id": "close_tapped_fvg",
+      "labelFrom": "close_tapped_fvg",
+      "freshMax": { "type": "candles", "value": 60 }
+    }
+  ]
+}

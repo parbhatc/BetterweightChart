@@ -19,17 +19,22 @@ export function requiredChartBarsWhenNoHtf(enabledHtfs, inputs, fallback = 300) 
  */
 export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded) {
   if (!tfIds.length) return false;
+  const want = Math.max(10, Number(barsNeeded) || 300);
+  const minStart = Math.min(50, want);
   let pending = false;
   for (const tfId of tfIds) {
     const hit =
-      ctx.lookupSecurity?.(symbol, tfId, barsNeeded) ??
+      ctx.lookupSecurity?.(symbol, tfId, want) ??
       (() => {
         const series = getSecuritySeries(ctx, symbol, tfId);
         if (!series?.utcBars?.length) return null;
-        return { ...series, sufficient: series.utcBars.length >= barsNeeded };
+        return { ...series, sufficient: series.utcBars.length >= want };
       })();
-    if (hit?.utcBars?.length && hit.sufficient) continue;
-    requestSecuritySeries(ctx, symbol, tfId, barsNeeded);
+    if (hit?.utcBars?.length >= minStart) {
+      if (!hit.sufficient) requestSecuritySeries(ctx, symbol, tfId, want);
+      continue;
+    }
+    requestSecuritySeries(ctx, symbol, tfId, want);
     pending = true;
   }
   return pending;

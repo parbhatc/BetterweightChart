@@ -18,6 +18,7 @@
 @import "./settings.css";
 @import "./color/picker.css";
 @import "./timezone/clock.css";
+@import "./news/panel.css";
 @import "./responsive.css";
 @import "./debug/hud.css";
 @import "./indicators/dialog.css";
@@ -25,7 +26,9 @@
 @import "./indicators/studyPaneLegend.css";
 @import "./replay/toolbar.css";
 @import "./replay/dateDialog.css";
-@import "./strategy/report.css";
+@import "./levels/setupsReport.css";
+@import "./chart/table.css";
+@import "./ui/bottomPane/panel.css";
 
 /* iOS Safari auto-zooms focused inputs below 16px — touch devices only. */
 @media (pointer: coarse) {

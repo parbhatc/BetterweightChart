@@ -86,6 +86,7 @@ export function flattenInputFields(inputs) {
     else if (input.type === "levelsLayers") continue;
     else if (input.type === "timeLevels") continue;
     else if (input.type === "sessionLevels") continue;
+    else if (input.type === "newsLevels") continue;
     else fields.push(input);
   }
   return fields;
@@ -113,6 +114,8 @@ export function defaultInputsFromSchema(inputs) {
     } else if (input.type === "timeLevels") {
       out[input.id] = input.defval ?? [];
     } else if (input.type === "sessionLevels") {
+      out[input.id] = input.defval ?? [];
+    } else if (input.type === "newsLevels") {
       out[input.id] = input.defval ?? [];
     } else {
       assignField(out, input);

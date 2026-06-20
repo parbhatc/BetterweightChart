@@ -6,6 +6,8 @@ import {
   resolveSessionLevels,
   resolveTimeLevels,
 } from "../../ui/levelsLayersPanel.js";
+import { buildReleasePlan, resolveNewsLevels } from "../../../news/events.js";
+import { etParts, hmToMinutes } from "../../../core/etTime.js";
 import {
   debugLevelsEngineResult,
   debugLevelsOverlayStart,
@@ -17,37 +19,18 @@ import { inputColorStr } from "../../styleColor.js";
 import { levelsHtfStyles } from "./htfStyles.js";
 import { levelsSessionDefs } from "./sessionDefs.js";
 
-const ET_ZONE = "America/New_York";
+/** @param {object} bar @param {string} releaseDay @param {string} releaseHm @param {number} chartSec */
+function barContainsReleaseHm(bar, releaseDay, releaseHm, chartSec) {
+  const p = etParts(bar.time);
+  if (p.ymd !== releaseDay) return false;
+  const rel = hmToMinutes(releaseHm);
+  if (rel == null) return false;
+  const spanMin = Math.max(1, Math.floor(Math.max(60, chartSec) / 60));
+  return p.mod <= rel && rel < p.mod + spanMin;
+}
 
 /** @typedef {{ enabled: boolean, label: string, layer: string }} LevelLayerRow */
 /** @typedef {{ price: number; startTime: number; endTime: number; bornTime?: number; startChartTime?: number; endChartTime?: number; sweepChartTime?: number; label: string; color: string; lineWidth: number; kind: "high"|"low"; swept: boolean; sweepTime?: number; showLabel?: boolean; sessionBorn?: number; _drop?: boolean }} LiqLine */
-
-const etFmt = new Intl.DateTimeFormat("en-US", {
-  timeZone: ET_ZONE,
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
-/** @param {number} unixSec */
-function etParts(unixSec) {
-  /** @type {{ y: number, m: number, d: number, h: number, min: number, ymd: string, hm: string, mod: number }} */
-  const out = { y: 0, m: 0, d: 0, h: 0, min: 0, ymd: "", hm: "", mod: 0 };
-  for (const part of etFmt.formatToParts(new Date(unixSec * 1000))) {
-    if (part.type === "year") out.y = Number(part.value);
-    if (part.type === "month") out.m = Number(part.value);
-    if (part.type === "day") out.d = Number(part.value);
-    if (part.type === "hour") out.h = Number(part.value === "24" ? 0 : part.value);
-    if (part.type === "minute") out.min = Number(part.value);
-  }
-  out.ymd = `${String(out.y).padStart(4, "0")}-${String(out.m).padStart(2, "0")}-${String(out.d).padStart(2, "0")}`;
-  out.hm = `${String(out.h).padStart(2, "0")}:${String(out.min).padStart(2, "0")}`;
-  out.mod = out.h * 60 + out.min;
-  return out;
-}
 
 /**
  * @param {{ startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean }} cfg
@@ -606,6 +589,13 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     sessBornTimes[cfg.label] = [];
   }
 
+  /** @type {LiqLine[]} */
+  const releaseLines = [];
+  /** @type {Set<string>} */
+  const releaseBornDays = new Set();
+  const releasePlan = opts.releasePlan instanceof Map ? opts.releasePlan : buildReleasePlan(opts.newsByDay ?? {}, opts.newsRows ?? []);
+  const chartSec = Math.max(60, Number(opts.chartSec) || 60);
+
   let startIdx = 19;
   for (const cfg of htf) {
     const first = htfState[cfg.slot]?.agg?.[0]?.time;
@@ -746,6 +736,52 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
       sl.endTime = bar.time;
       sl.endChartTime = chartTime;
     }
+
+    for (const [releaseDay, rel] of releasePlan) {
+      if (releaseBornDays.has(releaseDay)) continue;
+      if (!barContainsReleaseHm(bar, releaseDay, rel.hm, chartSec)) continue;
+      releaseBornDays.add(releaseDay);
+      releaseLines.push(
+        {
+          price: bar.high,
+          startTime: bar.time,
+          startChartTime: chartTime,
+          bornTime: bar.time,
+          endTime: bar.time,
+          endChartTime: chartTime,
+          label: `${rel.prefix} High`,
+          color: rel.color,
+          lineWidth: 2,
+          kind: "high",
+          swept: false,
+          showLabel: showLabels,
+        },
+        {
+          price: bar.low,
+          startTime: bar.time,
+          startChartTime: chartTime,
+          bornTime: bar.time,
+          endTime: bar.time,
+          endChartTime: chartTime,
+          label: `${rel.prefix} Low`,
+          color: rel.color,
+          lineWidth: 2,
+          kind: "low",
+          swept: false,
+          showLabel: showLabels,
+        },
+      );
+    }
+
+    for (const rl of releaseLines) {
+      if (rl.swept) continue;
+      if (bar.time > levelBornTime(rl) && barSweepsLevel(bar, rl.kind, rl.price)) {
+        markSwept(rl, bar.time, chartTime);
+        continue;
+      }
+      rl.endTime = bar.time;
+      rl.endChartTime = chartTime;
+    }
   }
 
   for (const m of Object.values(matrices)) {
@@ -760,6 +796,7 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     out.push(...m.active, ...m.swept);
   }
   out.push(...sessionLines.filter((l) => !l._drop));
+  out.push(...releaseLines.filter((l) => !l._drop));
 
   if (mergeConfluence) {
     out = applyClusterConfluence(out, proximity, confHi, confLo);
@@ -866,9 +903,17 @@ export class LevelsEngine {
     if (anchorUnix == null) return [];
 
     const tick = tickSizeFromSymbol(ctx.symbolInfo);
+    const newsMasterEnabled = ctx.isNewsEnabled?.() !== false;
+    const newsIndicatorEnabled = inputs.newsEnabled !== false;
+    const newsRows = newsMasterEnabled && newsIndicatorEnabled ? resolveNewsLevels(inputs).filter((r) => r.enabled !== false) : [];
+    const newsByDay = newsMasterEnabled && newsIndicatorEnabled ? (ctx.getNewsByDay?.() ?? {}) : {};
+    const releasePlan = buildReleasePlan(newsByDay, newsRows);
     const engineOpts = {
       timeLayers: resolveTimeLevels(inputs),
       sessionLayers: resolveSessionLevels(inputs),
+      newsRows,
+      newsByDay,
+      releasePlan,
       pivotLeftBars: inputs.pivotLeftBars,
       pivotRightBars: inputs.pivotRightBars,
       maxUnswept: inputs.maxUnswept,

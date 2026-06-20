@@ -1,0 +1,1 @@
+export const SETUPS_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" fill="none" aria-hidden="true"><path stroke="currentColor" stroke-width="1.4" d="M3.5 4.5h11M3.5 9h11M3.5 13.5H9"/><circle cx="13.5" cy="13.5" r="2.25" stroke="currentColor" stroke-width="1.4"/></svg>`;

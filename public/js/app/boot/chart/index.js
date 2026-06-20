@@ -28,6 +28,9 @@ import { wireKeyboardShortcuts } from "./keyboard.js";
 import { wireSymbolAndTimeframePickers } from "./pickers.js";
 import { mountChartToolbarTools } from "../../../ui/header/chartTools.js";
 import { attachIndicatorsBoot } from "./indicatorsBoot.js";
+import { attachBottomPaneBoot } from "./bottomPaneBoot.js";
+import { attachChartTableBoot } from "./chartTableBoot.js";
+import { attachNewsBoot } from "./newsBoot.js";
 import { attachReplayBoot, restoreReplayAfterLoad } from "./replayBoot.js";
 import {
   CHART_FEATURES,
@@ -145,6 +148,9 @@ export async function bootChart(overrides = {}) {
   }
   if (replayEnabled) attachReplayBoot(ctx);
   attachIndicatorsBoot(ctx);
+  attachBottomPaneBoot(ctx);
+  attachChartTableBoot(ctx);
+  attachNewsBoot(ctx);
 
   ctx.symbolInfo = await ctx.datafeed.resolveSymbol(ctx.symbol);
   const primaryPane = ctx.chartPanes.get(0);
@@ -156,6 +162,8 @@ export async function bootChart(overrides = {}) {
     const last = await chartDebugTimeAsync("boot", "loadBars", () => ctx.loadBars());
     await restoreReplayAfterLoad(ctx);
     ctx.refreshIndicators?.();
+    ctx.syncBottomPane?.();
+    ctx.syncChartTables?.();
     ctx.setOverlayLoaderEnabled(false);
     ctx.persistPaneSymbols();
     if (debugOn) {

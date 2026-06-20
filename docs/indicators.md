@@ -1,5 +1,7 @@
 # Indicators
 
+Detailed per-indicator function inventory lives in `docs/indicators-reference.md`.
+
 Add a custom indicator by extending **`BarScriptIndicator`** (per-bar / Pine-style) or **`ComputeIndicator`** (batch math). Use **`builders.js`** for plots, fills, and inputs.
 
 ---
