@@ -4,6 +4,10 @@ import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
 } from "../../chart/pane/viewportBarLayout.js";
+import {
+  createOrderLineManager,
+  createTradingViewChartApi,
+} from "../../chart/orderLine/index.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -47,8 +51,13 @@ export function createChartWidgetApi(ctx) {
     activePriceScaleId,
   } = ctx;
 
-  return {
-    chart,
+  const orderLines = createOrderLineManager(getActivePane);
+  /** @type {ReturnType<typeof createTradingViewChartApi> | null} */
+  let tvChartApi = null;
+
+  const widget = {
+    /** Raw lightweight-charts IChartApi instance. */
+    lcChart: chart,
     series,
     settings: settingsStore,
     datafeed,
@@ -63,6 +72,22 @@ export function createChartWidgetApi(ctx) {
 
     getSymbol,
     getResolution,
+
+    /**
+     * TradingView-compatible chart API (symbol, resolution, createOrderLine).
+     * @returns {ReturnType<typeof createTradingViewChartApi>}
+     */
+    chart() {
+      if (!tvChartApi) {
+        tvChartApi = createTradingViewChartApi({
+          getSymbol,
+          setSymbol: (sym) => widget.setSymbol(sym),
+          getResolution,
+          orderLines,
+        });
+      }
+      return tvChartApi;
+    },
 
     /** Active symbol metadata from datafeed.resolveSymbol(). */
     getSymbolInfo,
@@ -249,4 +274,6 @@ export function createChartWidgetApi(ctx) {
       );
     },
   };
+
+  return widget;
 }

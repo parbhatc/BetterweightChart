@@ -17,4 +17,6 @@ export {
   registerIndicator,
   listIndicators,
   getIndicatorClass,
+  createTradingViewChartApi,
+  createOrderLineManager,
 } from "../js/sdk.js";
