@@ -77,3 +77,48 @@ export function collectPaneDataNeeds(instances, pane, getIndicatorClass) {
 export function paneDataNeedsEmpty(needs) {
   return !needs.htf.size && !needs.compareChart.size && !needs.compareHtf.size && !needs.news?.days?.length;
 }
+
+/**
+ * Whether an indicator instance depends on HTF bars for any of the given cache keys.
+ * @param {import("../types.js").IndicatorInstance} instance
+ * @param {{ symbol?: string, resolution?: string, bars?: object[] }} pane
+ * @param {(id: string) => typeof import("../BaseIndicator.js").BaseIndicator | null} getIndicatorClass
+ * @param {Set<string>} htfKeys — `symbol|resolution`
+ */
+export function instanceUsesHtfKeys(instance, pane, getIndicatorClass, htfKeys) {
+  if (!htfKeys?.size) return false;
+  const Indicator = getIndicatorClass(instance.defId);
+  if (typeof Indicator?.collectDataNeeds !== "function") return true;
+  const needs = Indicator.collectDataNeeds(instance, pane);
+  for (const item of needs.htf ?? []) {
+    if (item?.symbol && item?.resolution && htfKeys.has(htfKey(item.symbol, item.resolution))) {
+      return true;
+    }
+  }
+  for (const item of needs.compare ?? []) {
+    for (const htf of item.htf ?? []) {
+      if (item?.symbol && htf?.resolution && htfKeys.has(htfKey(item.symbol, htf.resolution))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether an indicator instance depends on compare-symbol chart bars.
+ * @param {import("../types.js").IndicatorInstance} instance
+ * @param {{ symbol?: string, resolution?: string, bars?: object[] }} pane
+ * @param {(id: string) => typeof import("../BaseIndicator.js").BaseIndicator | null} getIndicatorClass
+ * @param {Set<string>} compareSymbols
+ */
+export function instanceUsesCompareSymbols(instance, pane, getIndicatorClass, compareSymbols) {
+  if (!compareSymbols?.size) return false;
+  const Indicator = getIndicatorClass(instance.defId);
+  if (typeof Indicator?.collectDataNeeds !== "function") return true;
+  const needs = Indicator.collectDataNeeds(instance, pane);
+  for (const item of needs.compare ?? []) {
+    if (item?.symbol && compareSymbols.has(item.symbol)) return true;
+  }
+  return false;
+}

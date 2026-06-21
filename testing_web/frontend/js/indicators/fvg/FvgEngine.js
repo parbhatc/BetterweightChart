@@ -443,7 +443,7 @@ export class FvgEngine {
    * @param {number} i
    * @param {number} lastBarIdx
    */
-  processFvgBar(layer, series, active, ifvgActive, i, lastBarIdx) {
+  processFvgBar(layer, series, active, ifvgActive, i, lastBarIdx, logEvents = true) {
     const { deleteOnFill, fillType, showIfvg, showPartial } = this.script.state.cfg;
     const isFormingBar = i === lastBarIdx;
 
@@ -456,7 +456,7 @@ export class FvgEngine {
           invertTime: barChartTime(this.script, series[i], i) ?? series[i]?.time,
         };
         ifvgActive.push(ifvgZone);
-        debugFvgZoneEvent(layer, ifvgZone, series, i, "ifvg");
+        if (logEvents) debugFvgZoneEvent(layer, ifvgZone, series, i, "ifvg");
         active.splice(z, 1);
         continue;
       }
@@ -473,12 +473,12 @@ export class FvgEngine {
       }
       if (!isFvgFilled(zone, series[i], fillType)) continue;
       if (deleteOnFill) {
-        debugFvgZoneEvent(layer, zone, series, i, "deleted");
+        if (logEvents) debugFvgZoneEvent(layer, zone, series, i, "deleted");
         active.splice(z, 1);
       } else {
         const filledZone = { ...zone, filled: true, fillIndex: i, partial: false };
         active[z] = filledZone;
-        debugFvgZoneEvent(layer, filledZone, series, i, "filled");
+        if (logEvents) debugFvgZoneEvent(layer, filledZone, series, i, "filled");
       }
     }
 
@@ -489,7 +489,7 @@ export class FvgEngine {
     const zone = zoneFromFvgHit(hit, series, i, this.script);
     if (!zone) return;
     active.push(zone);
-    debugFvgZoneEvent(layer, zone, series, i, "new");
+    if (logEvents) debugFvgZoneEvent(layer, zone, series, i, "new");
   }
 
   /** @param {import("../../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object[]} series @param {number} startIdx @param {number} barIdx */
@@ -497,7 +497,8 @@ export class FvgEngine {
     if (barIdx < startIdx || barIdx >= series.length) return;
     const active = this.script.state.layerActive.get(layer.label) ?? [];
     const ifvgActive = this.script.state.layerIfvg.get(layer.label) ?? [];
-    this.processFvgBar(layer, series, active, ifvgActive, barIdx, series.length - 1);
+    const logEvents = barIdx === series.length - 1;
+    this.processFvgBar(layer, series, active, ifvgActive, barIdx, series.length - 1, logEvents);
     this.script.state.layerActive.set(layer.label, active);
     this.script.state.layerIfvg.set(layer.label, ifvgActive);
   }
@@ -508,7 +509,7 @@ export class FvgEngine {
     const ifvgActive = [];
     const lastBarIdx = series.length - 1;
     for (let i = startIdx; i < series.length; i++) {
-      this.processFvgBar(layer, series, active, ifvgActive, i, lastBarIdx);
+      this.processFvgBar(layer, series, active, ifvgActive, i, lastBarIdx, false);
     }
     this.script.state.layerActive.set(layer.label, active);
     this.script.state.layerIfvg.set(layer.label, ifvgActive);

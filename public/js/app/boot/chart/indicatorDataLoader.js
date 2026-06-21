@@ -229,7 +229,10 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         const resolution = key.slice(sep + 1);
         await fillHtfHistory(pane, symbol, resolution, countBack);
       }
-      controller.invalidateOverlayCacheForPane(pane.index);
+      controller.invalidateOverlayCacheForPane(pane.index, {
+        htfKeys: new Set([...needs.htf.keys(), ...needs.compareHtf.keys()]),
+        compareSymbols: new Set(needs.compareChart.keys()),
+      });
       controller.refreshOverlaysImmediate(pane.index);
     } finally {
       paneInFlight.delete(pane.index);
@@ -283,7 +286,9 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         }),
       )
       .then(() => {
-        controller.invalidateOverlayCacheForPane(pane.index);
+        controller.invalidateOverlayCacheForPane(pane.index, {
+          compareSymbols: new Set([symbol]),
+        });
         controller.refreshOverlaysImmediate(pane.index);
       })
       .finally(() => compareFetchInFlight.delete(key));
@@ -298,7 +303,9 @@ export function createIndicatorDataLoader({ ctx, controller }) {
     htfFetchInFlight.add(key);
     void ensureHtfBars(htfEnsureOpts(pane, sym, resId, countBack))
       .then(() => {
-        controller.invalidateOverlayCacheForPane(pane.index);
+        controller.invalidateOverlayCacheForPane(pane.index, {
+          htfKeys: new Set([key]),
+        });
         controller.refreshOverlaysImmediate(pane.index);
       })
       .finally(() => htfFetchInFlight.delete(key));

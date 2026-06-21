@@ -7,6 +7,10 @@ import {
   overlayRecomputeKey,
 } from "../overlayCache.js";
 import { logIndicatorLoad } from "./indicatorLoadLog.js";
+import {
+  instanceUsesCompareSymbols,
+  instanceUsesHtfKeys,
+} from "../security/indicatorDataNeeds.js";
 
 /** @param {object} timeCtx */
 function overlayTimeCtxKey(timeCtx) {
@@ -36,7 +40,7 @@ const OVERLAY_PRIMITIVE_ATTACH = {
  * @param {(pane: object) => object} [deps.getOverlayContext]
  */
 export function createOverlaySync(deps) {
-  const { getPaneBars, getInstances, getOverlayContext, emit } = deps;
+  const { getPaneBars, getInstances, getOverlayContext, emit, getIndicatorClass } = deps;
 
   /** @param {number} paneIndex */
   function paneByIndex(paneIndex) {
@@ -214,12 +218,30 @@ export function createOverlaySync(deps) {
     instance.lastPlots = { overlay: overlayData };
   }
 
-  /** @param {number} paneIndex Clear overlay recompute cache after history prepend. */
-  function invalidateOverlayCacheForPane(paneIndex) {
+  /**
+   * Clear overlay recompute cache after HTF/compare data arrives or history prepend.
+   * @param {number} paneIndex
+   * @param {{ htfKeys?: Set<string>, compareSymbols?: Set<string> }} [filter] When set, only indicators that use those data keys are invalidated.
+   */
+  function invalidateOverlayCacheForPane(paneIndex, filter) {
+    const pane = paneByIndex(paneIndex);
+    if (!pane) return;
+    const { utcBars } = getPaneBars(pane);
+    const paneCtx = { ...pane, bars: utcBars };
+
     for (const instance of getInstances().values()) {
       if (instance.paneIndex !== paneIndex) continue;
-      const Indicator = deps.getIndicatorClass(instance.defId);
+      const Indicator = getIndicatorClass(instance.defId);
       if (!Indicator?.overlayPrimitive) continue;
+      if (filter) {
+        const usesHtf =
+          filter.htfKeys?.size &&
+          instanceUsesHtfKeys(instance, paneCtx, getIndicatorClass, filter.htfKeys);
+        const usesCompare =
+          filter.compareSymbols?.size &&
+          instanceUsesCompareSymbols(instance, paneCtx, getIndicatorClass, filter.compareSymbols);
+        if (!usesHtf && !usesCompare) continue;
+      }
       clearOverlayInstanceCache(instance);
       if (instance.lastPlots) instance.lastPlots.overlay = [];
     }
