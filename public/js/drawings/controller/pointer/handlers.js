@@ -53,16 +53,46 @@ export function createPointerHandlers(api) {
 
   let pendingMobileTap = null;
   let mobileScrollGesture = false;
+  /** @type {number | null} */
+  let mobilePlacementPointerId = null;
   /** @type {{ startClientX: number, startClientY: number, mediaX: number, mediaY: number } | null} */
   let crosshairScrollAnchor = null;
 
   function resetMobilePlacementGesture() {
+    if (mobilePlacementPointerId != null && api.container instanceof HTMLElement) {
+      try {
+        api.container.releasePointerCapture(mobilePlacementPointerId);
+      } catch {
+        //
+      }
+    }
     pendingMobileTap = null;
     mobileScrollGesture = false;
+    mobilePlacementPointerId = null;
     crosshairScrollAnchor = null;
   }
 
+  function ensureMobileDrawCrosshair(clientX, clientY) {
+    if (!api.shouldSyncDrawCrosshair?.()) return;
+    if (api.getDrawCrosshairMedia?.()) return;
+    api.setDrawCrosshairAtClient?.(clientX, clientY);
+  }
+
+  function moveMobileDrawCrosshair(clientX, clientY) {
+    if (!api.shouldSyncDrawCrosshair?.()) return;
+    api.setDrawCrosshairAtClient?.(clientX, clientY);
+    const media = api.getDrawCrosshairMedia?.();
+    if (!media) return;
+    crosshairScrollAnchor = {
+      startClientX: clientX,
+      startClientY: clientY,
+      mediaX: media.x,
+      mediaY: media.y,
+    };
+  }
+
   function beginCrosshairScrollAnchor(clientX, clientY) {
+    ensureMobileDrawCrosshair(clientX, clientY);
     const media = api.getDrawCrosshairMedia?.();
     if (!media || !api.shouldSyncDrawCrosshair?.()) return;
     crosshairScrollAnchor = {
@@ -74,13 +104,74 @@ export function createPointerHandlers(api) {
   }
 
   function applyMobileCrosshairScroll(clientX, clientY) {
-    if (!crosshairScrollAnchor) return;
+    if (!crosshairScrollAnchor) {
+      moveMobileDrawCrosshair(clientX, clientY);
+      return;
+    }
     api.applyCrosshairScrollDelta?.(
       clientX - crosshairScrollAnchor.startClientX,
       clientY - crosshairScrollAnchor.startClientY,
       crosshairScrollAnchor.mediaX,
       crosshairScrollAnchor.mediaY,
     );
+  }
+
+  function beginMobilePlacementPointer(ev) {
+    if (!(api.container instanceof HTMLElement)) return;
+    mobilePlacementPointerId = ev.pointerId ?? null;
+    if (mobilePlacementPointerId == null) return;
+    try {
+      api.container.setPointerCapture(mobilePlacementPointerId);
+    } catch {
+      //
+    }
+  }
+
+  /** @param {PointerEvent} ev */
+  function handleMobilePlacementPointerMove(ev) {
+    if (!pendingMobileTap && !mobileScrollGesture) return;
+    if (!api.isPrimaryButtonDown(ev)) return;
+
+    const dx = pendingMobileTap
+      ? ev.clientX - pendingMobileTap.startX
+      : crosshairScrollAnchor
+        ? ev.clientX - crosshairScrollAnchor.startClientX
+        : 0;
+    const dy = pendingMobileTap
+      ? ev.clientY - pendingMobileTap.startY
+      : crosshairScrollAnchor
+        ? ev.clientY - crosshairScrollAnchor.startClientY
+        : 0;
+    const dist = Math.hypot(dx, dy);
+    const activeTool = api.getActiveTool();
+
+    if (
+      dist >= MOBILE_TAP_SLOP_PX &&
+      !isFreehandTool(activeTool) &&
+      api.shouldSyncDrawCrosshair?.()
+    ) {
+      applyMobileCrosshairScroll(ev.clientX, ev.clientY);
+    }
+
+    if (!pendingMobileTap) return;
+
+    if (isFreehandTool(activeTool)) {
+      if (dist >= MOBILE_FREEHAND_START_PX) {
+        const point = api.resolvePoint(ev.clientX, ev.clientY);
+        if (point) {
+          resetMobilePlacementGesture();
+          api.swallowChartPointer(ev);
+          api.beginPointerSession(ev);
+          api.startFreehand(point, ev.clientX, ev.clientY, ev);
+        }
+      } else if (dist >= MOBILE_SCROLL_CANCEL_PX) {
+        pendingMobileTap = null;
+        mobileScrollGesture = true;
+      }
+    } else if (dist >= MOBILE_SCROLL_CANCEL_PX) {
+      pendingMobileTap = null;
+      mobileScrollGesture = true;
+    }
   }
 
   function placeDrawPointAtCrosshair() {
@@ -324,6 +415,7 @@ export function createPointerHandlers(api) {
     if (!api.isCursorTool()) {
       if (api.useMobileDragPlacement?.()) {
         api.swallowChartPointer(ev);
+        ensureMobileDrawCrosshair(ev.clientX, ev.clientY);
         beginCrosshairScrollAnchor(ev.clientX, ev.clientY);
         pendingMobileTap = {
           pointerId: ev.pointerId ?? null,
@@ -332,6 +424,7 @@ export function createPointerHandlers(api) {
           startTime: performance.now(),
         };
         mobileScrollGesture = false;
+        beginMobilePlacementPointer(ev);
         return;
       }
 
@@ -370,37 +463,8 @@ export function createPointerHandlers(api) {
       return;
     }
 
-    if (pendingMobileTap && api.isPrimaryButtonDown(ev)) {
-      const dx = ev.clientX - pendingMobileTap.startX;
-      const dy = ev.clientY - pendingMobileTap.startY;
-      const dist = Math.hypot(dx, dy);
-      const activeTool = api.getActiveTool();
-
-      if (
-        dist >= MOBILE_TAP_SLOP_PX &&
-        !isFreehandTool(activeTool) &&
-        api.shouldSyncDrawCrosshair?.()
-      ) {
-        applyMobileCrosshairScroll(ev.clientX, ev.clientY);
-      }
-
-      if (isFreehandTool(activeTool)) {
-        if (dist >= MOBILE_FREEHAND_START_PX) {
-          const point = api.resolvePoint(ev.clientX, ev.clientY);
-          if (point) {
-            pendingMobileTap = null;
-            api.swallowChartPointer(ev);
-            api.beginPointerSession(ev);
-            api.startFreehand(point, ev.clientX, ev.clientY, ev);
-          }
-        } else if (dist >= MOBILE_SCROLL_CANCEL_PX) {
-          pendingMobileTap = null;
-          mobileScrollGesture = true;
-        }
-      } else if (dist >= MOBILE_SCROLL_CANCEL_PX) {
-        pendingMobileTap = null;
-        mobileScrollGesture = true;
-      }
+    if (api.useMobileDragPlacement?.()) {
+      handleMobilePlacementPointerMove(ev);
     }
 
     if (shouldSwallowDrawMove(ev)) {
@@ -499,7 +563,6 @@ export function createPointerHandlers(api) {
     let pinnedFromMobileTap = false;
     if (pendingMobileTap) {
       const tap = pendingMobileTap;
-      pendingMobileTap = null;
       const samePointer =
         ev.pointerId == null || tap.pointerId == null || ev.pointerId === tap.pointerId;
       if (
@@ -516,9 +579,8 @@ export function createPointerHandlers(api) {
           pinnedFromMobileTap = true;
         }
       }
-      mobileScrollGesture = false;
-      crosshairScrollAnchor = null;
     }
+    resetMobilePlacementGesture();
 
     if (api.getMeasureDragActive()) {
       api.setMeasureDragActive(false);
@@ -588,7 +650,10 @@ export function createPointerHandlers(api) {
   }
 
   function onDocumentPointerMove(ev) {
-    if (api.useMobileDragPlacement?.()) return;
+    if (api.useMobileDragPlacement?.()) {
+      handleMobilePlacementPointerMove(ev);
+      return;
+    }
     if (
       api.isCursorTool() &&
       api.isPrimaryButtonDown?.(ev) &&

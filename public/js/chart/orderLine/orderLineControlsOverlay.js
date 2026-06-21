@@ -1,10 +1,28 @@
 import {
   measureOrderLineRow,
+  orderLineCenterY,
   ORDER_LINE_CANCEL_W,
   ORDER_LINE_FONT,
   ORDER_LINE_FONT_SIZE,
   ORDER_LINE_ROW_H,
 } from "./rowLayout.js";
+
+/** @param {import("./types.js").OrderLineState} state */
+function controlSignature(state) {
+  return [
+    state.text,
+    state.quantity,
+    state.lineColor,
+    state.bodyBackgroundColor,
+    state.bodyTextColor,
+    state.quantityBackgroundColor,
+    state.quantityTextColor,
+    state.cancelButtonIconColor,
+    state.bodyTooltip,
+    state.quantityTooltip,
+    state.cancelTooltip,
+  ].join("\0");
+}
 
 /**
  * DOM overlay for interactive order-line controls (tooltip-style pill).
@@ -56,15 +74,21 @@ export function createOrderLineControlsOverlay(paneEl) {
    */
   function paintControl(el, entry) {
     const { state, left, y } = entry;
+    const centerY = orderLineCenterY(y);
+
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${centerY}px`;
+    el.dataset.olId = entry.id;
+    el.classList.toggle("order-line-control--moving", Boolean(state.isMoving));
+
+    const signature = controlSignature(state);
+    if (el.dataset.olSignature === signature) return;
+    el.dataset.olSignature = signature;
+
     const { bodyText, qtyText, bodyW, qtyW } = measureOrderLineRow(state);
     const accent = state.lineColor || state.bodyBackgroundColor;
     const bodyBg = state.bodyBackgroundColor || accent;
     const qtyBg = state.quantityBackgroundColor || accent;
-
-    el.style.left = `${Math.round(left)}px`;
-    el.style.top = `${Math.round(y)}px`;
-    el.dataset.olId = entry.id;
-    el.classList.toggle("order-line-control--moving", Boolean(state.isMoving));
 
     el.innerHTML = "";
 

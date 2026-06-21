@@ -1,6 +1,13 @@
 export const ORDER_LINE_FONT =
   "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
 export const ORDER_LINE_ROW_H = 18;
+export const ORDER_LINE_WIDTH = 1;
+
+/** @param {number} y — series media Y for the order price */
+export function orderLineCenterY(y) {
+  if (!Number.isFinite(y)) return 0;
+  return Math.round(y) + (ORDER_LINE_WIDTH % 2 ? 0.5 : 0);
+}
 export const ORDER_LINE_CANCEL_W = 18;
 export const ORDER_LINE_GAP = 0;
 export const ORDER_LINE_PAD_X = 6;
@@ -113,7 +120,8 @@ export function drawOrderLineAxisPriceBadge(ctx, state, y, scaleW) {
   const priceText = formatOrderLinePrice(state.price);
   if (!priceText) return;
 
-  const top = Math.round(y - ORDER_LINE_ROW_H / 2);
+  const centerY = orderLineCenterY(y);
+  const top = Math.round(centerY - ORDER_LINE_ROW_H / 2);
   const color = state.lineColor || state.bodyBackgroundColor;
 
   ctx.save();

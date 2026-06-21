@@ -3,13 +3,19 @@ import { lineStyleDashPattern } from "../line/style.js";
 import {
   drawOrderLineAxisPriceBadge,
   layoutOrderLineGeometry,
+  orderLineCenterY,
   ORDER_LINE_ROW_H,
+  ORDER_LINE_WIDTH,
 } from "./rowLayout.js";
 
 export class OrderLinesPrimitive {
-  /** @param {() => import("./types.js").OrderLineState[]} getStates */
-  constructor(getStates) {
+  /**
+   * @param {() => import("./types.js").OrderLineState[]} getStates
+   * @param {(layouts: import("./types.js").OrderLineLayout[]) => void} [onAfterLayout]
+   */
+  constructor(getStates, onAfterLayout) {
     this._getStates = getStates;
+    this._onAfterLayout = onAfterLayout ?? null;
     /** @type {import("lightweight-charts").IChartApi | null} */
     this._chart = null;
     /** @type {import("lightweight-charts").ISeriesApi | null} */
@@ -128,15 +134,16 @@ class OrderLinesPaneRenderer {
   }
   draw(target) {
     const layouts = this._source.layoutAll();
+    this._source._onAfterLayout?.(layouts);
     if (!layouts.length) return;
 
     target.useBitmapCoordinateSpace(({ context: ctx, horizontalPixelRatio, verticalPixelRatio }) => {
       for (const layout of layouts) {
         const { state, y, lineStartX, lineEndX } = layout;
         if (lineEndX <= lineStartX) continue;
-        const lineWidth = 1;
+        const lineWidth = ORDER_LINE_WIDTH;
         const yy =
-          Math.round(y * verticalPixelRatio) + ((lineWidth * verticalPixelRatio) % 2 ? 0.5 : 0);
+          Math.round(orderLineCenterY(y) * verticalPixelRatio);
         const x1 = Math.round(lineStartX * horizontalPixelRatio);
         const x2 = Math.round(lineEndX * horizontalPixelRatio);
         const dash = lineStyleDashPattern(state.lineStyle === 2 ? 2 : 0, lineWidth).map(

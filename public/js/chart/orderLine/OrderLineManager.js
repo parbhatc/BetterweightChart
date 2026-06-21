@@ -3,6 +3,7 @@ import { createOrderLineControlsOverlay } from "./orderLineControlsOverlay.js";
 import { OrderLinesPrimitive } from "./OrderLinesPrimitive.js";
 import {
   layoutOrderLineGeometry,
+  orderLineCenterY,
   ORDER_LINE_CANCEL_W,
   ORDER_LINE_ROW_H,
 } from "./rowLayout.js";
@@ -40,6 +41,8 @@ export class OrderLineManager {
     this._overlayRaf = 0;
     /** @type {(() => void) | null} */
     this._rangeUnsub = null;
+    /** @type {ResizeObserver | null} */
+    this._resizeObs = null;
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
     this._onPointerUp = this._onPointerUp.bind(this);
@@ -63,20 +66,32 @@ export class OrderLineManager {
     if (this._paneRef === pane && this._primitive) return;
     this._detachPrimitive();
     this._paneRef = pane;
-    this._primitive = new OrderLinesPrimitive(() => this._activeStates());
+    this._primitive = new OrderLinesPrimitive(
+      () => this._activeStates(),
+      (layouts) => this._applyOverlayLayouts(layouts),
+    );
     pane.series.attachPrimitive(this._primitive);
     this._ensureOverlay(pane);
     this._ensureListeners(pane);
-    this._bindRangeSync(pane);
+    this._bindPaneSync(pane);
     this._scheduleOverlaySync();
   }
 
-  _bindRangeSync(pane) {
+  /** @param {object} pane */
+  _bindPaneSync(pane) {
     this._rangeUnsub?.();
+    this._resizeObs?.disconnect();
+    this._resizeObs = null;
+
     const ts = pane.chart.timeScale();
     const onRange = () => this._scheduleOverlaySync();
     ts.subscribeVisibleLogicalRangeChange(onRange);
     this._rangeUnsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
+
+    if (pane.el instanceof HTMLElement && typeof ResizeObserver !== "undefined") {
+      this._resizeObs = new ResizeObserver(() => this._scheduleOverlaySync());
+      this._resizeObs.observe(pane.el);
+    }
   }
 
   /** @param {object} pane */
@@ -99,6 +114,8 @@ export class OrderLineManager {
   _detachPrimitive() {
     this._rangeUnsub?.();
     this._rangeUnsub = null;
+    this._resizeObs?.disconnect();
+    this._resizeObs = null;
     if (this._primitive && this._paneRef?.series) {
       try {
         this._paneRef.series.detachPrimitive(this._primitive);
@@ -162,12 +179,10 @@ export class OrderLineManager {
     });
   }
 
-  _syncOverlay() {
+  /** @param {Array<{ state: import("./types.js").OrderLineState, rowLeft: number, y: number }>} layouts */
+  _applyOverlayLayouts(layouts) {
     const overlay = this._overlay;
-    const primitive = this._primitive;
-    if (!overlay || !primitive) return;
-
-    const layouts = primitive.layoutAll();
+    if (!overlay) return;
     overlay.sync(
       layouts.map((layout) => ({
         id: layout.state.id,
@@ -176,6 +191,12 @@ export class OrderLineManager {
         state: layout.state,
       })),
     );
+  }
+
+  _syncOverlay() {
+    const primitive = this._primitive;
+    if (!primitive) return;
+    this._applyOverlayLayouts(primitive.layoutAll());
   }
 
   /** @param {PointerEvent} ev */
@@ -198,9 +219,10 @@ export class OrderLineManager {
     const y = series.priceToCoordinate(state.price);
     if (y == null) return null;
 
+    const centerY = orderLineCenterY(y);
     const plotW = pane.el.getBoundingClientRect().width;
     const { totalW, rowLeft } = layoutOrderLineGeometry(state, plotW, scaleW);
-    const top = y - ORDER_LINE_ROW_H / 2;
+    const top = centerY - ORDER_LINE_ROW_H / 2;
     const row = {
       left: rowLeft,
       top,
@@ -210,7 +232,7 @@ export class OrderLineManager {
     };
 
     if (px < row.left || px > row.left + row.width || py < row.top - ROW_HIT_PAD || py > row.top + row.height + ROW_HIT_PAD) {
-      if (Math.abs(py - y) <= ROW_HIT_PAD && px >= 0 && px <= plotW) {
+      if (Math.abs(py - centerY) <= ROW_HIT_PAD && px >= 0 && px <= plotW) {
         return { kind: "line", adapter: this._adapters.get(state.id) };
       }
       return null;

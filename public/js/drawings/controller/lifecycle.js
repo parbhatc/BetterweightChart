@@ -45,6 +45,7 @@ export function wireController(ctx) {
     finishMultiPointPlacement: () => ctx.finishMultiPointPlacement(),
     getContext: () => ctx.getContext(),
     resolvePoint: (...args) => ctx.resolvePoint(...args),
+    shouldSyncDrawCrosshair: (...args) => ctx.shouldSyncDrawCrosshair(...args),
     syncDrawCrosshair: (...args) => ctx.syncDrawCrosshair(...args),
     setDrawCrosshairAtClient: (...args) => ctx.setDrawCrosshairAtClient(...args),
     applyCrosshairScrollDelta: (...args) => ctx.applyCrosshairScrollDelta(...args),

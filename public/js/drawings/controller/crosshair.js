@@ -1,3 +1,8 @@
+import {
+  chartXAt,
+  coordMapBars,
+  safePriceToY,
+} from "../../chart/coords/timeScale.js";
 import { COARSE_POINTER_MQ } from "./state.js";
 
 /** @param {import("./state.js").ControllerState} ctx */
@@ -12,7 +17,6 @@ export function attachCrosshair(ctx) {
     return true;
   }
 
-  /** LWC series crosshairMarkerVisible handles the dot; never duplicate with a DOM overlay. */
   function hideDrawCrosshairDot() {
     ctx.drawCrosshairDot.hidden = true;
   }
@@ -53,6 +57,46 @@ export function attachCrosshair(ctx) {
     );
   }
 
+  function syncDrawCrosshairDotFromChart(param = ctx.lastDrawCrosshairParam) {
+    if (!COARSE_POINTER_MQ.matches || !shouldSyncDrawCrosshair()) {
+      hideDrawCrosshairDot();
+      return;
+    }
+    const dotPoint = ctx.drawCrosshairMedia ?? param?.point;
+    if (dotPoint) {
+      ctx.lastDrawCrosshairParam = { ...(param ?? {}), point: dotPoint };
+    }
+    if (!dotPoint) {
+      hideDrawCrosshairDot();
+      return;
+    }
+    ctx.drawCrosshairDot.style.left = `${dotPoint.x}px`;
+    ctx.drawCrosshairDot.style.top = `${dotPoint.y}px`;
+    ctx.drawCrosshairDot.hidden = false;
+  }
+
+  function syncDrawCrosshairDot() {
+    if (COARSE_POINTER_MQ.matches) {
+      syncDrawCrosshairDotFromChart();
+      return;
+    }
+    if (!shouldSyncDrawCrosshair() || !ctx.pinnedDrawCrosshair) {
+      hideDrawCrosshairDot();
+      return;
+    }
+    const { barSec } = ctx.getContext();
+    const mapBars = coordMapBars(ctx.getContext());
+    const x = chartXAt(ctx.chart.timeScale(), mapBars, barSec, undefined, ctx.pinnedDrawCrosshair.time);
+    const y = safePriceToY(ctx.series, ctx.pinnedDrawCrosshair.price);
+    if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) {
+      hideDrawCrosshairDot();
+      return;
+    }
+    ctx.drawCrosshairDot.style.left = `${x}px`;
+    ctx.drawCrosshairDot.style.top = `${y}px`;
+    ctx.drawCrosshairDot.hidden = false;
+  }
+
   function emitCrosshairSync() {
     if (ctx.draggingDrawing) return;
     ctx.emit("crosshairSync");
@@ -61,14 +105,24 @@ export function attachCrosshair(ctx) {
   function getCrosshairSyncSnapshot() {
     const fromNative = ctx.lastNativeDrawCrosshair ?? ctx.pinnedDrawCrosshair;
     if (fromNative?.time != null && fromNative.price != null) {
-      return { time: fromNative.time, price: fromNative.price };
+      return {
+        time: fromNative.time,
+        price: fromNative.price,
+        drawDot: COARSE_POINTER_MQ.matches && shouldSyncDrawCrosshair(),
+      };
     }
     const pt = resolveDrawCrosshairPoint();
-    if (pt) return { time: pt.time, price: pt.price };
+    if (pt) {
+      return {
+        time: pt.time,
+        price: pt.price,
+        drawDot: COARSE_POINTER_MQ.matches && shouldSyncDrawCrosshair(),
+      };
+    }
     return null;
   }
 
-  /** @param {{ time?: number, price?: number } | null} snapshot — chart-time only */
+  /** @param {{ time?: number, price?: number, drawDot?: boolean } | null} snapshot */
   function applyCrosshairSyncSnapshot(snapshot) {
     if (snapshot?.time == null || snapshot.price == null) {
       const had = ctx.lastCrosshairSyncApplied != null;
@@ -95,7 +149,20 @@ export function attachCrosshair(ctx) {
     } finally {
       ctx.applyingCrosshairSync = false;
     }
-    hideDrawCrosshairDot();
+    if (snapshot.drawDot) {
+      const { barSec } = ctx.getContext();
+      const mapBars = coordMapBars(ctx.getContext());
+      const x = chartXAt(ctx.chart.timeScale(), mapBars, barSec, undefined, snapshot.time);
+      const y = safePriceToY(ctx.series, snapshot.price);
+      if (x != null && y != null) {
+        ctx.drawCrosshairMedia = { x, y };
+        ctx.drawCrosshairDot.style.left = `${x}px`;
+        ctx.drawCrosshairDot.style.top = `${y}px`;
+        ctx.drawCrosshairDot.hidden = false;
+      }
+    } else {
+      hideDrawCrosshairDot();
+    }
   }
 
   function isApplyingCrosshairSync() {
@@ -120,7 +187,11 @@ export function attachCrosshair(ctx) {
     } finally {
       ctx.anchoringDrawCrosshair = false;
     }
-    hideDrawCrosshairDot();
+    if (COARSE_POINTER_MQ.matches) {
+      syncDrawCrosshairDotFromChart({ point: ctx.drawCrosshairMedia, time: point.time });
+    } else {
+      hideDrawCrosshairDot();
+    }
     emitCrosshairSync();
   }
 
@@ -155,6 +226,20 @@ export function attachCrosshair(ctx) {
     ctx.unsubDrawCrosshairDotSync();
     const onMove = (param) => {
       if (ctx.applyingCrosshairSync) return;
+      if (COARSE_POINTER_MQ.matches && shouldSyncDrawCrosshair()) {
+        if (ctx.drawCrosshairMedia) {
+          syncDrawCrosshairDotFromChart({
+            point: ctx.drawCrosshairMedia,
+            time: ctx.lastNativeDrawCrosshair?.time ?? param?.time,
+          });
+          return;
+        }
+        if (param?.point && param.time != null) {
+          rememberNativeDrawCrosshairFromParam(param);
+          syncDrawCrosshairDotFromChart(param);
+        }
+        return;
+      }
       if (param?.point && param.time != null) rememberNativeDrawCrosshairFromParam(param);
     };
     const onRange = () => {
@@ -178,6 +263,7 @@ export function attachCrosshair(ctx) {
         rect.top + rect.height / 2,
       );
       if (point) ctx.pinnedDrawCrosshair = { price: point.price, time: point.time };
+      syncDrawCrosshairDot();
     }
   }
 
@@ -188,7 +274,7 @@ export function attachCrosshair(ctx) {
     ctx.pinnedDrawCrosshair = { price: point.price, time: point.time };
     ctx.lastNativeDrawCrosshair = { price: point.price, time: point.time };
     ctx.chart.setCrosshairPosition(point.price, point.time, ctx.series);
-    hideDrawCrosshairDot();
+    syncDrawCrosshairDot();
     emitCrosshairSync();
   }
 
@@ -199,7 +285,7 @@ export function attachCrosshair(ctx) {
       ctx.pinnedDrawCrosshair.time,
       ctx.series,
     );
-    hideDrawCrosshairDot();
+    syncDrawCrosshairDot();
   }
 
   function pinDrawCrosshairAt(clientX, clientY) {
