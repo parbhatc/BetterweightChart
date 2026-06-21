@@ -5,6 +5,7 @@ import {
   isForecastTool,
   supportsForecastStyleSettings,
 } from "../../tools/forecast/index.js";
+import { syncLineStylePreview } from "../dialog/utils.js";
 
 const FORECAST_COLOR_FIELDS = [
   { key: "forecastSourceTextColor", data: "forecast-source-text-color" },
@@ -44,10 +45,12 @@ export function syncForecastDialogUi(root, draft) {
   if (styleSwatch instanceof HTMLElement) {
     styleSwatch.style.backgroundColor = applyColorOpacity(color, opacity);
   }
-  if (styleLine instanceof HTMLElement) {
-    styleLine.style.backgroundColor = applyColorOpacity(color, opacity);
-    styleLine.style.height = `${lineWidth}px`;
-  }
+  syncLineStylePreview(styleLine, {
+    color,
+    opacity,
+    width: lineWidth,
+    style: Number(draft.lineStyle ?? 0),
+  });
 
   for (const field of FORECAST_COLOR_FIELDS) {
     const swatch = root.querySelector(`[data-${field.data}-swatch]`);

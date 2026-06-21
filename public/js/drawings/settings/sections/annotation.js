@@ -10,7 +10,7 @@ import {
   isHighlighterTool,
   supportsAnnotationStyleSettings,
 } from "../../tools/annotation/style.js";
-import { setTvCheck } from "../dialog/utils.js";
+import { setTvCheck, syncLineStylePreview } from "../dialog/utils.js";
 
 export { annotationDraftFromDrawing };
 
@@ -51,11 +51,13 @@ export function syncAnnotationDialogUi(root, draft) {
   if (styleSwatch instanceof HTMLElement) {
     styleSwatch.style.backgroundColor = applyColorOpacity(color, opacity);
   }
-  if (styleLine instanceof HTMLElement) {
-    styleLine.style.backgroundColor = applyColorOpacity(color, opacity);
-    styleLine.style.height = `${isHighlighter ? lineWidth : lineWidth}px`;
-    styleLine.style.width = isHighlighter ? "30px" : "";
-  }
+  syncLineStylePreview(styleLine, {
+    color,
+    opacity,
+    width: lineWidth,
+    style: Number(draft.lineStyle ?? 0),
+    variant: isHighlighter ? "highlighter" : "default",
+  });
 
   if (isBrush) {
     const bgBtn = root.querySelector("[data-brush-background-btn]");

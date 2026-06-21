@@ -8,7 +8,7 @@ import {
   resolveMeasureStatsFields,
   supportsMeasureStyleSettings,
 } from "../../tools/measure/index.js";
-import { setTvCheck } from "../dialog/utils.js";
+import { setTvCheck, syncLineStylePreview } from "../dialog/utils.js";
 import { createTvMenu } from "../menu/tv.js";
 
 export { measureDraftFromDrawing };
@@ -40,10 +40,12 @@ export function syncMeasureDialogUi(root, draft) {
   if (styleSwatch instanceof HTMLElement) {
     styleSwatch.style.backgroundColor = applyColorOpacity(color, opacity);
   }
-  if (styleLine instanceof HTMLElement) {
-    styleLine.style.backgroundColor = applyColorOpacity(color, opacity);
-    styleLine.style.height = `${lineWidth}px`;
-  }
+  syncLineStylePreview(styleLine, {
+    color,
+    opacity,
+    width: lineWidth,
+    style: Number(draft.lineStyle ?? 0),
+  });
 
   const bgBtn = root.querySelector("[data-measure-background-btn]");
   const bgSwatch = root.querySelector("[data-measure-background-swatch]");

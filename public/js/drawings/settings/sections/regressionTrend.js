@@ -7,7 +7,7 @@ import {
 } from "../../tools/regression/trend.js";
 
 const MENU_CHEVRON = `<svg viewBox="0 0 18 18" width="14" height="14" aria-hidden="true"><path fill="currentColor" d="M3.92 7.83 9 12.29l5.08-4.46-1-1.13L9 10.29l-4.09-3.6-.99 1.14Z"/></svg>`;
-const CHECK_SVG = `<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M7.5 12.5 3.5 8.5l1-1 3 3 7-7 1 1z"></path></svg>`;
+import { CHECK_SVG, lineStylePreviewHtml, setTvCheck } from "../dialog/utils.js";
 
 /** @param {HTMLElement} btn @param {boolean} on */
 export function setRegressionCheck(btn, on) {
@@ -24,16 +24,7 @@ export function setRegressionCheck(btn, on) {
  */
 function linePreviewHtml(draft, key) {
   const style = regressionLineStyle(draft, key);
-  const segs =
-    style.style === 1
-      ? Array.from({ length: 4 })
-          .map(
-            (_, i) =>
-              `<span class="tv-pc-level-line-seg" style="width:5px;height:${style.width}px;background-color:${applyColorOpacity(style.color, style.opacity)};margin-left:${i ? 3 : 0}px"></span>`,
-          )
-          .join("")
-      : `<span class="tv-pc-level-line-seg" style="width:30px;height:${style.width}px;background-color:${applyColorOpacity(style.color, style.opacity)}"></span>`;
-  return segs;
+  return lineStylePreviewHtml(style.color, style.opacity, style.width, style.style);
 }
 
 /**
@@ -166,9 +157,11 @@ export function syncRegressionTrendDialogUi(root, draft) {
           <span class="tv-set__check-label">${label}</span>
         </div>
         <div class="tv-set__section-body tv-drawing-settings__line-row tv-reg-line-style-row">
-          <button type="button" class="tv-drawing-settings__color-btn" data-reg-line-style="${key}" aria-label="${label} line style" ${enabled ? "" : "disabled"}>
+          <button type="button" class="tv-drawing-settings__line-control tv-drawing-settings__line-control--color" data-reg-line-color="${key}" aria-label="${label} line color" ${enabled ? "" : "disabled"}>
             <span class="tv-drawing-settings__color-swatch" data-reg-line-swatch="${key}"></span>
-            <span class="tv-pc-level-line-preview" data-reg-line-preview="${key}">${linePreviewHtml(draft, key)}</span>
+          </button>
+          <button type="button" class="tv-drawing-settings__line-control tv-drawing-settings__line-control--style" data-reg-line-style="${key}" aria-label="${label} line style" ${enabled ? "" : "disabled"}>
+            <span class="tv-drawing-settings__line-preview" data-reg-line-preview="${key}">${linePreviewHtml(draft, key)}</span>
           </button>
         </div>`;
       })
@@ -177,8 +170,12 @@ export function syncRegressionTrendDialogUi(root, draft) {
     rows.forEach(({ key }) => {
       const style = regressionLineStyle(draft, /** @type {"base" | "up" | "down"} */ (key));
       const swatch = linesList.querySelector(`[data-reg-line-swatch="${key}"]`);
+      const preview = linesList.querySelector(`[data-reg-line-preview="${key}"]`);
       if (swatch instanceof HTMLElement) {
         swatch.style.backgroundColor = applyColorOpacity(style.color, style.opacity);
+      }
+      if (preview instanceof HTMLElement) {
+        preview.innerHTML = linePreviewHtml(draft, key);
       }
     });
   }
@@ -293,6 +290,34 @@ export function wireRegressionTrendSettings(root, ctx) {
       Object.assign(draft, patch);
       patchDrawing(patch);
       syncRegressionTrendDialogUi(root, draft);
+      return;
+    }
+
+    const lineColorBtn = ev.target.closest("[data-reg-line-color]");
+    if (lineColorBtn instanceof HTMLButtonElement && !lineColorBtn.disabled) {
+      const key = lineColorBtn.dataset.regLineColor;
+      if (!key) return;
+      const cap = key === "base" ? "Base" : key === "up" ? "Up" : "Down";
+      const style = regressionLineStyle(draft, key);
+      colorPicker.openSwatch(
+        lineColorBtn,
+        { color: style.color, opacity: style.opacity },
+        {
+          onChange: (value) => {
+            /** @type {Record<string, unknown>} */
+            const patch = {
+              [`regression${cap}Color`]: value.color,
+              [`regression${cap}Opacity`]: value.opacity,
+            };
+            if (key === "base") {
+              patch.regressionDownColor = value.color;
+              patch.regressionDownOpacity = value.opacity;
+            }
+            patchDrawing(patch);
+            syncRegressionTrendDialogUi(root, draft);
+          },
+        },
+      );
       return;
     }
 

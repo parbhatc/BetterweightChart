@@ -1,3 +1,4 @@
+import { applyColorOpacity } from "../../../ui/color/picker.js";
 import { LINE_END_ARROW_ICON, LINE_END_NORMAL_ICON } from "../../tools/line/trendStyle.js";
 import { isRegressionTrendTool } from "../../tools/regression/trend.js";
 import { isPositionTool } from "../../tools/position/barrel.js";
@@ -10,6 +11,47 @@ export const MENU_CHEVRON = `<svg viewBox="0 0 18 18" width="14" height="14" ari
 export const CHECK_SVG = `<svg viewBox="0 0 18 18" width="12" height="12" aria-hidden="true"><path d="M3.5 9.5l3 3L14.5 5.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 
 export const VISIBILITY_KEYS = ["ticks", "seconds", "minutes", "hours", "days", "weeks", "months", "ranges"];
+
+/**
+ * @param {string} color
+ * @param {number} opacity
+ * @param {number} width
+ * @param {number} style
+ */
+export function lineStylePreviewHtml(color, opacity, width, style) {
+  const c = applyColorOpacity(color, opacity);
+  const h = Math.max(1, width);
+  if (style === 1) {
+    return [0, 1, 2, 3]
+      .map(
+        (i) =>
+          `<span class="tv-pc-level-line-seg" style="width:3px;height:${h}px;background-color:${c};margin-left:${i ? 3 : 0}px"></span>`,
+      )
+      .join("");
+  }
+  if (style === 2) {
+    return [0, 1, 2]
+      .map(
+        (i) =>
+          `<span class="tv-pc-level-line-seg" style="width:8px;height:${h}px;background-color:${c};margin-left:${i ? 4 : 0}px"></span>`,
+      )
+      .join("");
+  }
+  return `<span class="tv-pc-level-line-seg" style="width:1.375rem;height:${h}px;background-color:${c}"></span>`;
+}
+
+/**
+ * @param {HTMLElement | null | undefined} el
+ * @param {{ color: string, opacity: number, width: number, style?: number, variant?: "default" | "highlighter" }} opts
+ */
+export function syncLineStylePreview(el, opts) {
+  if (!(el instanceof HTMLElement)) return;
+  if (opts.variant === "highlighter") {
+    el.innerHTML = `<span class="tv-pc-level-line-seg" style="width:1.375rem;height:${opts.width}px;background-color:${applyColorOpacity(opts.color, opts.opacity)};border-radius:1px"></span>`;
+    return;
+  }
+  el.innerHTML = lineStylePreviewHtml(opts.color, opts.opacity, opts.width, opts.style ?? 0);
+}
 
 /** @param {HTMLElement} btn @param {boolean} on */
 export function setTvCheck(btn, on) {

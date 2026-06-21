@@ -26,9 +26,11 @@ export function drawingSettingsDialogHtml() {
           <div class="tv-set__section" data-line-section>
             <div class="tv-set__section-head" data-line-section-head>Line</div>
             <div class="tv-set__section-body tv-drawing-settings__line-row">
-              <button type="button" class="tv-drawing-settings__color-btn" data-style-color aria-label="Line color">
+              <button type="button" class="tv-drawing-settings__line-control tv-drawing-settings__line-control--color" data-style-color aria-label="Line color">
                 <span class="tv-drawing-settings__color-swatch" data-style-swatch></span>
-                <span class="tv-drawing-settings__color-line" data-style-line></span>
+              </button>
+              <button type="button" class="tv-drawing-settings__line-control tv-drawing-settings__line-control--style" data-style-line-btn aria-label="Line style">
+                <span class="tv-drawing-settings__line-preview" data-style-line></span>
               </button>
               <button type="button" class="tv-drawing-settings__line-end-btn" data-left-end-btn aria-haspopup="listbox" aria-label="Left end" hidden>
                 <span class="tv-drawing-settings__line-end-icon" data-left-end-icon></span>
@@ -199,7 +201,6 @@ export function drawingSettingsDialogHtml() {
             <div class="tv-set__section-head">Extend</div>
             <div class="tv-set__section-body tv-set__section-body--fields">
               <div class="tv-set__field-row">
-                <span class="tv-set__field-label">Extend</span>
                 <div class="tv-set__select-wrap">
                   <button type="button" class="tv-drawing-settings__menu-btn" data-extend-btn aria-haspopup="listbox">
                     <span data-extend-label>Don't extend</span>

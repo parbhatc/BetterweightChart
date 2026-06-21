@@ -96,7 +96,7 @@
 }
 
 .tv-drawing-settings__tab {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
   padding: var(--space-2) var(--space-1);
   border: none;
@@ -173,7 +173,7 @@
 /* Group label (Profit level, Stop level, etc.) */
 .tv-drawing-settings__panel .tv-set__section-head {
   padding: var(--space-2) var(--space-4) var(--space-1);
-  margin: 0;
+  margin: 0 0 0;
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-wide);
@@ -202,6 +202,18 @@
   padding: var(--space-3) var(--space-4);
 }
 
+/* Stacked sections — head on top, full-width body (matches Info tab rows) */
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body--fields),
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body.tv-drawing-settings__line-row),
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body .tv-set__check-row),
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body .tv-drawing-settings__text-toolbar),
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body.tv-fib-options-body),
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body .tv-fib-levels-grid),
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body .tv-fib-levels-line-controls) {
+  display: block;
+  padding: 0;
+}
+
 /* ── Single color row (Stop color, Target color, …) ── */
 .tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head {
   flex: 1 1 auto;
@@ -209,11 +221,14 @@
 }
 
 .tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body--fields),
-.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-drawing-settings__line-row) {
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body.tv-drawing-settings__line-row),
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body .tv-set__check-row),
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body .tv-drawing-settings__text-toolbar),
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body.tv-fib-options-body) {
   flex: 1 1 100%;
 }
 
-.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body:not(.tv-set__section-body--fields):not(.tv-drawing-settings__line-row)) {
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-head:has(+ .tv-set__section-body:not(.tv-set__section-body--fields):not(.tv-drawing-settings__line-row):not(:has(.tv-set__check-row))) {
   padding: 0;
   background: none;
   text-transform: none;
@@ -224,12 +239,17 @@
 }
 
 .tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body--fields,
-.tv-drawing-settings__panel > .tv-set__section > .tv-drawing-settings__line-row {
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body.tv-drawing-settings__line-row,
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body:has(.tv-set__check-row),
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body:has(.tv-drawing-settings__text-toolbar),
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body.tv-fib-options-body,
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body:has(.tv-fib-levels-grid),
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body:has(.tv-fib-levels-line-controls) {
   flex: 1 1 100%;
   width: 100%;
 }
 
-.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body:not(.tv-set__section-body--fields):not(.tv-drawing-settings__line-row) {
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body:not(.tv-set__section-body--fields):not(.tv-drawing-settings__line-row):not(:has(.tv-set__check-row)):not(:has(.tv-drawing-settings__text-toolbar)) {
   flex: 0 0 auto;
   width: auto;
 }
@@ -255,6 +275,19 @@
   color: var(--tv-text);
   flex: 1;
   min-width: 0;
+}
+
+.tv-drawing-settings__panel .tv-set__section-body--fields .tv-set__field-row:only-child .tv-set__select-wrap,
+.tv-drawing-settings__panel .tv-set__section-body--fields .tv-set__field-row:only-child .tv-drawing-settings__input {
+  width: 100%;
+}
+
+.tv-drawing-settings__panel .tv-set__section-body--fields .tv-set__field-row:only-child {
+  display: block;
+}
+
+.tv-drawing-settings__panel .tv-set__section-body--fields .tv-set__field-row:only-child .tv-set__field-label {
+  display: none;
 }
 
 .tv-drawing-settings__panel[data-panel="inputs"] .tv-set__field-row {
@@ -511,25 +544,41 @@
   border-color: var(--tv-accent);
 }
 
-.tv-drawing-settings__color-line {
-  display: block;
-  width: 1.75rem;
-  height: 2px;
-  border-radius: 1px;
-}
-
 /* ── Line style row ── */
 .tv-drawing-settings__line-row {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
+  border-bottom: none;
 }
 
+/* Line section — shared inset so toolbar aligns with the section label */
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body.tv-drawing-settings__line-row) {
+  padding-inline: var(--space-4);
+}
+
+.tv-drawing-settings__panel > .tv-set__section:has(> .tv-set__section-body.tv-drawing-settings__line-row) > .tv-set__section-head {
+  padding-inline: 0;
+  padding-top: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.tv-drawing-settings__panel > .tv-set__section > .tv-set__section-body.tv-drawing-settings__line-row {
+  padding-inline: 0;
+  padding-top: 0;
+  padding-bottom: var(--space-4);
+  min-height: 2.75rem;
+  box-sizing: border-box;
+  border-bottom: none;
+}
+
+.tv-drawing-settings__line-control,
 .tv-drawing-settings__line-end-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   width: 2.25rem;
   height: 2rem;
   padding: 0;
@@ -538,11 +587,42 @@
   background: var(--tv-surface);
   color: var(--tv-text);
   cursor: pointer;
-  transition: var(--transition-colors);
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
 
+.tv-drawing-settings__line-control:hover,
 .tv-drawing-settings__line-end-btn:hover {
   border-color: var(--tv-accent);
+  background: var(--tv-surface-hover);
+}
+
+.tv-drawing-settings__line-control--color {
+  padding: var(--space-1);
+}
+
+.tv-drawing-settings__line-control--color .tv-drawing-settings__color-swatch {
+  width: 100%;
+  height: 100%;
+  border: none;
+  border-radius: calc(var(--radius-md) - 3px);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+
+.tv-drawing-settings__line-control--color:hover .tv-drawing-settings__color-swatch {
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.1);
+}
+
+.tv-drawing-settings__line-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  line-height: 0;
+}
+
+.tv-drawing-settings__line-end-btn {
+  padding: 0;
 }
 
 .tv-drawing-settings__line-end-icon {

@@ -62,6 +62,7 @@ import {
   resolveSettingsTab,
   setTvCheck,
   syncDrawingSettingsTabs,
+  syncLineStylePreview,
 } from "./utils.js";
 import { buildCoordsPanel, pointsFromDrawing, readCoordsFromUi } from "./coords/panel.js";
 import {
@@ -113,7 +114,13 @@ import {
   syncShapeDialogUi,
   wireShapeSettings,
 } from "../sections/shape.js";
-import { supportsAnnotationStyleSettings } from "../../tools/annotation/style.js";
+import {
+  isArrowMarkerTool,
+  isBrushTool,
+  isDirectionArrowMarkTool,
+  isHighlighterTool,
+  supportsAnnotationStyleSettings,
+} from "../../tools/annotation/style.js";
 import { supportsShapeStyleSettings } from "../../tools/shape/index.js";
 
 /**
@@ -137,6 +144,7 @@ export function createDrawingSettingsDialog(opts) {
   const tabUnderline = root.querySelector("[data-tab-underline]");
   const styleSwatch = root.querySelector("[data-style-swatch]");
   const styleLine = root.querySelector("[data-style-line]");
+  const styleLineBtn = root.querySelector("[data-style-line-btn]");
   const textSwatch = root.querySelector("[data-text-swatch]");
   const textInput = root.querySelector("[data-text-input]");
   const coordsPanel = root.querySelector("[data-coords-panel]");
@@ -238,22 +246,32 @@ export function createDrawingSettingsDialog(opts) {
     controller.updateDrawing(drawingId, patch);
   }
 
+  function syncLineRowControls() {
+    const type = String(draft.drawingType ?? "");
+    const colorOnly =
+      isDirectionArrowMarkTool(type) ||
+      isArrowMarkerTool(type) ||
+      isBrushTool(type) ||
+      isHighlighterTool(type);
+    if (styleLineBtn instanceof HTMLElement) styleLineBtn.hidden = colorOnly;
+  }
+
   function syncColorUi() {
     const color = draft.color ?? "#2962FF";
     const opacity = draft.colorOpacity ?? 100;
     const textColor = draft.textColor ?? color;
     const textOpacity = draft.textColorOpacity ?? 100;
     const width = draft.lineWidth ?? 2;
+    const style = Number(draft.lineStyle ?? 0);
     if (styleSwatch instanceof HTMLElement) {
       styleSwatch.style.backgroundColor = applyColorOpacity(color, opacity);
     }
-    if (styleLine instanceof HTMLElement) {
-      styleLine.style.backgroundColor = applyColorOpacity(color, opacity);
-      styleLine.style.height = `${width}px`;
-    }
+    const variant = isHighlighterTool(String(draft.drawingType ?? "")) ? "highlighter" : "default";
+    syncLineStylePreview(styleLine, { color, opacity, width, style, variant });
     if (textSwatch instanceof HTMLElement) {
       textSwatch.style.backgroundColor = applyColorOpacity(textColor, textOpacity);
     }
+    syncLineRowControls();
   }
 
   function syncAllUi() {
@@ -561,6 +579,38 @@ export function createDrawingSettingsDialog(opts) {
         onChange: (value) => {
           draft.color = value.color;
           draft.colorOpacity = value.opacity;
+          patchDrawing({ color: value.color, colorOpacity: value.opacity });
+          syncColorUi();
+        },
+      },
+    );
+  });
+
+  styleLineBtn?.addEventListener("click", (ev) => {
+    const btn = ev.currentTarget;
+    if (!(btn instanceof HTMLElement) || btn.hidden) return;
+    colorPicker.openLine(
+      btn,
+      {
+        color: draft.color ?? "#2962FF",
+        width: draft.lineWidth ?? 2,
+        opacity: draft.colorOpacity ?? 100,
+        style: Number(draft.lineStyle ?? 0),
+      },
+      {
+        showOpacity: true,
+        showLineStyle: true,
+        onChange: (value) => {
+          draft.color = value.color;
+          draft.colorOpacity = value.opacity;
+          draft.lineWidth = value.width;
+          draft.lineStyle = value.style;
+          patchDrawing({
+            color: value.color,
+            colorOpacity: value.opacity,
+            lineWidth: value.width,
+            lineStyle: value.style,
+          });
           syncColorUi();
         },
       },
