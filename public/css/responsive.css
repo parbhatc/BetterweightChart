@@ -92,6 +92,7 @@
     right: max(var(--space-2), var(--safe-right));
     width: auto;
     max-height: min(70dvh, 24rem);
+    z-index: 520;
     display: flex;
     flex-direction: column;
   }
