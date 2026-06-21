@@ -2,6 +2,7 @@ import {
   applyLiveBarToPaneSeries,
   updateFormingBarOnPaneSeries,
   appendNewBarOnPaneSeries,
+  upsertBarOnPaneSeries,
 } from "../../../chart/pane/data.js";
 import { createBarLoader } from "../../bar/loader.js";
 import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
@@ -55,6 +56,8 @@ export function attachBarLoader(ctx) {
       updateFormingBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     appendNewBarOnPane: (pane, bar) =>
       appendNewBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
+    upsertBarOnPane: (pane, bar) =>
+      upsertBarOnPaneSeries(pane, bar, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     getBarSecForPane: (pane) => ctx.barSecForPaneLocal(pane),
     setBarsLoading: (v) => {
       ctx.barsLoading = v;
@@ -122,7 +125,8 @@ export function attachBarLoader(ctx) {
   Object.assign(ctx, {
     loadPaneBars: barLoader.loadPaneBars,
     loadBarsForPanes: barLoader.loadBarsForPanes,
-    pushLiveBar: barLoader.pushLiveBar,
+    pushLiveBar: barLoader.upsertLiveBar,
+    upsertLiveBar: barLoader.upsertLiveBar,
     prependHistory: barLoader.prependHistory,
     ensureHistoryNearEdge: barLoader.ensureHistoryNearEdge,
     setOverlayLoaderEnabled: barLoader.setOverlayLoaderEnabled,

@@ -12,7 +12,7 @@ import {
   resolvePriceLineColorForPane,
 } from "../symbol/lineStyle.js";
 import { chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
-import { HISTORY_EDGE_BARS } from "../bar/loader.js";
+import { isNearHistoryLeftEdge } from "../bar/loader.js";
 import {
   buildChartSeriesForPane,
   ensureFutureWhitespace as growFutureWhitespace,
@@ -296,7 +296,14 @@ export function createPaneExtras(deps) {
           ensurePaneFutureWhitespace(p);
         }
         const r = pane.chart.timeScale().getVisibleLogicalRange();
-        if (r && r.from < HISTORY_EDGE_BARS && viewportDeps?.ensureHistoryNearEdge && !pane._loadingHistory && !pane._historyRestorePending) {
+        if (
+          r &&
+          isNearHistoryLeftEdge(r) &&
+          !pane._suppressHistoryPrefetch &&
+          viewportDeps?.ensureHistoryNearEdge &&
+          !pane._loadingHistory &&
+          !pane._historyRestorePending
+        ) {
           void viewportDeps.ensureHistoryNearEdge(pane);
         }
       },
@@ -365,7 +372,7 @@ export function createPaneExtras(deps) {
     let historyScheduled = false;
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-      if (ui.barsLoading || pane._loadingHistory || pane._historyRestorePending) return;
+      if (ui.barsLoading || pane._loadingHistory || pane._historyRestorePending || pane._suppressHistoryPrefetch) return;
       if (pane.lastCrosshairChartTime != null) {
         const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
         refreshHoverBarFromChartTime(pane, pane.lastCrosshairChartTime, isActive);
@@ -373,7 +380,7 @@ export function createPaneExtras(deps) {
       }
       chartDebugCount("perf", "visibleRange");
       chartDebugTime("perf", `visibleRangeHandler pane ${pane.index}`, () => {
-        if (pane.index === 0) {
+        if (pane.index === 0 && !pane._suppressHistoryPrefetch) {
           viewportDeps?.maintainLockedRatio?.();
         }
 
@@ -381,11 +388,12 @@ export function createPaneExtras(deps) {
         if (!r) return;
         const realCount = barsForPane(pane).length;
 
-        if (r.from < HISTORY_EDGE_BARS && viewportDeps?.ensureHistoryNearEdge) {
+        if (isNearHistoryLeftEdge(r) && viewportDeps?.ensureHistoryNearEdge) {
           if (!historyScheduled) {
             historyScheduled = true;
             requestAnimationFrame(() => {
               historyScheduled = false;
+              if (pane._suppressHistoryPrefetch) return;
               void viewportDeps.ensureHistoryNearEdge(pane);
             });
           }

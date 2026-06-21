@@ -6,6 +6,10 @@ import {
 import { loadCustomResolutions } from "../ui/timeframe/custom.js";
 /** Default chart intervals (UDF resolution ids) — TradingView standard list. */
 export const CHART_RESOLUTIONS = [
+  { id: "1S", label: "1s", sec: 1 },
+  { id: "5S", label: "5s", sec: 5 },
+  { id: "15S", label: "15s", sec: 15 },
+  { id: "30S", label: "30s", sec: 30 },
   { id: "1", label: "1m", sec: 60 },
   { id: "3", label: "3m", sec: 180 },
   { id: "5", label: "5m", sec: 300 },

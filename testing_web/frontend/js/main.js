@@ -1,17 +1,20 @@
-import { bootChart, registerIndicator } from "/chart/sdk.js";
+import { bootChart, registerIndicator, readPageOptions } from "/chart/sdk.js";
 import FvgIndicator from "./indicators/fvg/FvgIndicator.js";
 import LevelsIndicator from "./indicators/levels/LevelsIndicator.js";
 import { registerTestingInputPanels } from "./indicators/inputPanels.js";
-import { mountTradeDemo } from "./tradeDemo.js";
+import { mountBarTestDev } from "./barTestDev.js";
 
 registerIndicator(FvgIndicator);
 registerIndicator(LevelsIndicator);
 registerTestingInputPanels();
 
-bootChart()
+const pageOpts = readPageOptions();
+const isFakeFeed = pageOpts.datafeedType !== "tradingview" && !pageOpts.tradingview;
+
+bootChart(pageOpts)
   .then((widget) => {
     if (typeof window !== "undefined") window.__BWC_WIDGET__ = widget;
-    mountTradeDemo(widget);
+    if (isFakeFeed) mountBarTestDev(widget);
   })
   .catch((err) => {
     console.error(err);

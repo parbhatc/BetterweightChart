@@ -31,6 +31,7 @@ export function createChartWidgetApi(ctx) {
     loadPaneBars,
     loadBarsForPanes,
     pushLiveBar,
+    upsertLiveBar,
     prependHistory,
     ensureHistoryNearEdge,
     stashPaneResolutionCache,
@@ -152,18 +153,28 @@ export function createChartWidgetApi(ctx) {
     },
 
     /**
-     * Push one live bar (forming candle update or new bar).
-     * Uses datafeed.pushBar when available, otherwise updates chart directly.
+     * Upsert one bar by `time` — updates OHLC when the bar exists, appends when it is new.
+     *
+     * @example
+     * widget.update({ time: 1710000060, open: 100, high: 101, low: 99, close: 100.5 });
+     *
      * @param {import("../../datafeed/types.js").Bar} bar
+     * @param {{ pane?: object }} [opts]
+     * @returns {boolean} whether the chart accepted the bar
      */
-    update(bar) {
-      const pane = getActivePane();
-      if (!pane) return;
+    update(bar, opts = {}) {
+      const pane = opts.pane ?? getActivePane();
+      if (!pane) return false;
       if (typeof datafeed.pushBar === "function") {
-        datafeed.pushBar(bar, pane.symbol);
-      } else {
-        pushLiveBar(pane, bar);
+        return datafeed.pushBar(bar, pane.symbol) != null;
       }
+      upsertLiveBar(pane, bar);
+      return true;
+    },
+
+    /** @deprecated use update */
+    pushLiveBar(bar, opts = {}) {
+      return widget.update(bar, opts);
     },
 
     /**

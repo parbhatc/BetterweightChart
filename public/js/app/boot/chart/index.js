@@ -189,6 +189,7 @@ export async function bootChart(overrides = {}) {
       loadPaneBars: ctx.loadPaneBars,
       loadBarsForPanes: ctx.loadBarsForPanes,
       pushLiveBar: ctx.pushLiveBar,
+      upsertLiveBar: ctx.upsertLiveBar,
       prependHistory: ctx.prependHistory,
       ensureHistoryNearEdge: ctx.ensureHistoryNearEdge,
       stashPaneResolutionCache: ctx.stashPaneResolutionCache,

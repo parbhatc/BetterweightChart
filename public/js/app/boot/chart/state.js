@@ -71,7 +71,8 @@ import { createFeatureFlags } from "../../../chart/features.js";
  * @property {() => Promise<void>} loadBars
  * @property {(panes: object[]) => Promise<void>} loadBarsForPanes
  * @property {(pane: object) => Promise<void>} loadPaneBars
- * @property {(bar: object) => void} pushLiveBar
+ * @property {(pane: object, bar: object) => void} pushLiveBar
+ * @property {(pane: object, bar: object) => void} upsertLiveBar
  * @property {(...args: unknown[]) => Promise<void>} prependHistory
  * @property {(...args: unknown[]) => Promise<void>} ensureHistoryNearEdge
  * @property {(v: boolean) => void} setOverlayLoaderEnabled
@@ -218,6 +219,7 @@ export function createBootContext(overrides) {
     loadBarsForPanes: async () => {},
     loadPaneBars: async () => {},
     pushLiveBar: () => {},
+    upsertLiveBar: () => {},
     prependHistory: async () => {},
     ensureHistoryNearEdge: async () => {},
     setOverlayLoaderEnabled: () => {},

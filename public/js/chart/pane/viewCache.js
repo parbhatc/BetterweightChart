@@ -50,12 +50,12 @@ export function invalidatePaneChartView(pane) {
  * @param {object | null} symbolInfo
  * @param {{ id: string, sec?: number }[]} resolutions
  */
-export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions) {
+export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions, utcBarsOverride) {
   const sym = settingsStore.get().symbol ?? {};
   const sc = settingsStore.get().scales ?? {};
   const session = sym.session ?? "electronic";
   const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
-  const utcBars = utcBarsForPane(pane, settingsStore, symbolInfo);
+  const utcBars = (utcBarsOverride ?? utcBarsForPane(pane, settingsStore, symbolInfo)).slice();
   const key = utcBarsKey(utcBars, session);
   const barSec = barSecForPane(pane, resolutions);
   const wsEnabled = isFutureWhitespaceEnabled(sc);
@@ -126,6 +126,8 @@ export function patchFormingBarInView(pane, utcBar, settingsStore, symbolInfo, r
   if (idx < 0) return null;
 
   view.utcBars[idx] = utcBar;
+  const paneIdx = pane.bars.findIndex((b) => b.time === utcBar.time);
+  if (paneIdx >= 0) pane.bars[paneIdx] = utcBar;
   const chartBar = {
     ...view.chartBars[idx],
     open: utcBar.open,
@@ -137,7 +139,11 @@ export function patchFormingBarInView(pane, utcBar, settingsStore, symbolInfo, r
   view.chartBars[idx] = chartBar;
 
   const sym = settingsStore.get().symbol ?? {};
-  return buildCandleSeriesData([chartBar], sym)[0] ?? null;
+  const candle = buildCandleSeriesData([chartBar], sym)[0] ?? null;
+  if (candle && view.seriesData[idx] != null) {
+    view.seriesData[idx] = candle;
+  }
+  return candle;
 }
 
 /**
@@ -151,38 +157,21 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
   const allUtc = utcBarsForPane(pane, settingsStore, symbolInfo);
   if (allUtc.at(-1)?.time !== utcBar.time) return null;
 
-  let view = pane._chartView;
-  if (!view?.utcBars?.length || view.timezone !== tz || view.session !== session) {
-    view = getPaneChartView(pane, settingsStore, symbolInfo, resolutions);
-  }
-  if (!view?.utcBars?.length) return null;
-
-  // Callers push to pane.bars before append; getPaneChartView may rebuild the view to
-  // include the new bar while the LWC series still ends one bar earlier.
-  if (view.utcBars.length === allUtc.length && view.utcBars.at(-1)?.time === utcBar.time) {
-    const ws = view.futureWhitespace;
-    if (ws > 0) {
-      view.mapBars.length -= ws;
-      view.seriesData.length -= ws;
-    } else {
-      view.mapBars.pop();
-      view.seriesData.pop();
-    }
-    view.utcBars.pop();
-    view.chartBars.pop();
-    view.utcKey = utcBarsKey(view.utcBars, session);
-    view.timeAdapter = createTimeAdapter({
-      utcBars: view.utcBars,
-      chartBars: view.chartBars,
-      mapBars: view.mapBars,
-      barSec: view.barSec,
-    });
-  }
-
-  if (view.utcBars.length !== allUtc.length - 1) return null;
-
-  const prevUtc = view.utcBars.at(-1);
+  const prevUtcOnly = allUtc.slice(0, -1);
+  const prevUtc = prevUtcOnly.at(-1);
   if (!prevUtc || utcBar.time <= prevUtc.time) return null;
+
+  const tailKey = utcBarsKey(prevUtcOnly, session);
+  let view = pane._chartView;
+  if (
+    !view?.utcBars?.length ||
+    view.timezone !== tz ||
+    view.session !== session ||
+    view.utcKey !== tailKey
+  ) {
+    view = rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions, prevUtcOnly);
+  }
+  if (view.utcBars.length !== prevUtcOnly.length) return null;
 
   view.utcBars.push(utcBar);
   const chartBar = shiftBarsToChartTime([utcBar], tz)[0];

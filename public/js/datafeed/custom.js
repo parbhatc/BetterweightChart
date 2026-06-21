@@ -291,8 +291,9 @@ export function createStaticDatafeed(opts = {}) {
     const rows = barsBySymbol[key];
     const n = normalizeBar(bar);
     const last = rows[rows.length - 1];
-    if (last?.time === n.time) {
-      rows[rows.length - 1] = n;
+    const idx = rows.findIndex((r) => r.time === n.time);
+    if (idx >= 0) {
+      rows[idx] = n;
     } else if (!last || n.time > last.time) {
       rows.push(n);
     } else {

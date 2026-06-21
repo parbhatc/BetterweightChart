@@ -8,6 +8,7 @@ import {
 } from "../future/whitespace.js";
 import { BAR_SEC } from "../constants.js";
 import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
+import { withPreservedViewport } from "./viewport.js";
 import {
   getPaneChartView,
   invalidatePaneChartView,
@@ -119,7 +120,9 @@ export function ensureFutureWhitespace(opts) {
 
   chartDebugTime("data", `setData whitespace ${visible.length}+${nextHave}`, () => {
     if (opts.pane) invalidatePaneChartView(opts.pane);
-    series.setData(buildChartSeriesForDisplay(visible));
+    withPreservedViewport(chart, () => {
+      series.setData(buildChartSeriesForDisplay(visible));
+    }, { followUpFrames: 1 });
   });
   requestAllSessionBgRefresh();
 }
@@ -161,7 +164,9 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
       pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
     }
 
-    pane.series.setData(view.seriesData);
+    withPreservedViewport(pane.chart, () => {
+      pane.series.setData(view.seriesData);
+    }, { followUpFrames: 1 });
 
     chartDebugCount("data", "setData");
     chartDebug("data", "setData live", {
@@ -170,6 +175,42 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
       ws: view.futureWhitespace,
     });
   });
+}
+
+/**
+ * Upsert one bar on the pane series — update when `time` exists, append when it is new at the tail.
+ * @returns {{ ok: boolean, isNewBar: boolean }}
+ */
+export function upsertBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo, resolutions) {
+  const visible = utcBarsForPane(pane, settingsStore, symbolInfo);
+  if (!visible.length) return { ok: false, isNewBar: false };
+
+  const idx = visible.findIndex((b) => b.time === utcBar.time);
+  if (idx >= 0 && idx < visible.length - 1) {
+    return {
+      ok: updateFormingBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo, resolutions),
+      isNewBar: false,
+    };
+  }
+
+  if (idx === visible.length - 1) {
+    const appended = appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo, resolutions);
+    if (appended) return { ok: true, isNewBar: true };
+    return {
+      ok: updateFormingBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo, resolutions),
+      isNewBar: false,
+    };
+  }
+
+  const lastTime = visible.at(-1)?.time;
+  if (lastTime == null || utcBar.time <= lastTime) {
+    return { ok: false, isNewBar: false };
+  }
+
+  return {
+    ok: appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo, resolutions),
+    isNewBar: true,
+  };
 }
 
 /**
@@ -182,12 +223,17 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
     if (!batch) return false;
 
     try {
-      if (batch.whitespace.length) {
-        pane.series.setData(pane._chartView.seriesData);
-      } else {
-        if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
-        pane.series.update(batch.newCandle);
-      }
+      withPreservedViewport(pane.chart, () => {
+        if (batch.whitespace.length) {
+          // Series ends with whitespace — use historicalUpdate so the new real bar replaces W0, not appends before the tail.
+          pane.series.update(batch.newCandle, true);
+          const tailWs = batch.whitespace[batch.whitespace.length - 1];
+          if (tailWs) pane.series.update(tailWs);
+        } else {
+          if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
+          pane.series.update(batch.newCandle);
+        }
+      }, { followUpFrames: 2 });
       pane.timeAdapter = pane._chartView?.timeAdapter ?? pane.timeAdapter;
       delete pane.utcTimeToIdx;
       delete pane.chartTimeToIdx;
@@ -198,14 +244,30 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
         time: utcBar.time,
         close: utcBar.close,
         ws: batch.whitespace.length,
-        mode: batch.whitespace.length ? "setData" : "update",
+        mode: batch.whitespace.length ? "update+ws" : "update",
       });
       return true;
     } catch (err) {
       chartDebugCount("data", "appendFail");
       chartDebug("data", "append bar failed", { pane: pane.index, err: String(err) });
-      invalidatePaneChartView(pane);
-      return false;
+      try {
+        withPreservedViewport(pane.chart, () => {
+          pane.series.setData(pane._chartView.seriesData);
+        }, { followUpFrames: 1 });
+        pane.timeAdapter = pane._chartView?.timeAdapter ?? pane.timeAdapter;
+        delete pane.utcTimeToIdx;
+        delete pane.chartTimeToIdx;
+        delete pane.timeToIdx;
+        chartDebug("data", "append bar recovered via setData", { pane: pane.index });
+        return true;
+      } catch (fallbackErr) {
+        chartDebug("data", "append bar setData fallback failed", {
+          pane: pane.index,
+          err: String(fallbackErr),
+        });
+        invalidatePaneChartView(pane);
+        return false;
+      }
     }
   });
 }

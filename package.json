@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "lightweight-charts": "^5.0.3",
+    "puppeteer": "^25.1.0",
     "ws": "^8.21.0"
   },
   "devDependencies": {

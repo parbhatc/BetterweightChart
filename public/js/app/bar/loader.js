@@ -28,6 +28,17 @@ import {
 
 /** Load more when the visible range is within this many bars of the left edge. */
 export const HISTORY_EDGE_BARS = 80;
+
+/**
+ * True when the user has panned near the oldest loaded bar (scroll-back prefetch).
+ * Negative logical `from` is padding left of bar 0 — not a scroll-back signal.
+ * @param {{ from: number, to: number } | null | undefined} range
+ */
+export function isNearHistoryLeftEdge(range) {
+  if (!range) return false;
+  if (range.from < 0) return false;
+  return range.from < HISTORY_EDGE_BARS;
+}
 /** Max burst loads per pan when prefetching history. */
 const HISTORY_BURST_MAX = 2;
 /** Cooldown after a failed history request (ms). */
@@ -74,6 +85,7 @@ export function createBarLoader(opts) {
     applyLiveBarToPane,
     updateFormingBarOnPane,
     appendNewBarOnPane,
+    upsertBarOnPane,
     getBarSecForPane,
     setBarsLoading,
     refreshStatusLine,
@@ -136,22 +148,24 @@ export function createBarLoader(opts) {
   }
 
   /**
+   * Upsert one live bar by `time` — update OHLC when the bar exists, append when it is new.
    * @param {object} pane
-   * @param {object} rawBar
+   * @param {import("../../datafeed/types.js").Bar} rawBar
    */
-  function applyIncomingBar(pane, rawBar) {
+  function upsertLiveBar(pane, rawBar) {
     if (!pane.bars.length) return;
     if (typeof opts.isReplayLocked === "function" && opts.isReplayLocked()) return;
 
     chartDebugCount("tick", "incoming");
+    pane._suppressHistoryPrefetch = true;
     chartDebugTime("tick", `live tick pane ${pane.index}`, () => {
       const bar = normalizeBar(rawBar);
       const last = pane.bars[pane.bars.length - 1];
-      const barSec = getBarSecForPane?.(pane) ?? 60;
+      const idx = pane.bars.findIndex((b) => b.time === bar.time);
       let isNewBar = false;
 
-      if (bar.time === last.time) {
-        pane.bars[pane.bars.length - 1] = bar;
+      if (idx >= 0) {
+        pane.bars[idx] = bar;
       } else if (bar.time > last.time) {
         const closed = last;
         pane.bars.push(bar);
@@ -171,32 +185,54 @@ export function createBarLoader(opts) {
           pane: pane.index,
           resolution: pane.resolution,
           time: bar.time,
+          open: bar.open,
+          high: bar.high,
+          low: bar.low,
           close: bar.close,
+          ...(bar.volume != null ? { volume: bar.volume } : {}),
         });
-      } else if (bar.time > last.time - barSec) {
-        pane.bars[pane.bars.length - 1] = { ...bar, time: last.time };
       } else {
         chartDebugCount("tick", "ignored");
+        chartDebug("data", "live tick ignored (stale)", {
+          pane: pane.index,
+          barTime: bar.time,
+          lastTime: last.time,
+        });
         return;
       }
 
-      const updated = pane.bars[pane.bars.length - 1];
-      const appended = isNewBar && appendNewBarOnPane?.(pane, updated);
-      const patched = !isNewBar && updateFormingBarOnPane?.(pane, updated);
-      if (!appended && !patched) {
-        chartDebugCount("tick", "setData");
+      const result = isNewBar
+        ? { ok: Boolean(appendNewBarOnPane?.(pane, bar)), isNewBar: true }
+        : { ok: Boolean(updateFormingBarOnPane?.(pane, bar)), isNewBar: false };
+
+      if (!result.ok) {
+        invalidatePaneChartView(pane);
         applyLiveBarToPane(pane);
+        chartDebugCount("tick", "setData");
       } else {
-        chartDebugCount("tick", appended ? "append" : "update");
+        chartDebugCount("tick", result.isNewBar ? "append" : "update");
+        pane.sessionBg?.requestRefresh();
       }
 
+      publishResolutionCache(pane);
+
       if (pane.index === 0) setPrimaryBars(pane);
-      onPaneBarUpdate?.(pane, { isNewBar });
+      onPaneBarUpdate?.(pane, { isNewBar: result.isNewBar });
 
       if (pane.index === getActivePaneIndex()) {
         refreshStatusLine();
       }
     });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        pane._suppressHistoryPrefetch = false;
+      });
+    });
+  }
+
+  /** @deprecated use upsertLiveBar */
+  function applyIncomingBar(pane, rawBar) {
+    upsertLiveBar(pane, rawBar);
   }
 
   function subscribePane(pane) {
@@ -207,7 +243,7 @@ export function createBarLoader(opts) {
     datafeed.subscribeBars(
       pane.symbolInfo,
       pane.resolution,
-      (bar) => applyIncomingBar(pane, bar),
+      (bar) => upsertLiveBar(pane, bar),
       uid,
     );
   }
@@ -360,11 +396,12 @@ export function createBarLoader(opts) {
   function needsMoreHistory(pane) {
     if (pane._historyExhausted || pane._loadingHistory || !pane.bars.length) return false;
     if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
+    if (pane._suppressHistoryPrefetch) return false;
     const ts = pane.chart.timeScale();
     const range = ts.getVisibleLogicalRange();
     if (!range) return false;
     const barSec = getBarSecForPane?.(pane) ?? 60;
-    if (range.from < HISTORY_EDGE_BARS) return true;
+    if (isNearHistoryLeftEdge(range)) return true;
     return hasLeadingGap(pane.bars, barSec);
   }
 
@@ -389,11 +426,23 @@ export function createBarLoader(opts) {
 
   /**
    * @param {object} pane
+   * @param {object} periodParams
+   */
+  function fetchInflightKey(pane, periodParams) {
+    const base = seriesCacheKey(pane.symbol, pane.resolution);
+    const to = periodParams.to ?? "";
+    const from = periodParams.from ?? "";
+    const cb = periodParams.countBack ?? "";
+    return `${base}|f:${from}|t:${to}|c:${cb}`;
+  }
+
+  /**
+   * @param {object} pane
    * @param {object} symbolInfo
    * @param {object} periodParams
    */
   function fetchBarsShared(pane, symbolInfo, periodParams) {
-    const key = seriesCacheKey(pane.symbol, pane.resolution);
+    const key = fetchInflightKey(pane, periodParams);
     let pending = seriesFetchInFlight.get(key);
     if (!pending) {
       pending = datafeed.getBars(symbolInfo, pane.resolution, periodParams).finally(() => {
@@ -625,7 +674,9 @@ export function createBarLoader(opts) {
     loadPaneBars,
     loadBarsForPanes,
     loadBars,
-    pushLiveBar: applyIncomingBar,
+    upsertLiveBar,
+    /** @deprecated use upsertLiveBar */
+    pushLiveBar: upsertLiveBar,
     prependHistory,
     ensureHistoryNearEdge,
     needsMoreHistory,
