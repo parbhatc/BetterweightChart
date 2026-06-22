@@ -1,7 +1,5 @@
 /**
- * Live bar simulation for http://localhost:3461/
- *
- * Auto-starts after chart load on the fake HTTP feed only (not ?datafeed=tradingview).
+ * Live bar simulation (testing site, fake feed only).
  *
  * Console:
  *   __BWC_TEST__.startLive()   — resume auto simulation (default on load)

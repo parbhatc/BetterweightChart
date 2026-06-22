@@ -24,8 +24,14 @@ export function mountNewsToolbar(opts) {
 
   function syncBtnState() {
     const enabled = newsStore.isEnabled();
-    btn.classList.toggle("is-disabled", !enabled);
-    btn.title = enabled ? "News" : "News (disabled)";
+    wrap.hidden = !enabled;
+    if (!enabled) {
+      panel.close();
+      btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    btn.classList.remove("is-disabled");
+    btn.title = "News";
   }
 
   const panel = createNewsPanel({
@@ -37,6 +43,7 @@ export function mountNewsToolbar(opts) {
 
   btn.addEventListener("click", (ev) => {
     ev.stopPropagation();
+    if (!newsStore.isEnabled()) return;
     panel.toggle();
     syncBtnState();
   });

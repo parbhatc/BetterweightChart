@@ -12,8 +12,7 @@ import { precisionFromSettings } from "../../../chart/timezone/list.js";
 import { listIndicators, getIndicatorClass } from "../../../indicators/catalog.js";
 import { createIndicatorDataLoader } from "./indicatorDataLoader.js";
 import { createSecurityContext } from "../../bar/requestSecurity.js";
-import { priceLineBarForPane } from "../../symbol/lineStyle.js";
-import { symbolPriceLabelHeight } from "../../../primitives/priceLineLabel/index.js";
+import { symbolLabelAnchorsForPane } from "../../../chart/scale/symbolLabelAnchors.js";
 
 const FAV_KEY = "bwc-indicator-favorites";
 
@@ -142,17 +141,7 @@ export function attachIndicatorsBoot(ctx) {
   const legends = new Map();
 
   function symbolLabelAnchors(pane) {
-    const sc = ctx.settingsStore.get().scales ?? {};
-    const useCustomLabel = Boolean(sc.countdownToBarClose);
-    if (!useCustomLabel && !sc.symbolLabelValue) return [];
-    const { close } = priceLineBarForPane(pane, ctx.settingsStore, pane.symbolInfo ?? ctx.symbolInfo);
-    if (close == null || !Number.isFinite(close)) return [];
-    return [
-      {
-        price: close,
-        labelHeight: symbolPriceLabelHeight(useCustomLabel),
-      },
-    ];
+    return symbolLabelAnchorsForPane(pane, ctx.settingsStore, pane.symbolInfo ?? ctx.symbolInfo);
   }
 
   function ensureStudyScaleLabels(pane) {

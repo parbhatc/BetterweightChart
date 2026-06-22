@@ -22,13 +22,12 @@
     "postinstall": "node scripts/sync-vendor.mjs",
     "vendor": "node scripts/sync-vendor.mjs",
     "start": "node server/index.mjs",
-    "dev": "nodemon server/index.mjs",
-    "start:testing": "node testing_web/back_end/index.mjs",
-    "dev:testing": "nodemon testing_web/back_end/index.mjs"
+    "dev": "nodemon --watch server --watch testing_web server/index.mjs",
+    "start:testing": "node server/index.mjs",
+    "dev:testing": "npm run dev"
   },
   "dependencies": {
     "lightweight-charts": "^5.0.3",
-    "puppeteer": "^25.1.0",
     "ws": "^8.21.0"
   },
   "devDependencies": {

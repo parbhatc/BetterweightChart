@@ -18,15 +18,19 @@ export function createOrderLineAdapter(manager, id) {
     bodyBorderColor: "transparent",
     quantityBackgroundColor: "#089981",
     quantityTextColor: "#ffffff",
-    quantityBorderColor: "transparent",
-    cancelButtonBorderColor: "rgba(0,0,0,0.12)",
-    cancelButtonIconColor: "rgba(0,0,0,0.55)",
+    quantityBorderColor: "#000000",
+    cancelButtonBorderColor: "#000000",
+    cancelButtonBackgroundColor: "rgba(255, 255, 255, 0.96)",
+    cancelButtonIconColor: "#000000",
     cancelTooltip: "",
     bodyTooltip: "",
     quantityTooltip: "",
     removed: false,
     target: null,
     isMoving: false,
+    pillSide: "right",
+    pillOffset: 20,
+    lineFullWidth: false,
   };
 
   /** @type {import("./types.js").OrderLineHandlers} */
@@ -157,6 +161,11 @@ export function createOrderLineAdapter(manager, id) {
       manager.requestRefresh();
       return adapter;
     },
+    setCancelButtonBackgroundColor(color) {
+      state.cancelButtonBackgroundColor = String(color ?? state.cancelButtonBackgroundColor);
+      manager.requestRefresh();
+      return adapter;
+    },
     setCancelButtonIconColor(color) {
       state.cancelButtonIconColor = String(color ?? state.cancelButtonIconColor);
       manager.requestRefresh();
@@ -174,6 +183,28 @@ export function createOrderLineAdapter(manager, id) {
     },
     setQuantityTooltip(text) {
       state.quantityTooltip = String(text ?? "");
+      manager.requestRefresh();
+      return adapter;
+    },
+    setPillSide(side) {
+      state.pillSide = side === "left" ? "left" : "right";
+      manager.requestRefresh();
+      return adapter;
+    },
+    getPillSide() {
+      return state.pillSide;
+    },
+    setPillOffset(offset) {
+      const n = Number(offset);
+      state.pillOffset = Number.isFinite(n) ? Math.max(0, n) : 0;
+      manager.requestRefresh();
+      return adapter;
+    },
+    getPillOffset() {
+      return state.pillOffset;
+    },
+    setLineFullWidth(full) {
+      state.lineFullWidth = Boolean(full);
       manager.requestRefresh();
       return adapter;
     },

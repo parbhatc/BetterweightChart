@@ -24,6 +24,7 @@ import { csvDatafeedSymbols } from "./lib/csv/history.mjs";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const PUBLIC = path.resolve(ROOT, "public");
+const TESTING = path.resolve(ROOT, "testing_web/frontend");
 const PORT = Number(process.env.PORT) || 3460;
 
 const MIME = {
@@ -49,6 +50,25 @@ function safePublic(relPath) {
   const full = path.resolve(PUBLIC, rel);
   if (!full.startsWith(PUBLIC + path.sep) && full !== PUBLIC) return null;
   return full;
+}
+
+function safeTesting(relPath) {
+  const rel = path.normalize(decodeURIComponent(relPath)).replace(/^(\.\.(\/|\\|$))+/, "");
+  const full = path.resolve(TESTING, rel);
+  if (!full.startsWith(TESTING + path.sep) && full !== TESTING) return null;
+  return full;
+}
+
+function resolveStatic(relPath) {
+  const testingPath = safeTesting(relPath);
+  if (testingPath && fs.existsSync(testingPath) && fs.statSync(testingPath).isFile()) {
+    return testingPath;
+  }
+  const publicPath = safePublic(relPath);
+  if (publicPath && fs.existsSync(publicPath) && fs.statSync(publicPath).isFile()) {
+    return publicPath;
+  }
+  return null;
 }
 
 function serveFile(res, filePath) {
@@ -226,7 +246,7 @@ async function handleApi(pathname, sp, res) {
       datafeed: "/datafeed/config",
       news: "/news/config",
       csvSymbols: csvDatafeedSymbols(),
-      testingWeb: "npm run start:testing",
+      testingWeb: "/testing/",
       endpoints: {
         config: "/datafeed/config",
         search: "/datafeed/search?query=nq",
@@ -235,7 +255,7 @@ async function handleApi(pathname, sp, res) {
         newsConfig: "/news/config",
         newsCalendar: "/news/calendar?day=2026-06-11&types=ppi,cpi,fomc",
       },
-      pages: { chart: "/", embed: "/embed?symbol=NQ&theme=dark&drawings=1" },
+      pages: { chart: "/", testing: "/testing/", embed: "/embed?symbol=NQ&theme=dark&drawings=1" },
     });
     return true;
   }
@@ -275,17 +295,28 @@ function handleRequest(req, res) {
     void handleApi(pathname, searchParams, res).then((apiHandled) => {
       if (apiHandled) return;
 
-      let filePathname = pathname === "/" ? "/index.html" : pathname;
-      if (!path.extname(filePathname)) {
-        const asHtml = safePublic(`${filePathname.slice(1)}.html`);
-        const asIndex = safePublic(path.join(filePathname.slice(1), "index.html"));
-        filePathname = asHtml && fs.existsSync(asHtml) ? `${filePathname}.html` : filePathname;
-        if (!path.extname(filePathname) && asIndex && fs.existsSync(asIndex)) {
-          filePathname = path.join(filePathname, "index.html");
-        }
+      let filePathname = pathname;
+      if (pathname === "/") {
+        filePathname = "/index.html";
+      } else if (pathname === "/testing" || pathname === "/testing/") {
+        filePathname = "/index.html";
+      } else if (pathname.startsWith("/testing/")) {
+        filePathname = pathname.slice("/testing".length) || "/index.html";
+      } else if (!path.extname(pathname)) {
+        const asHtml = resolveStatic(`${pathname.slice(1)}.html`);
+        const asIndex = resolveStatic(path.join(pathname.slice(1), "index.html"));
+        if (asHtml) filePathname = `${pathname}.html`;
+        else if (asIndex) filePathname = path.join(pathname, "index.html");
       }
 
-      const filePath = safePublic(filePathname.startsWith("/") ? filePathname.slice(1) : filePathname);
+      const rel = filePathname.startsWith("/") ? filePathname.slice(1) : filePathname;
+      let filePath = null;
+      if (pathname === "/testing" || pathname === "/testing/" || pathname.startsWith("/testing/")) {
+        filePath = safeTesting(rel);
+      } else {
+        filePath = safePublic(rel);
+      }
+
       if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
         res.writeHead(404, HDR);
         res.end("Not found");
@@ -316,6 +347,8 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, () => {
   console.log(`Chart UI:  http://127.0.0.1:${PORT}/`);
+  console.log(`Testing:   http://127.0.0.1:${PORT}/testing/`);
+  console.log(`Dev helpers: __BWC_TEST_ORDER__ | __BWC_TEST__ (fake feed only)`);
   console.log(`Embed:     http://127.0.0.1:${PORT}/embed?symbol=NQ&theme=dark`);
   console.log(`Datafeed:  http://127.0.0.1:${PORT}/datafeed/config`);
   console.log(`News:      http://127.0.0.1:${PORT}/news/config`);

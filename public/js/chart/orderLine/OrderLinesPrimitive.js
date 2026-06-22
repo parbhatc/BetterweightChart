@@ -6,16 +6,19 @@ import {
   orderLineCenterY,
   ORDER_LINE_ROW_H,
   ORDER_LINE_WIDTH,
+  resolveOrderLineAxisBadgePositions,
 } from "./rowLayout.js";
 
 export class OrderLinesPrimitive {
   /**
    * @param {() => import("./types.js").OrderLineState[]} getStates
    * @param {(layouts: import("./types.js").OrderLineLayout[]) => void} [onAfterLayout]
+   * @param {() => { useStacked?: boolean, getReservedAnchors?: () => { price: number, labelHeight?: number }[] }} [getAxisLabelConfig]
    */
-  constructor(getStates, onAfterLayout) {
+  constructor(getStates, onAfterLayout, getAxisLabelConfig) {
     this._getStates = getStates;
     this._onAfterLayout = onAfterLayout ?? null;
+    this._getAxisLabelConfig = getAxisLabelConfig ?? (() => ({ useStacked: false }));
     /** @type {import("lightweight-charts").IChartApi | null} */
     this._chart = null;
     /** @type {import("lightweight-charts").ISeriesApi | null} */
@@ -87,17 +90,22 @@ export class OrderLinesPrimitive {
       const geom = layoutOrderLineGeometry(state, paneW, scaleW);
 
       let lineStartX = 0;
-      if (range && Number.isFinite(range.to)) {
+      let lineEndX = paneW;
+      if (!state.lineFullWidth && range && Number.isFinite(range.to)) {
         const logical = range.to - (state.lineLength ?? 8);
         const coord = chart.timeScale().logicalToCoordinate(logical);
         if (coord != null && Number.isFinite(coord)) {
           lineStartX = Math.max(0, coord);
         }
       }
-      if (geom.rowLeft > 0 && lineStartX >= geom.rowLeft) {
-        lineStartX = 0;
+      if (state.pillSide === "left") {
+        lineStartX = Math.max(lineStartX, geom.rowLeft + geom.totalW);
+      } else {
+        lineEndX = Math.min(lineEndX, geom.rowLeft);
+        if (!state.lineFullWidth && lineStartX >= geom.rowLeft) {
+          lineStartX = 0;
+        }
       }
-      const lineEndX = paneW;
 
       out.push({
         state,
@@ -187,9 +195,28 @@ class OrderLinesAxisPaneRenderer {
     const layouts = this._source.layoutAll();
     if (!layouts.length) return;
 
+    const axisConfig = this._source._getAxisLabelConfig?.() ?? {};
+    const useStacked = Boolean(axisConfig.useStacked);
+    const series = this._source._series;
+    const stackedCenters =
+      useStacked && series
+        ? resolveOrderLineAxisBadgePositions(
+            series,
+            layouts,
+            axisConfig.getReservedAnchors?.() ?? [],
+          )
+        : null;
+
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       for (const layout of layouts) {
-        drawOrderLineAxisPriceBadge(ctx, layout.state, layout.y, mediaSize.width);
+        const centerY = stackedCenters?.get(layout.state.id);
+        drawOrderLineAxisPriceBadge(
+          ctx,
+          layout.state,
+          layout.y,
+          mediaSize.width,
+          centerY,
+        );
       }
     });
   }

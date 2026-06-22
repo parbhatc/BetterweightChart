@@ -1,5 +1,4 @@
 {
-  "watch": ["server"],
-  "ext": "mjs",
-  "exec": "node server/index.mjs"
+  "ext": "mjs,js",
+  "ignore": ["node_modules", "public", "data", ".git"]
 }

@@ -59,6 +59,36 @@ export function mountSymbolSearch(opts) {
     open = false;
     dropdown.hidden = true;
     trigger?.setAttribute("aria-expanded", "false");
+    dropdown.style.top = "";
+    dropdown.style.left = "";
+    dropdown.style.right = "";
+    dropdown.style.width = "";
+    window.removeEventListener("resize", positionDropdown);
+    window.removeEventListener("scroll", positionDropdown, true);
+  }
+
+  function positionDropdown() {
+    if (!open || !trigger) return;
+    const pad = 8;
+    const gap = 4;
+    const rect = trigger.getBoundingClientRect();
+    let top = rect.bottom + gap;
+    let left = Math.max(pad, rect.left);
+
+    dropdown.style.top = `${top}px`;
+    dropdown.style.left = `${left}px`;
+    dropdown.style.right = "auto";
+    dropdown.style.width = "";
+
+    const panelRect = dropdown.getBoundingClientRect();
+    if (panelRect.right > window.innerWidth - pad) {
+      left = Math.max(pad, window.innerWidth - panelRect.width - pad);
+      dropdown.style.left = `${left}px`;
+    }
+    if (panelRect.bottom > window.innerHeight - pad) {
+      const flipTop = rect.top - panelRect.height - gap;
+      if (flipTop >= pad) dropdown.style.top = `${flipTop}px`;
+    }
   }
 
   function openDropdown() {
@@ -66,7 +96,10 @@ export function mountSymbolSearch(opts) {
     dropdown.hidden = false;
     trigger?.setAttribute("aria-expanded", "true");
     searchInput.value = "";
-    void renderList("");
+    positionDropdown();
+    window.addEventListener("resize", positionDropdown);
+    window.addEventListener("scroll", positionDropdown, true);
+    void renderList("").then(() => positionDropdown());
     searchInput.focus();
   }
 

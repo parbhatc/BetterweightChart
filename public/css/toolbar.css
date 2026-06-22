@@ -11,7 +11,7 @@
   background: var(--tv-bg-elevated);
   border-bottom: 1px solid var(--tv-border);
   flex-shrink: 0;
-  z-index: 20;
+  z-index: 100;
   position: relative;
 }
 

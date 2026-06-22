@@ -20,7 +20,7 @@ function rectsOverlap(aTop, aBottom, bTop, bBottom) {
  * @param {{ price: number, color: string, text: string }[]} labels
  * @param {{ price: number, labelHeight?: number }[]} reserved
  */
-function resolveStudyLabelPositions(series, labels, reserved) {
+export function resolveStudyLabelPositions(series, labels, reserved) {
   /** @type {{ top: number, bottom: number, anchorPrice?: number, fixed?: boolean }[]} */
   const placed = [];
   const symbolPrice = reserved[0]?.price;
@@ -74,7 +74,7 @@ function resolveStudyLabelPositions(series, labels, reserved) {
     }
 
     placed.push({ top, bottom: top + LABEL_H });
-    out.push({ price: item.price, color: item.color, text: item.text, centerY: top + LABEL_H / 2 });
+    out.push({ ...item, centerY: top + LABEL_H / 2 });
   }
   return out;
 }

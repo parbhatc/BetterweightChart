@@ -80,8 +80,8 @@
 }
 
 .tv-symbol__dropdown {
-  position: absolute;
-  top: calc(100% + var(--space-1));
+  position: fixed;
+  top: 0;
   left: 0;
   width: min(22rem, 92vw);
   background: var(--tv-surface);

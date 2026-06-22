@@ -1,3 +1,5 @@
+import { resolveStudyLabelPositions } from "../../indicators/primitives/scaleLabels.js";
+
 export const ORDER_LINE_FONT =
   "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
 export const ORDER_LINE_ROW_H = 18;
@@ -14,6 +16,7 @@ export const ORDER_LINE_PAD_X = 6;
 export const ORDER_LINE_FONT_SIZE = 11;
 export const ORDER_LINE_MIN_BODY_W = 36;
 export const ORDER_LINE_MIN_QTY_W = 22;
+export const ORDER_LINE_PILL_INSET = 4;
 
 /**
  * @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} ctx
@@ -56,13 +59,17 @@ export function measureOrderLineRow(state, ctx = null) {
  * @param {number} paneW
  * @param {number} scaleW
  */
-export function layoutOrderLineGeometry(state, paneW, scaleW) {
+export function layoutOrderLineGeometry(state, paneW, _scaleW) {
   const { totalW } = measureOrderLineRow(state);
-  const plotEdge = Math.max(0, paneW - scaleW);
-  const rowLeft = Math.max(0, plotEdge - totalW);
+  const plotRight = paneW;
+  const offset = Math.max(0, Number(state.pillOffset) || 0);
+  const rowLeft =
+    state.pillSide === "left"
+      ? ORDER_LINE_PILL_INSET + offset
+      : Math.max(0, plotRight - totalW - offset);
   return {
     totalW,
-    plotEdge,
+    plotEdge: plotRight,
     rowLeft,
   };
 }
@@ -110,29 +117,72 @@ function roundRect(ctx, x, y, w, h, rtl, rtr, rbr, rbl) {
 }
 
 /**
+ * Stack order-line price-axis badges (entry / SL / TP) when noOverlappingLabels is on.
+ * @param {import("lightweight-charts").ISeriesApi} series
+ * @param {import("./types.js").OrderLineLayout[]} layouts
+ * @param {{ price: number, labelHeight?: number }[]} [reserved]
+ * @returns {Map<string, number>} order line id → badge centerY (media coords)
+ */
+export function resolveOrderLineAxisBadgePositions(series, layouts, reserved = []) {
+  if (!series || !layouts.length) return new Map();
+
+  const labels = layouts.map((layout) => ({
+    id: layout.state.id,
+    price: layout.state.price,
+    color: layout.state.lineColor || layout.state.bodyBackgroundColor,
+    text: formatOrderLinePrice(layout.state.price),
+  }));
+
+  const resolved = resolveStudyLabelPositions(
+    series,
+    labels,
+    reserved.map((anchor) => ({ ...anchor, labelHeight: anchor.labelHeight ?? ORDER_LINE_ROW_H })),
+  );
+
+  /** @type {Map<string, number>} */
+  const out = new Map();
+  for (const row of resolved) {
+    if (row.id != null) out.set(String(row.id), row.centerY);
+  }
+  return out;
+}
+
+/**
  * Price-axis badge — matches symbol price line (PriceLineLabelPrimitive).
  * @param {CanvasRenderingContext2D} ctx
  * @param {import("./types.js").OrderLineState} state
  * @param {number} y
  * @param {number} scaleW
+ * @param {number} [centerYOverride]
  */
-export function drawOrderLineAxisPriceBadge(ctx, state, y, scaleW) {
+export function drawOrderLineAxisPriceBadge(ctx, state, y, scaleW, centerYOverride) {
   const priceText = formatOrderLinePrice(state.price);
   if (!priceText) return;
 
-  const centerY = orderLineCenterY(y);
-  const top = Math.round(centerY - ORDER_LINE_ROW_H / 2);
+  const centerY =
+    centerYOverride != null && Number.isFinite(centerYOverride)
+      ? centerYOverride
+      : orderLineCenterY(y);
+  const rowH = ORDER_LINE_ROW_H;
+  const top = Math.round(centerY - rowH / 2);
   const color = state.lineColor || state.bodyBackgroundColor;
 
   ctx.save();
   ctx.fillStyle = color;
-  roundRect(ctx, 0, top, scaleW, ORDER_LINE_ROW_H, 2, 0, 0, 2);
+  roundRect(ctx, 0, top, scaleW, rowH, 2, 0, 0, 2);
   ctx.fill();
-  ctx.fillStyle = state.bodyTextColor || "#ffffff";
+  const fill = color?.toLowerCase?.() ?? "";
+  const axisText =
+    fill === "#00ff00"
+      ? "#000000"
+      : fill === "#ff0000"
+        ? "#ffffff"
+        : state.bodyTextColor || "#ffffff";
+  ctx.fillStyle = axisText;
   ctx.font = `600 12px ${ORDER_LINE_FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(priceText, scaleW / 2, top + ORDER_LINE_ROW_H / 2);
+  ctx.fillText(priceText, scaleW / 2, top + rowH / 2);
   ctx.restore();
 }
 

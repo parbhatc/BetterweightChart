@@ -14,6 +14,7 @@
  * @property {string} quantityTextColor
  * @property {string} quantityBorderColor
  * @property {string} cancelButtonBorderColor
+ * @property {string} cancelButtonBackgroundColor
  * @property {string} cancelButtonIconColor
  * @property {string} cancelTooltip
  * @property {string} bodyTooltip
@@ -21,6 +22,9 @@
  * @property {boolean} removed
  * @property {{ price: number, type: string | null } | null} target
  * @property {boolean} isMoving
+ * @property {"left"|"right"} [pillSide] control pill anchor on chart pane
+ * @property {number} [pillOffset] px inset from the anchored edge (right default)
+ * @property {boolean} [lineFullWidth] span the horizontal line across the full chart pane
  */
 
 /**

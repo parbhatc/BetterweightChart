@@ -209,12 +209,13 @@ export function createBarLoader(opts) {
         invalidatePaneChartView(pane);
         applyLiveBarToPane(pane);
         chartDebugCount("tick", "setData");
-      } else {
+      } else if (isNewBar) {
         chartDebugCount("tick", result.isNewBar ? "append" : "update");
         pane.sessionBg?.requestRefresh();
+        publishResolutionCache(pane);
+      } else {
+        chartDebugCount("tick", "update");
       }
-
-      publishResolutionCache(pane);
 
       if (pane.index === 0) setPrimaryBars(pane);
       onPaneBarUpdate?.(pane, { isNewBar: result.isNewBar });
@@ -382,7 +383,6 @@ export function createBarLoader(opts) {
         return false;
       }
       syncPrependedBarsToPeers(pane, older);
-      publishResolutionCache(pane);
       return true;
     } catch (err) {
       chartDebug("data", "prependHistory failed", { pane: pane.index, err: String(err) });

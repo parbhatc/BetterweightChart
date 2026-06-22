@@ -297,9 +297,18 @@
 
 .order-line-control--moving {
   opacity: 0.92;
-  box-shadow:
-    0 3px 12px color-mix(in srgb, #000 35%, transparent),
-    0 0 0 1px color-mix(in srgb, #000 10%, transparent);
+}
+
+.order-line-control--tv {
+  box-shadow: none;
+}
+
+.order-line-control--tv.order-line-control--moving {
+  opacity: 0.92;
+}
+
+.order-line-control--pill-left {
+  margin-left: 0;
 }
 
 .order-line-control__segment {

@@ -1,6 +1,7 @@
 import { createOrderLineAdapter } from "./createOrderLineAdapter.js";
 import { createOrderLineControlsOverlay } from "./orderLineControlsOverlay.js";
 import { OrderLinesPrimitive } from "./OrderLinesPrimitive.js";
+import { symbolLabelAnchorsForPane } from "../scale/symbolLabelAnchors.js";
 import {
   layoutOrderLineGeometry,
   orderLineCenterY,
@@ -17,9 +18,16 @@ let nextId = 1;
  * Manages TradingView-style order lines on the active chart pane.
  */
 export class OrderLineManager {
-  /** @param {() => object | null | undefined} getActivePane */
-  constructor(getActivePane) {
+  /**
+   * @param {() => object | null | undefined} getActivePane
+   * @param {object} [opts]
+   * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} [opts.settingsStore]
+   * @param {() => object | null | undefined} [opts.symbolInfo]
+   */
+  constructor(getActivePane, opts = {}) {
     this._getActivePane = getActivePane;
+    this._settingsStore = opts.settingsStore ?? null;
+    this._symbolInfo = opts.symbolInfo ?? (() => null);
     /** @type {Map<string, ReturnType<typeof createOrderLineAdapter>>} */
     this._adapters = new Map();
     /** @type {import("./OrderLinesPrimitive.js").OrderLinesPrimitive | null} */
@@ -49,6 +57,21 @@ export class OrderLineManager {
     this._onPointerLeave = this._onPointerLeave.bind(this);
     this._onContextMenu = this._onContextMenu.bind(this);
     this._onOverlayPointerDown = this._onOverlayPointerDown.bind(this);
+
+    this._settingsStore?.onChange?.(() => this.requestRefresh());
+  }
+
+  _axisLabelConfig() {
+    const sc = this._settingsStore?.get?.().scales ?? {};
+    const pane = this._paneRef ?? this._getActivePane();
+    const symbolInfo = typeof this._symbolInfo === "function" ? this._symbolInfo() : this._symbolInfo;
+    return {
+      useStacked: sc.noOverlappingLabels !== false,
+      getReservedAnchors: () => {
+        if (!pane || !this._settingsStore) return [];
+        return symbolLabelAnchorsForPane(pane, this._settingsStore, symbolInfo);
+      },
+    };
   }
 
   /** @returns {import("./types.js").OrderLineState[]} */
@@ -69,6 +92,7 @@ export class OrderLineManager {
     this._primitive = new OrderLinesPrimitive(
       () => this._activeStates(),
       (layouts) => this._applyOverlayLayouts(layouts),
+      () => this._axisLabelConfig(),
     );
     pane.series.attachPrimitive(this._primitive);
     this._ensureOverlay(pane);
@@ -414,7 +438,7 @@ export class OrderLineManager {
   }
 }
 
-/** @param {() => object | null | undefined} getActivePane */
-export function createOrderLineManager(getActivePane) {
-  return new OrderLineManager(getActivePane);
+/** @param {() => object | null | undefined} getActivePane @param {object} [opts] */
+export function createOrderLineManager(getActivePane, opts) {
+  return new OrderLineManager(getActivePane, opts);
 }

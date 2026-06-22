@@ -388,12 +388,12 @@ export function createPaneExtras(deps) {
         if (!r) return;
         const realCount = barsForPane(pane).length;
 
-        if (isNearHistoryLeftEdge(r) && viewportDeps?.ensureHistoryNearEdge) {
+        if (isNearHistoryLeftEdge(r) && viewportDeps?.ensureHistoryNearEdge && !ui.chartPanning) {
           if (!historyScheduled) {
             historyScheduled = true;
             requestAnimationFrame(() => {
               historyScheduled = false;
-              if (pane._suppressHistoryPrefetch) return;
+              if (pane._suppressHistoryPrefetch || ui.chartPanning) return;
               void viewportDeps.ensureHistoryNearEdge(pane);
             });
           }

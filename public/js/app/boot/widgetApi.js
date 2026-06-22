@@ -54,7 +54,10 @@ export function createChartWidgetApi(ctx) {
     activePriceScaleId,
   } = ctx;
 
-  const orderLines = createOrderLineManager(getActivePane);
+  const orderLines = createOrderLineManager(getActivePane, {
+    settingsStore,
+    symbolInfo: getSymbolInfo,
+  });
   const executionShapes = createExecutionShapeManager(getActivePane);
   const shortcutRegistry = createWidgetShortcutRegistry(getActivePane);
   /** @type {ReturnType<typeof createTradingViewChartApi> | null} */

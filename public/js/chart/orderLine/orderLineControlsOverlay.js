@@ -6,6 +6,7 @@ import {
   ORDER_LINE_FONT_SIZE,
   ORDER_LINE_ROW_H,
 } from "./rowLayout.js";
+import { hasShellBorder } from "./pillLayout.js";
 
 /** @param {import("./types.js").OrderLineState} state */
 function controlSignature(state) {
@@ -15,8 +16,12 @@ function controlSignature(state) {
     state.lineColor,
     state.bodyBackgroundColor,
     state.bodyTextColor,
+    state.bodyBorderColor,
     state.quantityBackgroundColor,
     state.quantityTextColor,
+    state.quantityBorderColor,
+    state.cancelButtonBackgroundColor,
+    state.cancelButtonBorderColor,
     state.cancelButtonIconColor,
     state.bodyTooltip,
     state.quantityTooltip,
@@ -24,9 +29,18 @@ function controlSignature(state) {
   ].join("\0");
 }
 
+/** @param {string | undefined} color */
+function dividerColor(color) {
+  return color && color !== "transparent" ? color : "";
+}
+
+/** @param {import("./types.js").OrderLineState} state */
+function qtyDividerColor(state) {
+  return dividerColor(state.quantityBorderColor) || dividerColor(state.bodyBorderColor);
+}
+
 /**
- * DOM overlay for interactive order-line controls (tooltip-style pill).
- * Canvas keeps the horizontal line + axis badge; this handles hover, cursor, and clicks.
+ * DOM overlay for interactive order-line controls (TradingView-style pill).
  * @param {HTMLElement} paneEl
  */
 export function createOrderLineControlsOverlay(paneEl) {
@@ -38,14 +52,6 @@ export function createOrderLineControlsOverlay(paneEl) {
   /** @type {Map<string, HTMLElement>} */
   const nodes = new Map();
 
-  /**
-   * @param {Array<{
-   *   id: string;
-   *   left: number;
-   *   y: number;
-   *   state: import("./types.js").OrderLineState;
-   * }>} entries
-   */
   function sync(entries) {
     const seen = new Set();
     for (const entry of entries) {
@@ -68,27 +74,36 @@ export function createOrderLineControlsOverlay(paneEl) {
     root.hidden = entries.length === 0;
   }
 
-  /**
-   * @param {HTMLElement} el
-   * @param {{ id: string; left: number; y: number; state: import("./types.js").OrderLineState }} entry
-   */
   function paintControl(el, entry) {
     const { state, left, y } = entry;
     const centerY = orderLineCenterY(y);
+    const accent = state.lineColor || state.bodyBackgroundColor;
+    const shellBorder = dividerColor(state.bodyBorderColor);
 
     el.style.left = `${Math.round(left)}px`;
     el.style.top = `${centerY}px`;
+    el.style.height = `${ORDER_LINE_ROW_H}px`;
     el.dataset.olId = entry.id;
     el.classList.toggle("order-line-control--moving", Boolean(state.isMoving));
+    el.classList.toggle("order-line-control--pill-left", state.pillSide === "left");
+    el.classList.toggle("order-line-control--tv", hasShellBorder(state));
 
     const signature = controlSignature(state);
     if (el.dataset.olSignature === signature) return;
     el.dataset.olSignature = signature;
 
     const { bodyText, qtyText, bodyW, qtyW } = measureOrderLineRow(state);
-    const accent = state.lineColor || state.bodyBackgroundColor;
-    const bodyBg = state.bodyBackgroundColor || accent;
-    const qtyBg = state.quantityBackgroundColor || accent;
+    const qtyDiv = qtyDividerColor(state);
+
+    if (shellBorder) {
+      el.style.border = `1px solid ${shellBorder}`;
+      el.style.borderRadius = "2px";
+      el.style.boxShadow = "none";
+    } else {
+      el.style.border = "";
+      el.style.borderRadius = "";
+      el.style.boxShadow = "";
+    }
 
     el.innerHTML = "";
 
@@ -97,7 +112,7 @@ export function createOrderLineControlsOverlay(paneEl) {
     body.className = "order-line-control__segment order-line-control__body";
     body.dataset.olPart = "body";
     body.style.width = `${bodyW}px`;
-    body.style.backgroundColor = bodyBg;
+    body.style.backgroundColor = state.bodyBackgroundColor || accent;
     body.style.color = state.bodyTextColor || "#ffffff";
     body.textContent = bodyText;
     body.title = state.bodyTooltip || "Modify order";
@@ -109,19 +124,27 @@ export function createOrderLineControlsOverlay(paneEl) {
       qty.className = "order-line-control__segment order-line-control__qty";
       qty.dataset.olPart = "qty";
       qty.style.width = `${qtyW}px`;
-      qty.style.backgroundColor = qtyBg;
+      qty.style.backgroundColor = state.quantityBackgroundColor || accent;
       qty.style.color = state.quantityTextColor || "#ffffff";
+      if (qtyDiv) {
+        qty.style.borderLeft = `1px solid ${qtyDiv}`;
+        qty.style.borderRight = `1px solid ${qtyDiv}`;
+      }
       qty.textContent = qtyText;
       qty.title = state.quantityTooltip || state.bodyTooltip || "Modify order";
       el.appendChild(qty);
     }
 
+    const cancelBg =
+      state.cancelButtonBackgroundColor || "rgba(255, 255, 255, 0.96)";
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.className = "order-line-control__segment order-line-control__cancel";
     cancel.dataset.olPart = "cancel";
     cancel.style.width = `${ORDER_LINE_CANCEL_W}px`;
-    cancel.style.color = state.cancelButtonIconColor || "rgba(0,0,0,0.55)";
+    cancel.style.backgroundColor = cancelBg;
+    cancel.style.color = state.cancelButtonIconColor || "#000000";
+    cancel.style.border = "0";
     cancel.setAttribute("aria-label", state.cancelTooltip || "Cancel order");
     cancel.title = state.cancelTooltip || "Cancel order";
     cancel.innerHTML =
