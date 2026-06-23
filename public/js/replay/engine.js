@@ -7,7 +7,7 @@ import {
 } from "../chart/pane/data.js";
 import { getPaneChartView, invalidatePaneChartView } from "../chart/pane/viewCache.js";
 import { replayDebug } from "./debug.js";
-import { patchReplayHtfFormingBar, replayLtCursorFromHtfBar } from "./formingBar.js";
+import { patchReplayHtfFormingBar, resolveReplayCursorOnTfSwitch } from "./formingBar.js";
 import { setResolutionCacheReplayTtl, clearResolutionCache } from "../app/bar/resolutionCache.js";
 import { clearAllHtfBars } from "../app/bar/htfBarCache.js";
 import {
@@ -18,6 +18,13 @@ import {
   saveReplaySession,
   trimBarsToUtcTime,
 } from "./persist.js";
+import {
+  captureViewportBarLayout,
+  computeViewportBarLayoutLogical,
+  computeViewportLogicalFromUtc,
+  restoreViewportBarLayout,
+  restoreViewportBarLayoutFromUtc,
+} from "../chart/pane/viewportBarLayout.js";
 
 /**
  * @param {import("../app/boot/chart/state.js").BootContext} ctx
@@ -43,6 +50,8 @@ export function attachReplayEngine(ctx, replay) {
 
   /** @type {boolean} */
   let replayTfChangeInFlight = false;
+  /** @type {boolean} */
+  let replaySkipSyncApply = false;
 
   /** @param {object} pane @returns {number} bars added to snapshot */
   function mergePaneHistoryIntoSnapshot(pane) {
@@ -78,6 +87,21 @@ export function attachReplayEngine(ctx, replay) {
           bars: trimBarsToUtcTime(pane.bars, state.currentBarTime),
           cursorUtc: state.currentBarTime,
         });
+      }
+      // On a plain boot prepend the bar loader's restoreViewportAfterPrepend keeps
+      // the viewport correctly. But after a replay timeframe switch the loader's
+      // relative shift is unreliable (it captures a stale logical range), so when we
+      // have a stashed layout for this resolution we re-anchor absolutely from the
+      // replay cursor. This runs after the loader's deferred restores (debounced
+      // onHistoryPrepended), so it wins without a double-shift.
+      if (
+        res &&
+        lastAppliedEndIndex != null &&
+        replayViewportByResolution.has(res) &&
+        !replayTfChangeInFlight
+      ) {
+        restoreReplayViewportAfterTfSwitch(pane, lastAppliedEndIndex, null);
+        ctx.applyPriceScaleMarginsForPane?.(pane);
       }
       persistSession(state);
     }
@@ -126,6 +150,10 @@ export function attachReplayEngine(ctx, replay) {
   let ltResolutionBeforeTfSwitch = null;
   /** @type {Map<string, { bars: object[], cursorUtc: number }>} */
   const replayBarsByResolution = new Map();
+  /** @type {Map<string, number>} replay instant when each resolution was last entered */
+  const replayCursorAtEntry = new Map();
+  /** @type {Map<string, ReturnType<typeof captureViewportBarLayout>>} */
+  const replayViewportByResolution = new Map();
   /** @type {{ resolution: string, bars: object[] } | null} */
   let replayLtBarsForForming = null;
 
@@ -136,6 +164,8 @@ export function attachReplayEngine(ctx, replay) {
 
   function clearReplayBarsByResolution() {
     replayBarsByResolution.clear();
+    replayCursorAtEntry.clear();
+    replayViewportByResolution.clear();
     replayLtBarsForForming = null;
   }
 
@@ -261,18 +291,16 @@ export function attachReplayEngine(ctx, replay) {
     }
 
     const cached = replayBarsByResolution.get(activePane.resolution);
-    if (
-      cached?.bars?.length &&
-      cached.cursorUtc === cursorUtc &&
-      barsCoverReplayAnchor(cached.bars, cursorUtc)
-    ) {
-      activePane.bars = cached.bars.slice();
+    if (cached?.bars?.length && barsCoverReplayAnchor(cached.bars, cursorUtc)) {
+      activePane.bars = trimBarsToUtcTime(cached.bars, cursorUtc);
       invalidatePaneChartView(activePane);
       replayDebug("resolutionChange.restoreCached", {
         resolution: activePane.resolution,
-        bars: cached.bars.length,
-        last: cached.bars.at(-1)?.time,
-        close: cached.bars.at(-1)?.close,
+        bars: activePane.bars.length,
+        last: activePane.bars.at(-1)?.time,
+        close: activePane.bars.at(-1)?.close,
+        cursorUtc,
+        cachedCursor: cached.cursorUtc,
       });
       return true;
     }
@@ -282,9 +310,11 @@ export function attachReplayEngine(ctx, replay) {
   /** @param {number} cursorUtc */
   function syncLtBarsCacheForCursor(cursorUtc) {
     if (!replayLtBarsForForming?.bars?.length || cursorUtc == null) return;
-    replayBarsByResolution.set(replayLtBarsForForming.resolution, {
+    const res = replayLtBarsForForming.resolution;
+    const existing = replayBarsByResolution.get(res);
+    replayBarsByResolution.set(res, {
       bars: trimBarsToUtcTime(replayLtBarsForForming.bars, cursorUtc),
-      cursorUtc,
+      cursorUtc: existing?.cursorUtc ?? cursorUtc,
     });
   }
 
@@ -311,20 +341,229 @@ export function attachReplayEngine(ctx, replay) {
     return patch;
   }
 
-  /** @param {object} pane @param {number} endIndex */
-  function scrollPaneToReplayCursor(pane, endIndex) {
-    const count = pane.bars.length;
-    if (!count || endIndex == null || endIndex < 0 || !pane.chart) return;
-    const ts = pane.chart.timeScale();
-    const range = ts.getVisibleLogicalRange();
-    if (!range) return;
-    const width = range.to - range.from;
-    const offset = ts.options().rightOffset ?? 8;
+  /** @param {object} pane @param {number} endIndex @param {number} [fallbackWidth] */
+  function computeScrollToReplayCursorLogical(pane, endIndex, fallbackWidth = 80) {
+    const count = pane.bars?.length ?? 0;
+    if (!count || endIndex == null || endIndex < 0) return null;
+    const ts = pane.chart?.timeScale();
+    const offset = ts?.options()?.rightOffset ?? 8;
     const anchor = endIndex + 1;
-    ts.setVisibleLogicalRange({
+    const width = fallbackWidth;
+    return {
       from: anchor - width + offset * 0.35,
       to: anchor + offset,
-    });
+    };
+  }
+
+  /**
+   * @param {object} pane
+   * @param {number} endIndex
+   * @param {string | null} [fromResolution]
+   * @returns {{ from: number, to: number } | null}
+   */
+  function resolveReplayViewportLogicalRange(pane, endIndex, fromResolution = null) {
+    if (!pane?.chart) return computeScrollToReplayCursorLogical(pane, endIndex);
+
+    pane.replayCursorEndIndex = endIndex;
+    const targetRes = pane.resolution ?? "";
+    const toSec = resolutionSec(targetRes);
+    const fromRes =
+      fromResolution ?? (toSec != null ? inferViewportFromResolution(targetRes) : null);
+    const fromSec = fromRes ? resolutionSec(fromRes) : null;
+    const fromLayout = fromRes ? replayViewportByResolution.get(fromRes) : null;
+    const savedTarget = replayViewportByResolution.get(targetRes);
+
+    /** @type {ReturnType<typeof captureViewportBarLayout> | null} */
+    let layout = null;
+    /** @type {string} */
+    let reason = "fallback";
+
+    if (fromSec != null && toSec != null && toSec > fromSec && fromLayout) {
+      layout = fromLayout;
+      reason = "lt-htf";
+    } else if (fromSec != null && toSec != null && toSec < fromSec && savedTarget) {
+      layout = savedTarget;
+      reason = "htf-lt";
+    } else if (savedTarget) {
+      layout = savedTarget;
+      reason = "cached";
+    }
+
+    if (layout) {
+      const logical = computeViewportBarLayoutLogical(pane, layout);
+      if (logical) {
+        replayDebug("viewport.compute", {
+          reason,
+          fromResolution: fromRes,
+          toResolution: targetRes,
+          width: layout.width,
+          toBeyondAnchor: layout.toBeyondAnchor,
+          ...logical,
+        });
+        return logical;
+      }
+    }
+
+    if (
+      fromLayout?.visibleFromUtc != null &&
+      fromLayout?.visibleToUtc != null &&
+      ctx.settingsStore &&
+      ctx.resolutions
+    ) {
+      const utcLogical = computeViewportLogicalFromUtc(
+        pane,
+        fromLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+      );
+      if (utcLogical) {
+        replayDebug("viewport.compute.utc", {
+          reason: "utc-fallback",
+          fromResolution: fromRes,
+          toResolution: targetRes,
+          ...utcLogical,
+        });
+        return utcLogical;
+      }
+    }
+
+    const fallback = computeScrollToReplayCursorLogical(
+      pane,
+      endIndex,
+      layout?.width ?? fromLayout?.width ?? 80,
+    );
+    replayDebug("viewport.compute.fallback", { reason, ...fallback });
+    return fallback;
+  }
+
+  /** @param {object} pane @param {number} endIndex @param {number} [fallbackWidth] */
+  function scrollPaneToReplayCursor(pane, endIndex, fallbackWidth = 80) {
+    const logical = computeScrollToReplayCursorLogical(pane, endIndex, fallbackWidth);
+    if (!logical || !pane.chart) return;
+    pane.chart.timeScale().setVisibleLogicalRange(logical);
+  }
+
+  /**
+   * Finest resolution with a stashed viewport below the target (for HTF re-restore after prepend).
+   * @param {string} targetRes
+   * @returns {string | null}
+   */
+  function inferViewportFromResolution(targetRes) {
+    const targetSec = resolutionSec(targetRes);
+    if (targetSec == null) return null;
+    let bestRes = null;
+    let bestSec = Infinity;
+    for (const res of replayViewportByResolution.keys()) {
+      const sec = resolutionSec(res);
+      if (sec == null || sec >= targetSec) continue;
+      if (sec < bestSec) {
+        bestSec = sec;
+        bestRes = res;
+      }
+    }
+    return bestRes;
+  }
+
+  /**
+   * @param {object} pane
+   * @param {number} endIndex
+   * @param {string | null} [fromResolution]
+   */
+  function restoreReplayViewportAfterTfSwitch(pane, endIndex, fromResolution = null) {
+    if (!pane?.chart || !ctx.settingsStore || !ctx.resolutions) {
+      scrollPaneToReplayCursor(pane, endIndex);
+      return;
+    }
+
+    const viewportOpts = { skipPrice: true };
+
+    pane.replayCursorEndIndex = endIndex;
+    const targetRes = pane.resolution ?? "";
+    const toSec = resolutionSec(targetRes);
+    const fromRes =
+      fromResolution ?? (toSec != null ? inferViewportFromResolution(targetRes) : null);
+    const fromSec = fromRes ? resolutionSec(fromRes) : null;
+    const fromLayout = fromRes ? replayViewportByResolution.get(fromRes) : null;
+    const savedTarget = replayViewportByResolution.get(targetRes);
+
+    // Finer -> coarser: reuse leaving TF bar width (same slot count, wider time span on HTF).
+    if (fromSec != null && toSec != null && toSec > fromSec && fromLayout) {
+      restoreViewportBarLayout(
+        pane,
+        fromLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-lt-htf",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.ltHtf", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        width: fromLayout.width,
+        toBeyondAnchor: fromLayout.toBeyondAnchor,
+      });
+      return;
+    }
+
+    // Coarser -> finer: restore the finer TF's own saved layout.
+    if (fromSec != null && toSec != null && toSec < fromSec && savedTarget) {
+      restoreViewportBarLayout(
+        pane,
+        savedTarget,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-htf-lt",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.htfLt", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        width: savedTarget.width,
+        toBeyondAnchor: savedTarget.toBeyondAnchor,
+      });
+      return;
+    }
+
+    if (savedTarget) {
+      restoreViewportBarLayout(
+        pane,
+        savedTarget,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-tf-restore",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.cached", {
+        resolution: targetRes,
+        width: savedTarget.width,
+        toBeyondAnchor: savedTarget.toBeyondAnchor,
+      });
+      return;
+    }
+
+    if (fromLayout?.visibleFromUtc != null && fromLayout?.visibleToUtc != null) {
+      restoreViewportBarLayoutFromUtc(
+        pane,
+        fromLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-tf-utc",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.utc", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        visibleFromUtc: fromLayout.visibleFromUtc,
+        visibleToUtc: fromLayout.visibleToUtc,
+      });
+      return;
+    }
+
+    scrollPaneToReplayCursor(pane, endIndex, fromLayout?.width ?? 80);
   }
 
   /** @param {object} pane */
@@ -347,6 +586,14 @@ export function attachReplayEngine(ctx, replay) {
     ltBarsBeforeTfSwitch = trimBarsToUtcTime(src.slice(), state.currentBarTime);
     ltResolutionBeforeTfSwitch = pane.resolution ?? null;
     if (ltResolutionBeforeTfSwitch) {
+      const viewportLayout = captureViewportBarLayout(
+        pane,
+        ctx.settingsStore,
+        ctx.resolutions,
+      );
+      if (viewportLayout) {
+        replayViewportByResolution.set(ltResolutionBeforeTfSwitch, viewportLayout);
+      }
       replayBarsByResolution.set(ltResolutionBeforeTfSwitch, {
         bars: ltBarsBeforeTfSwitch.slice(),
         cursorUtc: state.currentBarTime,
@@ -584,23 +831,31 @@ export function attachReplayEngine(ctx, replay) {
     const settings = ctx.settingsStore;
     const sym = ctx.symbolInfo ?? pane.symbolInfo;
     const res = ctx.resolutions;
+    const skipRefresh = replaySkipSyncApply;
 
     if (cur.length === target.length && cur.at(-1)?.time === targetBar.time) {
       if (barsFormingEqual(cur.at(-1), targetBar)) return "skip";
       cur[cur.length - 1] = targetBar;
       if (
+        !skipRefresh &&
         !updateFormingBarOnPaneSeries(pane, targetBar, settings, sym, res)
       ) {
         pane.bars = target;
         ctx.refreshPaneCandleData?.(pane);
         return "full";
       }
+      if (skipRefresh) pane.bars = target;
       return "forming";
     }
 
     if (!cur.length || cur.length > target.length || cur.at(-1).time > targetBar.time) {
       pane.bars = target;
-      ctx.refreshPaneCandleData?.(pane);
+      if (!skipRefresh) ctx.refreshPaneCandleData?.(pane);
+      return "full";
+    }
+
+    if (skipRefresh) {
+      pane.bars = target;
       return "full";
     }
 
@@ -837,6 +1092,11 @@ export function attachReplayEngine(ctx, replay) {
       return;
     }
 
+    if (replaySkipSyncApply) {
+      persistSession(state);
+      return;
+    }
+
     const endTime = state.currentBarTime ?? state.selectedBarTime;
     if (endTime == null) return;
 
@@ -862,6 +1122,9 @@ export function attachReplayEngine(ctx, replay) {
           pane.priceLineLabel?.requestRefresh();
           pane.sessionBg?.requestRefresh();
         }
+        if (ctx.indicatorController?.paneHasOverlayIndicators?.(activePane.index)) {
+          ctx.indicatorController.refreshOverlaysForPane?.(activePane.index);
+        }
       }
       if (state.playing) startPlayTimer();
       else stopPlayTimer();
@@ -886,6 +1149,11 @@ export function attachReplayEngine(ctx, replay) {
 
     applyReplayEndIndex(endIndex);
     lastAppliedBarTime = endTime;
+
+    replayBarsByResolution.set(activePane.resolution, {
+      bars: activePane.bars.slice(),
+      cursorUtc: endTime,
+    });
 
     const activeSnap = activePane._replaySnapshot;
     if (activeSnap) {
@@ -979,6 +1247,9 @@ export function attachReplayEngine(ctx, replay) {
     if (!state.active || state.currentBarTime == null) return;
 
     replayTfChangeInFlight = true;
+    replaySkipSyncApply = true;
+    const allPanes = ctx.getAllChartPanes();
+    for (const pane of allPanes) pane._suppressHistoryPrefetch = true;
     try {
       const selectedUtc = state.selectedBarTime ?? state.currentBarTime;
       let cursorUtc = state.currentBarTime;
@@ -997,26 +1268,27 @@ export function attachReplayEngine(ctx, replay) {
       if (!activePane) return;
 
       const liveEnd = replayLiveEndUtc ?? ctx.replayLiveEndUtc ?? priorLiveEnd ?? cursorUtc;
+      const targetRes = activePane.resolution;
+      const fromRes = ltResolutionBeforeTfSwitch;
+      const fromStash = fromRes ? replayBarsByResolution.get(fromRes) : null;
+      const fromCursor = fromStash?.cursorUtc ?? state.currentBarTime;
 
-      if (ltBarsBeforeTfSwitch?.length && ltResolutionBeforeTfSwitch) {
-        const fromSec = resolutionSec(ltResolutionBeforeTfSwitch);
-        const toSec = resolutionSec(activePane.resolution);
-        if (fromSec > toSec) {
-          const idx = replayBarIndexForUtcTime(ltBarsBeforeTfSwitch, cursorUtc);
-          if (idx != null) {
-            const htfOpen = ltBarsBeforeTfSwitch[idx].time;
-            const mapped = replayLtCursorFromHtfBar(htfOpen, fromSec, toSec, liveEnd);
-            replayDebug("resolutionChange.mapCursor", {
-              from: cursorUtc,
-              to: mapped,
-              htfOpen,
-              fromRes: ltResolutionBeforeTfSwitch,
-              toRes: activePane.resolution,
-            });
-            cursorUtc = mapped;
-          }
-        }
-      }
+      cursorUtc = resolveReplayCursorOnTfSwitch({
+        fromResolution: fromRes,
+        fromCursor,
+        toResolution: targetRes,
+        targetCached: replayBarsByResolution.get(targetRes),
+        entryCursor: fromRes ? replayCursorAtEntry.get(fromRes) : null,
+      });
+
+      replayDebug("resolutionChange.cursor", {
+        fromResolution: fromRes,
+        fromCursor,
+        toResolution: targetRes,
+        cursorUtc,
+        entryCursor: fromRes ? replayCursorAtEntry.get(fromRes) : null,
+        targetCached: replayBarsByResolution.get(targetRes)?.cursorUtc,
+      });
 
       const covered = await ensurePaneBarsReachReplayCut(activePane, cursorUtc);
       if (!covered) {
@@ -1081,6 +1353,7 @@ export function attachReplayEngine(ctx, replay) {
           }
         }
       }
+      const fromResForViewport = ltResolutionBeforeTfSwitch;
       clearLtBarsStash();
 
       for (const pane of ctx.getAllChartPanes()) {
@@ -1104,6 +1377,23 @@ export function attachReplayEngine(ctx, replay) {
         return;
       }
 
+      for (const pane of ctx.getAllChartPanes()) {
+        const pSnap = pane._replaySnapshot;
+        if (!pSnap?.bars?.length) continue;
+        syncPaneBarsToReplayEnd(pane, pSnap, currentIdx);
+      }
+
+      const logicalRange = resolveReplayViewportLogicalRange(
+        activePane,
+        currentIdx,
+        fromResForViewport,
+      );
+
+      ctx.refreshPaneCandleData?.(activePane, {
+        logicalRange: logicalRange ?? undefined,
+        deferSessionBg: true,
+      });
+
       replay.setReplayPosition({
         selectedBarIndex: selectedIdx,
         currentBarIndex: currentIdx,
@@ -1111,11 +1401,19 @@ export function attachReplayEngine(ctx, replay) {
         currentBarTime: cursorUtc,
       });
 
+      lastAppliedEndIndex = currentIdx;
+      lastAppliedBarTime = cursorUtc;
+
       replayBarsByResolution.set(activePane.resolution, {
         bars: activePane.bars.slice(),
         cursorUtc,
       });
-      scrollPaneToReplayCursor(activePane, currentIdx);
+      replayCursorAtEntry.set(activePane.resolution, cursorUtc);
+
+      ctx.applyPriceScaleMarginsForPane?.(activePane);
+      activePane.sessionBg?.requestRefresh();
+      ctx.replayFutureDim?.refreshAll?.();
+
       if (activePane.index === 0) ctx.bars = activePane.bars;
 
       replayDebug("resolutionChange", {
@@ -1126,7 +1424,13 @@ export function attachReplayEngine(ctx, replay) {
         autoSelectInterval: state.autoSelectInterval,
       });
     } finally {
+      replaySkipSyncApply = false;
       replayTfChangeInFlight = false;
+      requestAnimationFrame(() => {
+        for (const pane of ctx.getAllChartPanes()) {
+          delete pane._suppressHistoryPrefetch;
+        }
+      });
     }
   }
 

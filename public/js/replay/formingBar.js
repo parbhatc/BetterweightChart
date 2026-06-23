@@ -63,6 +63,47 @@ export function replayLtCursorFromHtfBar(htfOpenUtc, htfSec, ltSec, liveEndUtc) 
 }
 
 /**
+ * Resolve replay simulated instant after a timeframe switch.
+ * LT→HTF always carries the leaving cursor. HTF→LT restores the finer LT stash only
+ * when the HTF cursor did not advance since entering that timeframe.
+ * @param {object} opts
+ * @param {string | null} opts.fromResolution
+ * @param {number | null | undefined} opts.fromCursor
+ * @param {string} opts.toResolution
+ * @param {{ cursorUtc?: number } | undefined} opts.targetCached
+ * @param {number | null | undefined} opts.entryCursor
+ */
+export function resolveReplayCursorOnTfSwitch({
+  fromResolution,
+  fromCursor,
+  toResolution,
+  targetCached,
+  entryCursor,
+}) {
+  if (fromCursor == null || !Number.isFinite(fromCursor)) return fromCursor;
+  if (!fromResolution) return fromCursor;
+
+  const fromSec = resolutionSec(fromResolution);
+  const toSec = resolutionSec(toResolution);
+  if (fromSec == null || toSec == null) return fromCursor;
+
+  if (toSec > fromSec) {
+    return fromCursor;
+  }
+
+  if (
+    toSec < fromSec &&
+    targetCached?.cursorUtc != null &&
+    entryCursor != null &&
+    fromCursor === entryCursor
+  ) {
+    return targetCached.cursorUtc;
+  }
+
+  return fromCursor;
+}
+
+/**
  * Patch the HTF snapshot bar at cursor with OHLC aggregated from stashed LT bars.
  * Uses the loaded HTF bar's open time (exchange-aligned), not a synthetic alignBarTime.
  * @param {object} pane

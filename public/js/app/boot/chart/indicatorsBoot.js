@@ -64,6 +64,7 @@ export function attachIndicatorsBoot(ctx) {
         newsPending: newsCtx.newsPending,
         isNewsEnabled: newsCtx.isNewsEnabled,
         getNewsRows: newsCtx.getNewsRows,
+        isReplayLocked: () => ctx.replayEngine?.isReplayLocked?.() ?? false,
       };
     },
   });

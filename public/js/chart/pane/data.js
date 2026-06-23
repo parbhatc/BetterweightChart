@@ -133,12 +133,12 @@ export function ensureFutureWhitespace(opts) {
  * @param {object | null} symbolInfo
  * @param {{ id: string, sec?: number }[]} resolutions
  * @param {(pane: object) => void} [onPrimaryPane]
- * @param {{ deferSessionBg?: boolean }} [opts]
+ * @param {{ deferSessionBg?: boolean, logicalRange?: { from: number, to: number } }} [opts]
  */
 export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutions, onPrimaryPane, opts = {}) {
   chartDebugTime("data", `refreshPaneCandleData pane ${pane.index}`, () => {
     invalidatePaneChartView(pane);
-    applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions);
+    applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions, opts);
     if (!opts.deferSessionBg) pane.sessionBg?.requestRefresh();
     onPrimaryPane?.(pane);
   });
@@ -147,7 +147,7 @@ export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutio
 /**
  * Push latest UTC bars to the series via cached chart view.
  */
-export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions) {
+export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions, opts = {}) {
   return chartDebugTime("data", `setData live pane ${pane.index}`, () => {
     if (!pane.bars?.length) return;
     const view = rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions);
@@ -164,15 +164,27 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
       pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
     }
 
-    withPreservedViewport(pane.chart, () => {
+    const logicalRange = opts.logicalRange;
+    const setData = () => {
       pane.series.setData(view.seriesData);
-    }, { followUpFrames: 1 });
+    };
+
+    if (logicalRange && Number.isFinite(logicalRange.from) && Number.isFinite(logicalRange.to)) {
+      setData();
+      pane.chart.timeScale().setVisibleLogicalRange({
+        from: logicalRange.from,
+        to: logicalRange.to,
+      });
+    } else {
+      withPreservedViewport(pane.chart, setData, { followUpFrames: 1 });
+    }
 
     chartDebugCount("data", "setData");
     chartDebug("data", "setData live", {
       pane: pane.index,
       bars: view.utcBars.length,
       ws: view.futureWhitespace,
+      logicalRange: logicalRange ?? null,
     });
   });
 }

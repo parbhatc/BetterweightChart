@@ -1,5 +1,5 @@
 import { getPaneChartView } from "./viewCache.js";
-import { logicalToChartTime } from "../coords/timeScale.js";
+import { logicalToChartTime, timeToLogical } from "../coords/timeScale.js";
 import { measurePriceBarRatio } from "../price/barRatio.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import {
@@ -168,6 +168,43 @@ export function captureViewportBarLayout(pane, settingsStore, resolutions) {
 }
 
 /**
+ * Compute logical viewport range from a saved bar layout + replay cursor anchor.
+ * @param {object} pane
+ * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
+ */
+export function computeViewportBarLayoutLogical(pane, layout) {
+  const realCount = pane.bars?.length ?? 0;
+  if (!layout || !realCount) return null;
+  const anchorIndex = viewportAnchorIndex(pane, realCount);
+  const to = anchorIndex + layout.toBeyondAnchor;
+  return { from: to - layout.width, to };
+}
+
+/**
+ * @param {object} pane
+ * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {{ id: string, sec?: number }[]} resolutions
+ */
+export function computeViewportLogicalFromUtc(pane, layout, settingsStore, resolutions) {
+  if (!layout || !pane?.chart) return null;
+
+  const { visibleFromUtc, visibleToUtc } = layout;
+  if (visibleFromUtc == null || visibleToUtc == null) return null;
+
+  const view = getPaneChartView(pane, settingsStore, pane.symbolInfo ?? null, resolutions);
+  const mapBars = view.mapBars;
+  const barSec = view.barSec;
+  if (!mapBars?.length) return null;
+
+  const from = timeToLogical(mapBars, barSec, visibleFromUtc);
+  const to = timeToLogical(mapBars, barSec, visibleToUtc);
+  if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) return null;
+
+  return { from, to };
+}
+
+/**
  * Restore viewport using saved width + tail gap anchored to the new latest / replay cursor bar.
  * @param {object} pane
  * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
@@ -175,6 +212,7 @@ export function captureViewportBarLayout(pane, settingsStore, resolutions) {
  * @param {{ id: string, sec?: number }[]} resolutions
  * @param {string} [reason]
  * @param {() => "left" | "right"} [activePriceScaleId]
+ * @param {{ skipPrice?: boolean }} [opts]
  */
 export function restoreViewportBarLayout(
   pane,
@@ -183,6 +221,7 @@ export function restoreViewportBarLayout(
   resolutions,
   reason = "timeframe",
   activePriceScaleId,
+  opts = {},
 ) {
   if (!layout || !pane?.chart) return null;
 
@@ -197,9 +236,10 @@ export function restoreViewportBarLayout(
 
   ts.setVisibleLogicalRange({ from, to });
 
-  const priceResult = layout.price
-    ? restorePriceLayout(pane, layout.price, settingsStore, activePriceScaleId)
-    : null;
+  const priceResult =
+    !opts.skipPrice && layout.price
+      ? restorePriceLayout(pane, layout.price, settingsStore, activePriceScaleId)
+      : null;
 
   const view = getPaneChartView(pane, settingsStore, pane.symbolInfo ?? null, resolutions);
   const afterLogical = ts.getVisibleLogicalRange?.();
@@ -230,6 +270,60 @@ export function restoreViewportBarLayout(
   };
 
   chartDebug("data", "timeframe viewport", result);
+  return result;
+}
+
+/**
+ * Restore viewport from a saved UTC time span (stable across timeframe changes during replay).
+ * @param {object} pane
+ * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {{ id: string, sec?: number }[]} resolutions
+ * @param {string} [reason]
+ * @param {() => "left" | "right"} [activePriceScaleId]
+ * @param {{ skipPrice?: boolean }} [opts]
+ */
+export function restoreViewportBarLayoutFromUtc(
+  pane,
+  layout,
+  settingsStore,
+  resolutions,
+  reason = "timeframe-utc",
+  activePriceScaleId,
+  opts = {},
+) {
+  if (!layout || !pane?.chart) return null;
+
+  const { visibleFromUtc, visibleToUtc } = layout;
+  if (visibleFromUtc == null || visibleToUtc == null) return null;
+
+  const view = getPaneChartView(pane, settingsStore, pane.symbolInfo ?? null, resolutions);
+  const mapBars = view.mapBars;
+  const barSec = view.barSec;
+  if (!mapBars?.length) return null;
+
+  const from = timeToLogical(mapBars, barSec, visibleFromUtc);
+  const to = timeToLogical(mapBars, barSec, visibleToUtc);
+  if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) return null;
+
+  pane.chart.timeScale().setVisibleLogicalRange({ from, to });
+
+  const priceResult =
+    !opts.skipPrice && layout.price
+      ? restorePriceLayout(pane, layout.price, settingsStore, activePriceScaleId)
+      : null;
+
+  const result = {
+    reason,
+    fromResolution: layout.resolution,
+    toResolution: pane.resolution ?? null,
+    visibleFromUtc,
+    visibleToUtc,
+    restored: { from, to },
+    price: priceResult,
+  };
+
+  chartDebug("data", "timeframe viewport utc", result);
   return result;
 }
 

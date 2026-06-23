@@ -424,6 +424,8 @@ export class FvgEngine {
       this.onBarLayer(entry.layer, entry.series, entry.startIdx, lastIdx);
     }
 
+    this.refreshHtfLayersForReplay(snapshot, "tick");
+
     return this.finishIncrementalEmit(previousBoxes);
   }
 
@@ -484,9 +486,69 @@ export class FvgEngine {
       }
     }
 
+    this.refreshHtfLayersForReplay(snapshot, "append");
+
     const result = this.finishIncrementalEmit(previousBoxes);
     if (result) result.snapshot.barLen = newLen;
     return result;
+  }
+
+  /**
+   * During replay on a lower-TF chart, HTF layers are not fed by security fetches.
+   * Re-aggregate chart bars into HTF series so forming FVG can update step-by-step.
+   * @param {object} snapshot
+   * @param {"tick" | "append"} mode
+   */
+  refreshHtfLayersForReplay(snapshot, mode = "tick") {
+    if (!this.script.overlayCtx?.isReplayLocked?.()) return;
+    const htfEntries = snapshot.htfLayers;
+    if (!htfEntries?.length) return;
+
+    const chartSec = snapshot.cfg?.chartSec;
+    const maxBack = snapshot.cfg?.maxBack ?? 300;
+    if (!chartSec) return;
+
+    /** @type {{ layer: { tfSec: number, tfId: string, label: string }, series: object[] }[]} */
+    const newHtfLayers = [];
+    for (const entry of htfEntries) {
+      const { layer } = entry;
+      if (layer.tfSec <= chartSec) {
+        newHtfLayers.push({
+          layer: entry.layer,
+          series: entry.series.map((bar) => (bar ? { ...bar } : bar)),
+        });
+        continue;
+      }
+
+      const series = aggregateBars(
+        this.script.bars,
+        layer.tfSec,
+        chartSec,
+        (_, i) => this.script.chartBars[i]?.time ?? this.script.bars[i].time,
+      ).map((b) => ({
+        ...b,
+        chartTime:
+          this.script.chartBars[b.startSourceIndex]?.time
+          ?? mapUtcTimeToChartTime(b.time, this.script.bars, this.script.chartBars),
+        confirmChartTime:
+          this.script.chartBars[b.startSourceIndex]?.time
+          ?? mapUtcTimeToChartTime(b.time, this.script.bars, this.script.chartBars),
+      }));
+
+      const startIdx = Math.max(2, series.length - maxBack);
+      const lastIdx = series.length - 1;
+      if (lastIdx >= startIdx) {
+        if (mode === "append" && lastIdx >= 1) {
+          const confirmIdx = lastIdx - 1;
+          if (confirmIdx >= startIdx) {
+            this.onBarLayer(layer, series, startIdx, confirmIdx);
+          }
+        }
+        this.onBarLayer(layer, series, startIdx, lastIdx);
+      }
+      newHtfLayers.push({ layer, series });
+    }
+    this.script.state.htfLayers = newHtfLayers;
   }
 
   /**
@@ -540,6 +602,11 @@ export class FvgEngine {
       };
     });
 
+    if (this.script.overlayCtx?.isReplayLocked?.()) {
+      this.refreshHtfLayersForReplay(snapshot, "tick");
+      return this.finishIncrementalEmit(previousBoxes);
+    }
+
     /** @type {{ layer: { tfSec: number, tfId: string, label: string }, series: object[] }[]} */
     const newHtfLayers = [];
     for (const entry of snapshot.htfLayers ?? []) {
@@ -566,6 +633,7 @@ export class FvgEngine {
   buildLayerSeries(layer) {
     const { chartSec, maxBack } = this.script.state.cfg;
     const overlayCtx = this.script.overlayCtx ?? {};
+    const replayLocked = overlayCtx.isReplayLocked?.() ?? false;
 
     if (layer.tfSec <= chartSec) {
       const series = this.script.bars.map((b, i) => ({
@@ -578,13 +646,15 @@ export class FvgEngine {
       return { series, startIdx: Math.max(2, series.length - maxBack) };
     }
 
-    const htf = getSecuritySeries(overlayCtx, undefined, layer.tfId);
-    if (htf?.utcBars?.length) {
-      const series = mapHtfBarsToSeries(htf);
-      return { series, startIdx: Math.max(2, series.length - maxBack) };
+    if (!replayLocked) {
+      const htf = getSecuritySeries(overlayCtx, undefined, layer.tfId);
+      if (htf?.utcBars?.length) {
+        const series = mapHtfBarsToSeries(htf);
+        return { series, startIdx: Math.max(2, series.length - maxBack) };
+      }
+      requestSecuritySeries(overlayCtx, undefined, layer.tfId, maxBack);
     }
 
-    requestSecuritySeries(overlayCtx, undefined, layer.tfId, maxBack);
     const series = aggregateBars(
       this.script.bars,
       layer.tfSec,

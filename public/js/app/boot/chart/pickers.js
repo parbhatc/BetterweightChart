@@ -229,10 +229,16 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             deferChartRefresh,
             skipPriceScaleMargins: true,
           });
-          finishSeriesReload(ctx, panes);
-          await afterTimeframeChangeThenRestoreViewport(ctx, () =>
-            restorePaneBarLayouts(ctx, panes, savedLayouts),
-          );
+          if (deferChartRefresh) {
+            await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
+            finishSeriesReload(ctx, panes);
+          } else {
+            finishSeriesReload(ctx, panes);
+            await afterTimeframeChangeThenRestoreViewport(ctx, () => {
+              if (ctx.replayEngine?.isReplayLocked?.()) return;
+              restorePaneBarLayouts(ctx, panes, savedLayouts);
+            });
+          }
           return;
         }
         const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
@@ -260,17 +266,23 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           deferChartRefresh,
           skipPriceScaleMargins: true,
         });
-        finishSeriesReload(ctx, [pane]);
-        await afterTimeframeChangeThenRestoreViewport(ctx, () =>
-          restoreViewportBarLayout(
-            pane,
-            savedLayout,
-            ctx.settingsStore,
-            ctx.resolutions,
-            "timeframe",
-            ctx.activePriceScaleId,
-          ),
-        );
+        if (deferChartRefresh) {
+          await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
+          finishSeriesReload(ctx, [pane]);
+        } else {
+          finishSeriesReload(ctx, [pane]);
+          await afterTimeframeChangeThenRestoreViewport(ctx, () => {
+            if (ctx.replayEngine?.isReplayLocked?.()) return;
+            restoreViewportBarLayout(
+              pane,
+              savedLayout,
+              ctx.settingsStore,
+              ctx.resolutions,
+              "timeframe",
+              ctx.activePriceScaleId,
+            );
+          });
+        }
       },
     });
   }
