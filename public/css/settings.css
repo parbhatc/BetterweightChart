@@ -336,6 +336,7 @@
 
 /* Small checkbox (multi-select menus) */
 .tv-set__multi-check-item .tv-set__check {
+  position: relative;
   width: 1.125rem;
   height: 1.125rem;
   border-radius: var(--radius-xs);
@@ -349,7 +350,7 @@
 }
 
 .tv-set__multi-check-item .tv-set__check-box {
-  display: flex;
+  display: none;
 }
 
 .tv-set__multi-check-item .tv-set__check--on {
@@ -357,9 +358,17 @@
   border-color: var(--tv-switch-on);
 }
 
-.tv-set__multi-check-item .tv-set__check-box svg {
-  width: 0.625rem;
-  height: 0.625rem;
+.tv-set__multi-check-item .tv-set__check--on::after {
+  display: block;
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 48%;
+  width: 0.28rem;
+  height: 0.5rem;
+  border: solid var(--tv-switch-thumb, #fff);
+  border-width: 0 2px 2px 0;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 
 /* ── Candle rows ── */
@@ -440,6 +449,27 @@
   outline-color: var(--tv-accent);
 }
 
+.tv-set__swatch-btn--disabled,
+.tv-set__swatch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.tv-set__swatch-btn--disabled:hover,
+.tv-set__swatch-btn:disabled:hover {
+  transform: none;
+  outline-color: var(--tv-border-subtle);
+}
+
+.tv-set__color-btn--disabled {
+  cursor: not-allowed;
+}
+
+.tv-set__dual-colors--disabled {
+  opacity: 0.55;
+}
+
 .tv-set__color-btn--wide .tv-set__swatch-btn {
   width: 2.25rem;
 }
@@ -503,6 +533,18 @@
   display: block;
   width: 1.5rem;
   min-height: 1px;
+  border-radius: 1px;
+}
+
+.tv-set__line-color-segment--pattern {
+  display: flex;
+  align-items: center;
+  background: transparent;
+}
+
+.tv-set__line-color-dash {
+  display: block;
+  flex-shrink: 0;
   border-radius: 1px;
 }
 
@@ -631,6 +673,10 @@
 
 .tv-set__dual-colors--compact {
   gap: var(--space-1);
+}
+
+.tv-set__dual-colors--gradient .tv-set__swatch-btn {
+  width: 2rem;
 }
 
 .tv-set__number-wrap {

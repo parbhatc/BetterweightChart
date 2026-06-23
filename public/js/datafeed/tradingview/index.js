@@ -26,9 +26,33 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
     return res.json();
   }
 
+  /** @type {Map<string, EventSource>} */
+  const quoteStreams = new Map();
+  let quotesSupported = false;
+
+  async function ensureQuotesSupported() {
+    if (quotesSupported) return true;
+    try {
+      const cfg = await (readyPromise ?? getJson("/config"));
+      quotesSupported = Boolean(cfg?.supports_quotes);
+    } catch {
+      quotesSupported = false;
+    }
+    return quotesSupported;
+  }
+
   return {
+    get supportsQuotes() {
+      return quotesSupported;
+    },
+
     onReady() {
-      if (!readyPromise) readyPromise = getJson("/config");
+      if (!readyPromise) {
+        readyPromise = getJson("/config").then((cfg) => {
+          quotesSupported = Boolean(cfg?.supports_quotes);
+          return cfg;
+        });
+      }
       return readyPromise;
     },
 
@@ -92,6 +116,65 @@ export function createTradingViewDatafeed(baseUrl = "/datafeed/tv") {
       if (es) {
         es.close();
         streams.delete(subscriberUID);
+      }
+    },
+
+    async getQuotes(symbolInfos) {
+      if (!(await ensureQuotesSupported())) return [];
+      const list = Array.isArray(symbolInfos) ? symbolInfos : [symbolInfos];
+      const out = [];
+      for (const info of list) {
+        const sym = info.ticker || info.name;
+        if (!sym) continue;
+        try {
+          const data = await getJson(`/quotes?symbol=${encodeURIComponent(sym)}&snapshot=1`);
+          if (data.s === "ok" && data.bid != null && data.ask != null) {
+            out.push({
+              s: "ok",
+              n: sym,
+              v: { bid: data.bid, ask: data.ask, lp: data.last },
+            });
+          }
+        } catch {
+          // skip
+        }
+      }
+      return out;
+    },
+
+    subscribeQuotes(symbolInfos, onQuotes, subscriberUID) {
+      void ensureQuotesSupported().then((ok) => {
+        if (!ok) return;
+        const list = Array.isArray(symbolInfos) ? symbolInfos : [symbolInfos];
+        const info = list[0];
+        const sym = info?.ticker || info?.name;
+        if (!sym) return;
+        const q = new URLSearchParams({ symbol: sym });
+        const es = new EventSource(`${root}/quotes?${q}`);
+        es.onmessage = (ev) => {
+          try {
+            const quote = JSON.parse(ev.data);
+            if (quote?.bid == null || quote?.ask == null) return;
+            onQuotes([
+              {
+                s: "ok",
+                n: quote.symbol || sym,
+                v: { bid: quote.bid, ask: quote.ask, lp: quote.last },
+              },
+            ]);
+          } catch {
+            // ignore
+          }
+        };
+        quoteStreams.set(subscriberUID, es);
+      });
+    },
+
+    unsubscribeQuotes(subscriberUID) {
+      const es = quoteStreams.get(subscriberUID);
+      if (es) {
+        es.close();
+        quoteStreams.delete(subscriberUID);
       }
     },
   };

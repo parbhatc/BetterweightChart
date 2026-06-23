@@ -2,6 +2,7 @@ export { createDatafeed, readPageOptions } from "./client.js";
 export { createCustomDatafeed, createStaticDatafeed, normalizeBar, normalizeBars } from "./custom.js";
 export { createSimpleDatafeed } from "./simple.js";
 export { createTradingViewDatafeed } from "./tradingview/index.js";
+export { datafeedSupportsQuotes, quoteSymbolKey } from "./quotes.js";
 
 import { createDatafeed } from "./client.js";
 import { createStaticDatafeed } from "./custom.js";

@@ -1,4 +1,6 @@
 import { priceLineBarForPane } from "../../app/symbol/lineStyle.js";
+import { customPriceLineLabelHeight } from "../../primitives/priceLine/customPriceLine.js";
+import { stackedLabelCenterOffset } from "../../primitives/priceLine/axisLabelRenderer.js";
 import { symbolPriceLabelHeight } from "../../primitives/priceLineLabel/index.js";
 
 /**
@@ -13,10 +15,14 @@ export function symbolLabelAnchorsForPane(pane, settingsStore, symbolInfo) {
   if (!useCustomLabel && !sc.symbolLabelValue) return [];
   const { close } = priceLineBarForPane(pane, settingsStore, pane.symbolInfo ?? symbolInfo);
   if (close == null || !Number.isFinite(close)) return [];
+  const labelHeight = pane.chart
+    ? customPriceLineLabelHeight(pane.chart, useCustomLabel)
+    : symbolPriceLabelHeight(useCustomLabel);
   return [
     {
       price: close,
-      labelHeight: symbolPriceLabelHeight(useCustomLabel),
+      labelHeight,
+      labelCenterOffset: useCustomLabel ? stackedLabelCenterOffset() : 0,
     },
   ];
 }

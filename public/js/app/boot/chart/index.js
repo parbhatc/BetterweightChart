@@ -32,6 +32,7 @@ import { attachBottomPaneBoot } from "./bottomPaneBoot.js";
 import { attachChartTableBoot } from "./chartTableBoot.js";
 import { attachNewsBoot } from "./newsBoot.js";
 import { attachReplayBoot, restoreReplayAfterLoad } from "./replayBoot.js";
+import { attachQuoteManager } from "../../quotes/manager.js";
 import {
   CHART_FEATURES,
   createFeatureFlags,
@@ -156,6 +157,7 @@ export async function bootChart(overrides = {}) {
   const primaryPane = ctx.chartPanes.get(0);
   if (primaryPane) primaryPane.symbolInfo = ctx.symbolInfo;
   ctx.applySymbolFormat(ctx.symbolInfo);
+  await attachQuoteManager(ctx);
   ctx.applyChartSettings();
 
   try {

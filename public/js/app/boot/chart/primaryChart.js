@@ -31,7 +31,11 @@ export function initPrimaryChart(ctx) {
     if ([...ctx.chartPanes.values()].some((p) => p._historyRestorePending)) return;
     ratioLockBusy = true;
     try {
-      enforcePriceBarRatio(chart, series, ctx.activePriceScaleId(), target);
+      const scaleId = ctx.activePriceScaleId();
+      for (const pane of ctx.chartPanes.values()) {
+        if (!pane.chart || !pane.series) continue;
+        enforcePriceBarRatio(pane.chart, pane.series, scaleId, target);
+      }
     } finally {
       ratioLockBusy = false;
     }

@@ -27,16 +27,6 @@
   position: relative;
 }
 
-.tv-chart-wrap.tv-scale-currency-hover table td:last-child,
-.tv-chart-wrap.tv-scale-currency-hover table th:last-child {
-  opacity: 0;
-  transition: opacity var(--duration-normal) var(--ease-out);
-}
-
-.tv-chart-wrap.tv-scale-currency-hover:hover table td:last-child,
-.tv-chart-wrap.tv-scale-currency-hover:hover table th:last-child {
-  opacity: 1;
-}
 
 .tv-chart-wrap.tv-watermark-hover .tv-watermark {
   opacity: 0;

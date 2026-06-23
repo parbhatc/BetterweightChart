@@ -240,6 +240,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           });
           const saved = capturePaneViewports(panes);
           preparePanesForSeriesReload(ctx, panes);
+          const prevSymbols = panes.map((p) => p.symbol);
           for (const pane of panes) {
             pane.symbol = sym;
           }
@@ -260,6 +261,13 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             }
             ctx.persistPaneSymbols();
             notifyHostSymbolChange(ctx, sym);
+            for (const pane of panes) {
+              const prev = prevSymbols[pane.index];
+              if (prev && prev !== pane.symbol) {
+                ctx.unsubscribeQuotesForPane?.({ symbol: prev });
+              }
+              ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
+            }
           } finally {
             hideChartPendingOverlay(ctx);
           }
@@ -292,6 +300,10 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           ctx.refreshStatusLine();
           ctx.persistPaneSymbols();
           notifyHostSymbolChange(ctx, sym);
+          if (from && from !== sym) {
+            ctx.unsubscribeQuotesForPane?.({ symbol: from });
+          }
+          ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
         } finally {
           hideChartPendingOverlay(ctx);
         }

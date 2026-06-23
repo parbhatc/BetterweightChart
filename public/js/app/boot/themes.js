@@ -31,6 +31,8 @@ export function applyCanvasPresetForTheme(store, mode) {
   const t = chartThemeFallback(mode);
   const patch = {
     backgroundColor: t.bg,
+    backgroundGradientTopColor: mode === "dark" ? "#0f172a" : "#ffffff",
+    backgroundGradientBottomColor: mode === "dark" ? "#020617" : "#e2e8f0",
     gridVertColor: mode === "dark" ? "rgba(226, 232, 240, 0.06)" : "rgba(15, 23, 42, 0.06)",
     gridHorzColor: mode === "dark" ? "rgba(226, 232, 240, 0.06)" : "rgba(15, 23, 42, 0.06)",
     crosshairColor: t.crosshair,

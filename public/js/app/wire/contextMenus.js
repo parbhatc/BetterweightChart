@@ -4,6 +4,7 @@ import { mountTimeScaleContextMenu } from "../../ui/context/timeScale.js";
 import {
   measurePriceBarRatio,
 } from "../../chart/price/barRatio.js";
+import { applyLockPriceBarRatioForPane } from "../../chart/settings/applier.js";
 import { resolvePriceScaleModeKey } from "../../chart/scale/settings.js";
 
 /**
@@ -109,7 +110,10 @@ export function wirePaneContextMenus(opts) {
       return {
         autoScale: Boolean(sc.autoScale),
         lockPriceToBarRatio: Boolean(sc.lockPriceToBarRatio),
-        lockRatioText: (liveRatio ?? Number(sc.lockPriceToBarRatioValue || 0)).toFixed(4),
+        lockRatioText:
+          sc.lockPriceToBarRatio && sc.lockPriceToBarRatioValue != null
+            ? Number(sc.lockPriceToBarRatioValue).toFixed(4)
+            : (liveRatio ?? 0).toFixed(4),
         scalePriceChartOnly: Boolean(sc.scalePriceChartOnly),
         invertScale: Boolean(sc.invertScale),
         priceScaleMode: mode,
@@ -125,15 +129,13 @@ export function wirePaneContextMenus(opts) {
         const sc = settingsStore.get().scales ?? {};
         const enabling = !sc.lockPriceToBarRatio;
         if (enabling) {
-          const ratio = measurePriceBarRatio(chart, series);
-          const ps = chart.priceScale(activePriceScaleId());
-          ps.applyOptions({ autoScale: false });
           settingsStore.merge({
             scales: {
               lockPriceToBarRatio: true,
-              lockPriceToBarRatioValue: ratio ?? sc.lockPriceToBarRatioValue,
+              autoScale: false,
             },
           });
+          applyLockPriceBarRatioForPane(pane, settingsStore, activePriceScaleId, { capture: true });
           return;
         }
         settingsStore.set("scales", "lockPriceToBarRatio", false);

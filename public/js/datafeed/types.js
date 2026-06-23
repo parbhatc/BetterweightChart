@@ -71,6 +71,10 @@
  * @property {(symbolInfo: SymbolInfo, resolution: string, periodParams?: PeriodParams) => Promise<GetBarsResult>} getBars
  * @property {(...args: unknown[]) => void} [subscribeBars]
  * @property {(...args: unknown[]) => void} [unsubscribeBars]
+ * @property {(symbolInfos: SymbolInfo[]) => Promise<object[]>} [getQuotes]
+ * @property {(symbolInfos: SymbolInfo[], onQuotes: (quotes: object[]) => void, subscriberUID: string) => void} [subscribeQuotes]
+ * @property {(subscriberUID: string) => void} [unsubscribeQuotes]
+ * @property {boolean} [supportsQuotes]
  */
 
 export {};

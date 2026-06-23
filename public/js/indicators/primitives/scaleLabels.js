@@ -18,9 +18,10 @@ function rectsOverlap(aTop, aBottom, bTop, bBottom) {
 /**
  * @param {import("lightweight-charts").ISeriesApi} series
  * @param {{ price: number, color: string, text: string }[]} labels
- * @param {{ price: number, labelHeight?: number }[]} reserved
+ * @param {{ price: number, labelHeight?: number, labelCenterOffset?: number }[]} reserved
+ * @param {number} [labelHeight]
  */
-export function resolveStudyLabelPositions(series, labels, reserved) {
+export function resolveStudyLabelPositions(series, labels, reserved, labelHeight = LABEL_H) {
   /** @type {{ top: number, bottom: number, anchorPrice?: number, fixed?: boolean }[]} */
   const placed = [];
   const symbolPrice = reserved[0]?.price;
@@ -29,9 +30,10 @@ export function resolveStudyLabelPositions(series, labels, reserved) {
     const y = safePriceToY(series, anchor.price);
     if (y == null || !Number.isFinite(y)) continue;
     const h = anchor.labelHeight ?? LABEL_H;
+    const centerY = y + (anchor.labelCenterOffset ?? 0);
     placed.push({
-      top: y - h / 2,
-      bottom: y + h / 2,
+      top: centerY - h / 2,
+      bottom: centerY + h / 2,
       anchorPrice: anchor.price,
       fixed: true,
     });
@@ -45,22 +47,22 @@ export function resolveStudyLabelPositions(series, labels, reserved) {
   /** @type {{ price: number, color: string, text: string, centerY: number }[]} */
   const out = [];
   for (const item of items) {
-    let top = item.naturalY - LABEL_H / 2;
+    let top = item.naturalY - labelHeight / 2;
 
     for (let pass = 0; pass < placed.length + 8; pass += 1) {
       const overlap = placed.find((slot) =>
-        rectsOverlap(top, top + LABEL_H, slot.top, slot.bottom),
+        rectsOverlap(top, top + labelHeight, slot.top, slot.bottom),
       );
       if (!overlap) break;
 
       const refPrice = overlap.anchorPrice ?? symbolPrice;
       if (refPrice != null && Number.isFinite(refPrice)) {
         if (item.price > refPrice) {
-          top = overlap.top - LABEL_H - LABEL_GAP;
+          top = overlap.top - labelHeight - LABEL_GAP;
         } else if (item.price < refPrice) {
           top = overlap.bottom + LABEL_GAP;
         } else {
-          top = overlap.top - LABEL_H - LABEL_GAP;
+          top = overlap.top - labelHeight - LABEL_GAP;
         }
         continue;
       }
@@ -69,12 +71,12 @@ export function resolveStudyLabelPositions(series, labels, reserved) {
       const slotCenter = (overlap.top + overlap.bottom) / 2;
       top =
         naturalCenter <= slotCenter
-          ? overlap.top - LABEL_H - LABEL_GAP
+          ? overlap.top - labelHeight - LABEL_GAP
           : overlap.bottom + LABEL_GAP;
     }
 
-    placed.push({ top, bottom: top + LABEL_H });
-    out.push({ ...item, centerY: top + LABEL_H / 2 });
+    placed.push({ top, bottom: top + labelHeight });
+    out.push({ ...item, centerY: top + labelHeight / 2 });
   }
   return out;
 }

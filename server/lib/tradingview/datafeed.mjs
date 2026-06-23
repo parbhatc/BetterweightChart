@@ -18,6 +18,7 @@ export function tradingViewDatafeedConfig() {
     symbols_types: [],
     supports_search: true,
     supports_group_request: false,
+    supports_quotes: true,
     themes,
   };
 }

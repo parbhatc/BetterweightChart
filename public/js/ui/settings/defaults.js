@@ -45,10 +45,8 @@ export const DEFAULT_SETTINGS = {
     priceScaleMode: "regular",
     scalePriceChartOnly: false,
     scaleLines: true,
-    currencyUnitVisibility: "alwaysOn",
-    scaleModesVisibility: "visibleOnMouseOver",
     lockPriceToBarRatio: false,
-    lockPriceToBarRatioValue: 38.7436985,
+    lockPriceToBarRatioValue: null,
     scalesPlacement: "auto",
     noOverlappingLabels: true,
     countdownToBarClose: true,
@@ -58,15 +56,24 @@ export const DEFAULT_SETTINGS = {
     symbolLabelLineUpColor: "#089981",
     symbolLabelLineDownColor: "#f23645",
     symbolLabelLineWidth: 1,
-    symbolValueFormat: "accordingToScale",
+    symbolLabelLineStyle: 2,
+    bidLabelValue: true,
+    bidLabelLine: true,
+    bidLabelLineColor: "#2962FF",
+    askLabelValue: true,
+    askLabelLine: true,
+    askLabelLineColor: "#F23645",
+    bidAskLabelLineWidth: 1,
+    bidAskLabelLineStyle: 1,
     dayOfWeekOnLabels: true,
     dateFormat: "dd_mmm_yy",
     timeHoursFormat: "12-hours",
-    saveLeftEdgeOnIntervalChange: false,
   },
   canvas: {
     backgroundType: "solid",
     backgroundColor: "#020617",
+    backgroundGradientTopColor: "#0f172a",
+    backgroundGradientBottomColor: "#020617",
     gridLinesMode: "vertAndHorz",
     gridVertColor: "rgba(226, 232, 240, 0.06)",
     gridHorzColor: "rgba(226, 232, 240, 0.06)",
@@ -104,21 +111,15 @@ export const THEME_OPTIONS = [
   { value: "light", label: "Light" },
 ];
 
-export const SESSION_OPTIONS = [
-  { value: "electronic", label: "Electronic trading hours" },
-  { value: "regular", label: "Regular trading hours" },
+export const BACKGROUND_TYPE_OPTIONS = [
+  { value: "solid", label: "Solid" },
+  { value: "gradient", label: "Gradient" },
 ];
 
 export const TITLE_SOURCE_OPTIONS = [
   { value: "name", label: "Name" },
   { value: "symbol", label: "Symbol" },
   { value: "symbol_name", label: "Symbol and name" },
-];
-
-export const SCALE_VISIBILITY_OPTIONS = [
-  { value: "visibleOnMouseOver", label: "Visible on mouse over" },
-  { value: "alwaysOn", label: "Always visible" },
-  { value: "alwaysOff", label: "Always invisible" },
 ];
 
 export const SCALES_PLACEMENT_OPTIONS = [
@@ -128,41 +129,52 @@ export const SCALES_PLACEMENT_OPTIONS = [
 ];
 
 export const DATE_FORMAT_OPTIONS = [
-  { value: "qq_yy", label: "Mon Q3 '97" },
-  { value: "qq_yyyy", label: "Mon Q3 1997" },
-  { value: "dd_mmm_yy", label: "Mon 29 Sep '97" },
-  { value: "mmm_yy", label: "Mon Sep '97" },
-  { value: "mmm_dd_yyyy", label: "Mon Sep 29, 1997" },
-  { value: "mmm_d_yyyy", label: "Mon Sep 29, 1997" },
-  { value: "mmm_yyyy", label: "Mon Sep 1997" },
-  { value: "mmm_dd", label: "Mon Sep 29" },
-  { value: "dd_mmm", label: "Mon 29 Sep" },
-  { value: "yyyy_mm_dd", label: "Mon 1997-09-29" },
-  { value: "yy_mm_dd_dash", label: "Mon 97-09-29" },
-  { value: "yy_mm_dd_slash", label: "Mon 97/09/29" },
-  { value: "yyyy_mm_dd_slash", label: "Mon 1997/09/29" },
-  { value: "dd_mm_yyyy_dash", label: "Mon 29-09-1997" },
-  { value: "dd_mm_yy_dash", label: "Mon 29-09-97" },
-  { value: "dd_mm_yy_slash", label: "Mon 29/09/97" },
-  { value: "dd_mm_yyyy_slash", label: "Mon 29/09/1997" },
-  { value: "mm_dd_yy_slash", label: "Mon 09/29/97" },
-  { value: "mm_dd_yyyy_slash", label: "Mon 09/29/1997" },
+  { value: "qq_yy", label: "Q3 '97" },
+  { value: "qq_yyyy", label: "Q3 1997" },
+  { value: "dd_mmm_yy", label: "29 Sep '97" },
+  { value: "mmm_yy", label: "Sep '97" },
+  { value: "mmm_dd_yyyy", label: "Sep 29, 1997" },
+  { value: "mmm_d_yyyy", label: "Sep 29 1997" },
+  { value: "mmm_yyyy", label: "Sep 1997" },
+  { value: "mmm_dd", label: "Sep 29" },
+  { value: "dd_mmm", label: "29 Sep" },
+  { value: "yyyy_mm_dd", label: "1997-09-29" },
+  { value: "yy_mm_dd_dash", label: "97-09-29" },
+  { value: "yy_mm_dd_slash", label: "97/09/29" },
+  { value: "yyyy_mm_dd_slash", label: "1997/09/29" },
+  { value: "dd_mm_yyyy_dash", label: "29-09-1997" },
+  { value: "dd_mm_yy_dash", label: "29-09-97" },
+  { value: "dd_mm_yy_slash", label: "29/09/97" },
+  { value: "dd_mm_yyyy_slash", label: "29/09/1997" },
+  { value: "mm_dd_yy_slash", label: "09/29/97" },
+  { value: "mm_dd_yyyy_slash", label: "09/29/1997" },
 ];
+
+/** @param {boolean} showDow */
+export function dateFormatOptionsForUi(showDow) {
+  const prefix = showDow ? "Mon " : "";
+  return DATE_FORMAT_OPTIONS.map((o) => ({ value: o.value, label: `${prefix}${o.label}` }));
+}
 
 export const TIME_HOURS_FORMAT_OPTIONS = [
   { value: "12-hours", label: "12-hours" },
   { value: "24-hours", label: "24-hours" },
 ];
 
-export const SYMBOL_VALUE_FORMAT_OPTIONS = [
-  { value: "priceAndPercentage", label: "Price and percentage value" },
-  { value: "accordingToScale", label: "Value according to scale" },
-];
-
 export const SYMBOL_LABEL_PARTS = [
   { key: "symbolLabelName", label: "Name" },
   { key: "symbolLabelValue", label: "Value" },
   { key: "symbolLabelLine", label: "Line" },
+];
+
+export const BID_LABEL_PARTS = [
+  { key: "bidLabelValue", label: "Value" },
+  { key: "bidLabelLine", label: "Line" },
+];
+
+export const ASK_LABEL_PARTS = [
+  { key: "askLabelValue", label: "Value" },
+  { key: "askLabelLine", label: "Line" },
 ];
 
 export const WATERMARK_PARTS = [

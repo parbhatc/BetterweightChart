@@ -207,6 +207,7 @@ export function createColorPicker() {
   const previewEl = root.querySelector("[data-preview]");
   const hexEl = root.querySelector("[data-hex]");
   const tvSwatchesEl = root.querySelector("[data-tv-swatches]");
+  const lineColorSep = root.querySelector(".tv-cpicker__line-sep");
   const thicknessRowEl = root.querySelector("[data-thickness-row]");
   const customColorBtn = root.querySelector("[data-custom-color]");
   const lineOpacityWrap = root.querySelector("[data-line-opacity-wrap]");
@@ -231,6 +232,7 @@ export function createColorPicker() {
     !previewEl ||
     !hexEl ||
     !tvSwatchesEl ||
+    !lineColorSep ||
     !thicknessRowEl ||
     !customColorBtn ||
     !lineOpacityWrap ||
@@ -289,6 +291,7 @@ export function createColorPicker() {
   let lineStyle = 2;
   let showLineOpacity = false;
   let showLineStyle = false;
+  let showLineColor = true;
   let swatchOnlyMode = false;
   /** @type {HTMLElement | null} */
   let lineAnchor = null;
@@ -320,7 +323,7 @@ export function createColorPicker() {
     slCursor.style.top = `${100 - l}%`;
     hueEl.value = String(Math.round(h));
     previewEl.style.background = withAlpha && a < 1 ? formatColor(rgb, true) : hex;
-    hexEl.value = withAlpha && a < 1 ? formatColor(rgb, true) : hex;
+    hexEl.value = hex;
     if (withAlpha) syncAlphaUi();
   }
 
@@ -424,11 +427,16 @@ export function createColorPicker() {
 
   function applyLinePanelMode() {
     const swatch = swatchOnlyMode;
+    const hideColor = swatch || !showLineColor;
+    tvSwatchesEl.hidden = hideColor;
+    lineColorSep.hidden = hideColor;
+    customColorBtn.hidden = hideColor;
     lineThicknessWrap.hidden = swatch;
     lineStyleWrap.hidden = swatch || !showLineStyle;
     lineOpacityWrap.hidden = !showLineOpacity && !swatch;
     if (swatch) lineOpacityWrap.hidden = false;
     root.classList.toggle("tv-cpicker--swatch-only", swatch);
+    root.classList.toggle("tv-cpicker--style-width-only", !swatch && !showLineColor && showLineStyle);
   }
 
   tvSwatchesEl.addEventListener("click", (ev) => {
@@ -541,7 +549,7 @@ export function createColorPicker() {
   /**
    * @param {HTMLElement} anchor
    * @param {{ color: string, width: number, opacity?: number, style?: number }} value
-   * @param {{ showOpacity?: boolean, showLineStyle?: boolean, onChange: (value: { color: string, width: number, opacity: number, style: number }) => void, onClose?: () => void }} opts
+   * @param {{ showOpacity?: boolean, showLineStyle?: boolean, showColor?: boolean, onChange: (value: { color: string, width: number, opacity: number, style: number }) => void, onClose?: () => void }} opts
    */
   function openLine(anchor, value, opts) {
     lineMode = true;
@@ -555,6 +563,7 @@ export function createColorPicker() {
     lineStyle = value.style ?? 2;
     showLineOpacity = Boolean(opts.showOpacity);
     showLineStyle = Boolean(opts.showLineStyle);
+    showLineColor = opts.showColor !== false;
     onLineChange = opts.onChange;
     onChange = null;
     onClose = opts.onClose ?? null;
@@ -578,6 +587,7 @@ export function createColorPicker() {
     lineOpacity = value.opacity ?? 100;
     showLineOpacity = true;
     showLineStyle = false;
+    showLineColor = true;
     onLineChange = opts.onChange;
     onChange = null;
     onClose = opts.onClose ?? null;

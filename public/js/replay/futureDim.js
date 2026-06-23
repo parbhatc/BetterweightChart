@@ -296,7 +296,11 @@ export function attachReplayFutureDim(ctx, replay) {
 
   function resolveFill() {
     const cv = ctx.settingsStore.get().canvas ?? {};
-    const bg = cv.backgroundColor ?? ctx.themeColors?.bg ?? "#020617";
+    const fallback = ctx.themeColors?.bg ?? "#020617";
+    const bg =
+      cv.backgroundType === "gradient"
+        ? (cv.backgroundGradientTopColor ?? fallback)
+        : (cv.backgroundColor ?? fallback);
     return applyColorOpacity(bg, REPLAY_FUTURE_DIM_OPACITY);
   }
 

@@ -1,17 +1,20 @@
 import { renderStatusLine } from "../../chart/status/line.js";
 import { getMarketStatusDetails } from "../../chart/market/status.js";
 import { precisionFromSettings } from "../../chart/timezone/list.js";
-import { isScaleVisible, resolvePriceScalePlacement } from "../../chart/scale/settings.js";
+import { resolvePriceScalePlacement } from "../../chart/scale/settings.js";
 import { rafThrottle, trackChartPanning } from "../../chart/pan/perf.js";
 import { timeToBarIndex } from "../../chart/coords/timeScale.js";
 import { nearestBarIndex, normalizeHoverBar, resolveUtcBarTime } from "../../chart/pane/hoverBar.js";
 import { SessionBackgroundPrimitive } from "../../primitives/session/background.js";
 import { attachPriceLineLabelPrimitive } from "../../primitives/priceLineLabel/index.js";
+import { attachBidAskLinesPrimitive } from "../../primitives/bidAskLines/index.js";
+import { symbolLabelAnchorsForPane } from "../../chart/scale/symbolLabelAnchors.js";
 import {
   priceLineBarForPane,
   resolvePriceLineColorForPane,
 } from "../symbol/lineStyle.js";
 import { chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
+import { resolvePaneBackgroundColor } from "../../chart/canvas/settings.js";
 import { isNearHistoryLeftEdge } from "../bar/loader.js";
 import {
   buildChartSeriesForPane,
@@ -40,6 +43,8 @@ export function createPaneExtras(deps) {
     ui,
     viewportDeps,
     getReplayActive,
+    quotesEnabled,
+    getQuoteForSymbol,
   } = deps;
 
   /** @type {Map<number, object>} */
@@ -155,13 +160,16 @@ export function createPaneExtras(deps) {
         return {
           enabled,
           marketOpen,
-          scaleVisible: isScaleVisible(sc.currencyUnitVisibility),
+          scaleVisible: true,
           lineVisible: Boolean(sc.symbolLabelLine),
+          axisLabelVisible: Boolean(sc.symbolLabelValue),
           lineWidth: Number(sc.symbolLabelLineWidth) || 1,
+          lineStyle: Number(sc.symbolLabelLineStyle ?? 2),
           scaleId: placement.left ? "left" : "right",
           barSec: barSecForPane(pane),
           price: close,
           color: resolvePriceLineColorForPane(pane, settingsStore, symbolInfo),
+          title: sc.symbolLabelName ? pane.symbol : "",
           priceText:
             close == null || !Number.isFinite(close)
               ? ""
@@ -413,11 +421,65 @@ export function createPaneExtras(deps) {
     });
   }
 
+  /** @param {object} pane */
+  function attachBidAskLines(pane) {
+    pane.bidAskLines?.destroy();
+    pane.bidAskLines = attachBidAskLinesPrimitive({
+      series: pane.series,
+      getState: () => {
+        if (!quotesEnabled?.()) return { enabled: false };
+        const sc = settingsStore.get().scales ?? {};
+        const quote =
+          pane.quote ?? getQuoteForSymbol?.(pane.symbol) ?? null;
+        if (!quote || quote.bid == null || quote.ask == null) return { enabled: false };
+        const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
+        const fmt = (n) =>
+          Number(n).toLocaleString(undefined, {
+            minimumFractionDigits: precision,
+            maximumFractionDigits: precision,
+          });
+        const placement = resolvePriceScalePlacement(sc.scalesPlacement);
+        const scaleVisible = true;
+        const cv = settingsStore.get().canvas ?? {};
+        const lineWidth = Number(sc.bidAskLabelLineWidth) || 1;
+        const lineStyle = Number(sc.bidAskLabelLineStyle ?? 1);
+        const anyVisible =
+          sc.bidLabelLine || sc.bidLabelValue || sc.askLabelLine || sc.askLabelValue;
+        return {
+          enabled: Boolean(anyVisible) && scaleVisible,
+          scaleVisible,
+          scaleId: placement.left ? "left" : "right",
+          fontSize: Number(cv.scalesFontSize) || 12,
+          paneBackground: resolvePaneBackgroundColor(cv),
+          lineWidth,
+          lineStyle,
+          noOverlappingLabels: sc.noOverlappingLabels !== false,
+          reservedAnchors: symbolLabelAnchorsForPane(pane, settingsStore, pane.symbolInfo ?? symbolInfo),
+          bid: {
+            price: quote.bid,
+            color: sc.bidLabelLineColor ?? "#2962FF",
+            lineVisible: Boolean(sc.bidLabelLine),
+            valueVisible: Boolean(sc.bidLabelValue),
+            text: fmt(quote.bid),
+          },
+          ask: {
+            price: quote.ask,
+            color: sc.askLabelLineColor ?? "#F23645",
+            lineVisible: Boolean(sc.askLabelLine),
+            valueVisible: Boolean(sc.askLabelValue),
+            text: fmt(quote.ask),
+          },
+        };
+      },
+    });
+  }
+
   /** @param {object} pane @param {HTMLElement} [statusLineEl] */
   function setupPaneExtras(pane, statusLineEl) {
     if (statusLineEl) pane.statusEl = statusLineEl;
     attachSessionBackground(pane);
     attachPriceLineLabel(pane);
+    attachBidAskLines(pane);
     wirePanePanPerf(pane);
     wirePaneCrosshair(pane);
     wirePaneViewportHandlers(pane);
@@ -430,5 +492,6 @@ export function createPaneExtras(deps) {
     flushPendingStatusLines,
     scheduleStatusLine,
     attachPriceLineLabel,
+    attachBidAskLines,
   };
 }

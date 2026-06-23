@@ -6,17 +6,17 @@ import {
   SETTINGS_ICONS as ICONS,
   DEFAULT_SETTINGS,
   SETTINGS_SECTIONS as SECTIONS,
-  SESSION_OPTIONS,
   TITLE_SOURCE_OPTIONS,
-  SCALE_VISIBILITY_OPTIONS,
   SCALES_PLACEMENT_OPTIONS,
-  DATE_FORMAT_OPTIONS,
+  dateFormatOptionsForUi,
   TIME_HOURS_FORMAT_OPTIONS,
-  SYMBOL_VALUE_FORMAT_OPTIONS,
   SYMBOL_LABEL_PARTS,
+  BID_LABEL_PARTS,
+  ASK_LABEL_PARTS,
   WATERMARK_PARTS,
   GRID_LINES_MODE_OPTIONS,
   FONT_SIZE_OPTIONS,
+  BACKGROUND_TYPE_OPTIONS,
   SETTINGS_UI_STORAGE_KEY,
   THEME_OPTIONS,
   resolveSettingsSection,
@@ -62,10 +62,22 @@ function saveSettingsUiState(patch) {
  * @param {() => "dark" | "light"} [opts.getTheme]
  * @param {(mode: "dark" | "light") => void} [opts.onThemeChange]
  * @param {() => { showMobilePlacementBar?: boolean }} [opts.getDrawingSettings]
+ * @param {() => boolean} [opts.getQuotesEnabled]
+ * @param {() => number | null} [opts.getLivePriceBarRatio]
  * @param {(key: string, value: boolean) => void} [opts.setDrawingSetting]
  */
 export function mountChartSettings(opts) {
-  const { store, triggerEl, onLiveChange, getTheme, onThemeChange, getDrawingSettings, setDrawingSetting } = opts;
+  const {
+    store,
+    triggerEl,
+    onLiveChange,
+    getTheme,
+    onThemeChange,
+    getDrawingSettings,
+    getQuotesEnabled,
+    getLivePriceBarRatio,
+    setDrawingSetting,
+  } = opts;
   const colorPicker = createColorPicker();
   const savedUi = loadSettingsUiState();
   let activeSection = resolveSettingsSection(savedUi.lastSection);
@@ -170,7 +182,7 @@ export function mountChartSettings(opts) {
     onLiveChange?.();
   }
 
-  function setDraft(section, key, value, { skipHistory = false } = {}) {
+  function setDraft(section, key, value, { skipHistory = false, skipRender = false } = {}) {
     if (draft?.[section]) {
       draft[section][key] = value;
     }
@@ -182,19 +194,34 @@ export function mountChartSettings(opts) {
         .forEach((btn) => {
           btn.style.background = String(value);
         });
-      if (key === "symbolLabelLineUpColor" || key === "symbolLabelLineDownColor") {
+      if (key === "symbolLabelLineUpColor") {
         dialogEl
-          ?.querySelectorAll(`[data-line-width-pick][data-section="${section}"]`)
-          .forEach((btn) => {
-            const upSeg = btn.querySelector(".tv-set__line-color-segment--up");
-            const downSeg = btn.querySelector(".tv-set__line-color-segment--down");
-            if (key === "symbolLabelLineUpColor" && upSeg) upSeg.style.background = String(value);
-            if (key === "symbolLabelLineDownColor" && downSeg) downSeg.style.background = String(value);
-          });
+          ?.querySelectorAll(
+            `[data-line-width-pick][data-section="${section}"][data-preview-color-key="symbolLabelLineUpColor"]`,
+          )
+          .forEach((btn) => syncQuoteLineStyleBtnPreview(btn, { color: String(value) }));
+      }
+      if (key === "bidLabelLineColor" || key === "askLabelLineColor") {
+        dialogEl
+          ?.querySelectorAll(
+            `[data-line-width-pick][data-section="${section}"][data-preview-color-key="${key}"]`,
+          )
+          .forEach((btn) => syncQuoteLineStyleBtnPreview(btn, { color: String(value) }));
       }
       return;
     }
+    if (skipRender) return;
     renderPanel();
+  }
+
+  /** @param {HTMLElement} item @param {boolean} checked */
+  function updateMultiCheckUi(item, checked) {
+    item.classList.toggle("is-checked", checked);
+    item.setAttribute("aria-selected", checked ? "true" : "false");
+    const checkBtn = item.querySelector(".tv-set__check");
+    if (!checkBtn) return;
+    checkBtn.classList.toggle("tv-set__check--on", checked);
+    checkBtn.setAttribute("aria-checked", checked ? "true" : "false");
   }
 
   function setDraftLine(
@@ -232,8 +259,12 @@ export function mountChartSettings(opts) {
           });
       } else if (widthKey) {
         dialogEl
-          ?.querySelectorAll(`[data-line-width-pick][data-section="${section}"]`)
+          ?.querySelectorAll(`[data-line-width-pick][data-section="${section}"][data-width-key="${widthKey}"]`)
           .forEach((btn) => {
+            if (btn.dataset.previewColorKey) {
+              syncQuoteLineStyleBtnPreview(btn, { width: width ?? undefined, style: style ?? undefined });
+              return;
+            }
             btn.querySelectorAll(".tv-set__line-color-segment").forEach((seg) => {
               if (width != null) seg.style.height = `${width}px`;
             });
@@ -244,9 +275,46 @@ export function mountChartSettings(opts) {
     renderPanel();
   }
 
-  function colorSwatchBtn(section, key, { alpha = false } = {}) {
+  function colorSwatchBtn(section, key, { alpha = false, disabled = false } = {}) {
     const raw = getDraft()[section]?.[key] ?? "#2962ff";
-    return `<button type="button" class="tv-set__swatch-btn" data-color-pick data-section="${section}" data-key="${key}"${alpha ? ' data-alpha="true"' : ""} style="background:${raw}" aria-label="Pick color"></button>`;
+    return `<button type="button" class="tv-set__swatch-btn${disabled ? " tv-set__swatch-btn--disabled" : ""}" data-color-pick data-section="${section}" data-key="${key}"${alpha ? ' data-alpha="true"' : ""}${disabled ? " disabled" : ""} style="background:${raw}" aria-label="Pick color"></button>`;
+  }
+
+  function lineSegmentPreviewHtml(color, width, style) {
+    const h = Math.max(1, Number(width) || 1);
+    const c = String(color);
+    if (Number(style) === 1) {
+      return `<span class="tv-set__line-color-segment tv-set__line-color-segment--single tv-set__line-color-segment--pattern">${[0, 1, 2]
+        .map(
+          (i) =>
+            `<span class="tv-set__line-color-dash" style="width:2px;height:${h}px;background:${c};margin-left:${i ? 3 : 0}px"></span>`,
+        )
+        .join("")}</span>`;
+    }
+    if (Number(style) === 2) {
+      return `<span class="tv-set__line-color-segment tv-set__line-color-segment--single tv-set__line-color-segment--pattern">${[0, 1, 2]
+        .map(
+          (i) =>
+            `<span class="tv-set__line-color-dash" style="width:6px;height:${h}px;background:${c};margin-left:${i ? 4 : 0}px"></span>`,
+        )
+        .join("")}</span>`;
+    }
+    return `<span class="tv-set__line-color-segment tv-set__line-color-segment--single" style="background:${c};height:${h}px"></span>`;
+  }
+
+  /** @param {HTMLElement} btn @param {{ color?: string, width?: number, style?: number }} [overrides] */
+  function syncQuoteLineStyleBtnPreview(btn, overrides = {}) {
+    const section = btn.dataset.section;
+    const colorKey = btn.dataset.previewColorKey;
+    const widthKey = btn.dataset.widthKey;
+    const styleKey = btn.dataset.styleKey;
+    if (!section || !colorKey || !widthKey || !styleKey) return;
+    const sc = getDraft()[section] ?? {};
+    const color = overrides.color ?? sc[colorKey] ?? "#2962FF";
+    const width = overrides.width ?? (Number(sc[widthKey]) || 1);
+    const style = overrides.style ?? Number(sc[styleKey] ?? 1);
+    const wrap = btn.querySelector(".tv-set__line-color-wrap");
+    if (wrap) wrap.innerHTML = lineSegmentPreviewHtml(color, width, style);
   }
 
   function lineColorSwatchBtn(section, colorKey, widthKey, opacityKey, styleKey) {
@@ -335,11 +403,19 @@ export function mountChartSettings(opts) {
   }
 
   function backgroundFieldRow(section) {
+    const cv = getDraft()[section] ?? {};
+    const isGradient = cv.backgroundType === "gradient";
+    const colorControls = isGradient
+      ? `<div class="tv-set__dual-colors tv-set__dual-colors--compact tv-set__dual-colors--gradient">
+          <div class="tv-set__color-btn" title="Top">${colorSwatchBtn(section, "backgroundGradientTopColor")}</div>
+          <div class="tv-set__color-btn" title="Bottom">${colorSwatchBtn(section, "backgroundGradientBottomColor")}</div>
+        </div>`
+      : `<div class="tv-set__color-btn">${colorSwatchBtn(section, "backgroundColor")}</div>`;
     return `<div class="tv-set__field-row">
       <span class="tv-set__field-label">Background</span>
       <div class="tv-set__inline-controls">
-        ${compactSelect(section, "backgroundType", [{ value: "solid", label: "Solid" }], "Background type")}
-        <div class="tv-set__color-btn">${colorSwatchBtn(section, "backgroundColor")}</div>
+        ${compactSelect(section, "backgroundType", BACKGROUND_TYPE_OPTIONS, "Background type")}
+        ${colorControls}
       </div>
     </div>`;
   }
@@ -393,7 +469,7 @@ export function mountChartSettings(opts) {
   function checkBox(section, key) {
     const checked = Boolean(getDraft()[section]?.[key]);
     return `<button type="button" class="tv-set__check ${checked ? "tv-set__check--on" : ""}" data-section="${section}" data-key="${key}" role="checkbox" aria-checked="${checked}" aria-label="Toggle ${key}">
-      <span class="tv-set__check-box">${checked ? ICONS.check : ""}</span>
+      <span class="tv-set__check-box"></span>
     </button>`;
   }
 
@@ -407,7 +483,7 @@ export function mountChartSettings(opts) {
   function drawingCheckBox(key) {
     const checked = Boolean(getDrawingSettings?.()?.[key]);
     return `<button type="button" class="tv-set__check ${checked ? "tv-set__check--on" : ""}" data-drawing-key="${key}" role="checkbox" aria-checked="${checked}" aria-label="Toggle ${key}">
-      <span class="tv-set__check-box">${checked ? ICONS.check : ""}</span>
+      <span class="tv-set__check-box"></span>
     </button>`;
   }
 
@@ -428,10 +504,17 @@ export function mountChartSettings(opts) {
     </div>`;
   }
 
-  function numberSubRow(section, key, { disabled = false } = {}) {
-    const val = getDraft()[section]?.[key] ?? "";
-    return `<div class="tv-set__sub-row ${disabled ? "tv-set__sub-row--disabled" : ""}">
-      <input type="text" inputmode="decimal" class="tv-set__number-input" data-section="${section}" data-key="${key}" value="${val}" ${disabled ? "disabled" : ""} aria-label="Lock price to bar ratio" />
+  /** Live ratio preview when unlocked; stored ratio when locked (TradingView-style). */
+  function lockRatioSubRow(section, key, { locked = false, liveRatio = null } = {}) {
+    const stored = getDraft()[section]?.[key];
+    const val =
+      locked && stored != null && Number.isFinite(Number(stored))
+        ? stored
+        : liveRatio != null && Number.isFinite(liveRatio)
+          ? Number(liveRatio.toFixed(4))
+          : "";
+    return `<div class="tv-set__sub-row ${locked ? "" : "tv-set__sub-row--disabled"}">
+      <input type="text" inputmode="decimal" class="tv-set__number-input" data-section="${section}" data-key="${key}" value="${val}" ${locked ? "" : "disabled readonly"} aria-label="Price to bar ratio" />
     </div>`;
   }
 
@@ -441,29 +524,67 @@ export function mountChartSettings(opts) {
     return parts.length ? parts.join(", ") : "Hidden";
   }
 
+  function quoteLabelSummary(section, parts) {
+    const sc = getDraft()[section] ?? {};
+    const labels = parts.filter((p) => sc[p.key]).map((p) => p.label);
+    return labels.length ? labels.join(", ") : "Hidden";
+  }
+
+  function quoteLineStyleBtn(section, colorKey) {
+    const sc = getDraft()[section] ?? {};
+    const color = sc[colorKey] ?? "#2962FF";
+    const width = Number(sc.bidAskLabelLineWidth) || 1;
+    const style = Number(sc.bidAskLabelLineStyle ?? 1);
+    return `<button type="button" class="tv-set__line-color-btn" data-line-width-pick data-section="${section}" data-width-key="bidAskLabelLineWidth" data-style-key="bidAskLabelLineStyle" data-preview-color-key="${colorKey}" aria-label="Line thickness and style">
+      <span class="tv-set__line-color-wrap">${lineSegmentPreviewHtml(color, width, style)}</span>
+    </button>`;
+  }
+
+  function quoteSideLabelRows(section, title, parts, colorKey) {
+    const summaryKey = title.toLowerCase();
+    const menuItems = parts.map((p) => multiCheckOption(section, p.key, p.label)).join("");
+    return `<div class="tv-set__field-row tv-set__field-row--symbol">
+      <span class="tv-set__field-label">${title}</span>
+      <div class="tv-set__inline-controls tv-set__inline-controls--symbol">
+        <div class="tv-set__multi-select-wrap" data-multi-select-wrap data-section="${section}" data-quote-side="${summaryKey}">
+          <button type="button" class="tv-set__multi-select" data-multi-select-trigger aria-haspopup="listbox" aria-expanded="false" aria-label="${title} labels">
+            <span class="tv-set__multi-select-text" data-multi-select-summary>${quoteLabelSummary(section, parts)}</span>
+            <span class="tv-set__select-chev">${ICONS.chevron}</span>
+          </button>
+          <div class="tv-set__multi-select-menu" data-multi-select-menu hidden role="listbox">${menuItems}</div>
+        </div>
+        <div class="tv-set__color-btn tv-set__color-btn--line">${colorSwatchBtn(section, colorKey)}</div>
+        <div class="tv-set__color-btn tv-set__color-btn--line">${quoteLineStyleBtn(section, colorKey)}</div>
+      </div>
+    </div>`;
+  }
+
+  function bidAskLabelRows(section) {
+    return `<div class="tv-set__symbol-label-block">
+      ${quoteSideLabelRows(section, "Bid", BID_LABEL_PARTS, "bidLabelLineColor")}
+      ${quoteSideLabelRows(section, "Ask", ASK_LABEL_PARTS, "askLabelLineColor")}
+    </div>`;
+  }
+
   function multiCheckOption(section, key, label) {
     const checked = Boolean(getDraft()[section]?.[key]);
     return `<button type="button" class="tv-set__multi-check-item ${checked ? "is-checked" : ""}" role="option" aria-selected="${checked}" data-section="${section}" data-key="${key}" data-multi-check>
-      <span class="tv-set__check ${checked ? "tv-set__check--on" : ""}" aria-hidden="true"><span class="tv-set__check-box">${checked ? ICONS.check : ""}</span></span>
+      <span class="tv-set__check ${checked ? "tv-set__check--on" : ""}" aria-hidden="true"><span class="tv-set__check-box"></span></span>
       <span class="tv-set__multi-check-label">${label}</span>
     </button>`;
   }
 
   function symbolLineStyleBtn(section) {
     const sc = getDraft()[section] ?? {};
-    const up = sc.symbolLabelLineUpColor ?? "#089981";
-    const down = sc.symbolLabelLineDownColor ?? "#f23645";
+    const color = sc.symbolLabelLineUpColor ?? "#089981";
     const width = Number(sc.symbolLabelLineWidth) || 1;
-    return `<button type="button" class="tv-set__line-color-btn tv-set__line-color-btn--symbol" data-line-width-pick data-section="${section}" data-width-key="symbolLabelLineWidth" aria-label="Line thickness">
-      <span class="tv-set__line-color-wrap tv-set__line-color-wrap--dual">
-        <span class="tv-set__line-color-segment tv-set__line-color-segment--up" style="background:${up};height:${width}px"></span>
-        <span class="tv-set__line-color-segment tv-set__line-color-segment--down" style="background:${down};height:${width}px"></span>
-      </span>
+    const style = Number(sc.symbolLabelLineStyle ?? 2);
+    return `<button type="button" class="tv-set__line-color-btn tv-set__line-color-btn--symbol" data-line-width-pick data-section="${section}" data-width-key="symbolLabelLineWidth" data-style-key="symbolLabelLineStyle" data-preview-color-key="symbolLabelLineUpColor" aria-label="Line thickness and style">
+      <span class="tv-set__line-color-wrap">${lineSegmentPreviewHtml(color, width, style)}</span>
     </button>`;
   }
 
   function symbolLabelRows(section) {
-    const showValueFormat = Boolean(getDraft()[section]?.symbolLabelValue);
     const menuItems = SYMBOL_LABEL_PARTS.map((p) => multiCheckOption(section, p.key, p.label)).join("");
     return `<div class="tv-set__symbol-label-block">
       <div class="tv-set__field-row tv-set__field-row--symbol">
@@ -489,7 +610,6 @@ export function mountChartSettings(opts) {
           <div class="tv-set__color-btn tv-set__color-btn--line">${symbolLineStyleBtn(section)}</div>
         </div>
       </div>
-      ${showValueFormat ? selectSubRow(section, "symbolValueFormat", SYMBOL_VALUE_FORMAT_OPTIONS) : ""}
     </div>`;
   }
 
@@ -533,18 +653,20 @@ export function mountChartSettings(opts) {
   }
 
   function candleCheckRow(label, section, visibleKey, upKey, downKey) {
+    const enabled = Boolean(getDraft()[section]?.[visibleKey]);
+    const colorBtnClass = enabled ? "tv-set__color-btn" : "tv-set__color-btn tv-set__color-btn--disabled";
     return `<div class="tv-set__candle-row" data-check-row data-section="${section}" data-key="${visibleKey}">
       <div class="tv-set__candle-row-main">
         ${checkBox(section, visibleKey)}
         <span class="tv-set__check-label">${label}</span>
       </div>
-      <div class="tv-set__dual-colors">
-        <div class="tv-set__color-btn" title="Up">
-          ${colorSwatchBtn(section, upKey)}
+      <div class="tv-set__dual-colors${enabled ? "" : " tv-set__dual-colors--disabled"}">
+        <div class="${colorBtnClass}" title="Up">
+          ${colorSwatchBtn(section, upKey, { disabled: !enabled })}
           <span class="tv-set__color-hint">▲</span>
         </div>
-        <div class="tv-set__color-btn" title="Down">
-          ${colorSwatchBtn(section, downKey)}
+        <div class="${colorBtnClass}" title="Down">
+          ${colorSwatchBtn(section, downKey, { disabled: !enabled })}
           <span class="tv-set__color-hint tv-set__color-hint--down">▼</span>
         </div>
       </div>
@@ -560,8 +682,7 @@ export function mountChartSettings(opts) {
         ${candleCheckRow("Wick", "symbol", "wickVisible", "wickUpColor", "wickDownColor")}`,
     )}${sectionBlock(
       "Data modification",
-      `${selectCell("Session", "symbol", "session", SESSION_OPTIONS)}
-        <div class="tv-set__field-row">
+      `<div class="tv-set__field-row">
           <span class="tv-set__field-label">Electronic trading hours background</span>
           <div class="tv-set__color-btn tv-set__color-btn--wide">
             ${colorSwatchBtn("symbol", "ethBackground", { alpha: true })}
@@ -595,24 +716,25 @@ export function mountChartSettings(opts) {
   function scalesSection() {
     const sc = getDraft().scales ?? {};
     const lockRatio = Boolean(sc.lockPriceToBarRatio);
+    const liveRatio = getLivePriceBarRatio?.() ?? null;
+    const quotesEnabled = getQuotesEnabled?.() ?? false;
+    const showDow = Boolean(sc.dayOfWeekOnLabels);
     return `${sectionBlock(
       "Price Scale",
-      `${selectCell("Currency and Unit", "scales", "currencyUnitVisibility", SCALE_VISIBILITY_OPTIONS)}
-        ${selectCell("Scale modes (A and L)", "scales", "scaleModesVisibility", SCALE_VISIBILITY_OPTIONS)}
-        ${checkRow("Lock price to bar ratio", "scales", "lockPriceToBarRatio")}
-        ${numberSubRow("scales", "lockPriceToBarRatioValue", { disabled: !lockRatio })}
+      `${checkRow("Lock price to bar ratio", "scales", "lockPriceToBarRatio")}
+        ${lockRatioSubRow("scales", "lockPriceToBarRatioValue", { locked: lockRatio, liveRatio })}
         ${selectCell("Scales placement", "scales", "scalesPlacement", SCALES_PLACEMENT_OPTIONS)}`,
     )}${sectionBlock(
       "Price labels & lines",
       `${checkRow("No overlapping labels", "scales", "noOverlappingLabels")}
         ${checkRow("Countdown to bar close", "scales", "countdownToBarClose")}
-        ${symbolLabelRows("scales")}`,
+        ${symbolLabelRows("scales")}
+        ${quotesEnabled ? bidAskLabelRows("scales") : ""}`,
     )}${sectionBlock(
       "Time Scale",
       `${checkRow("Day of week on labels", "scales", "dayOfWeekOnLabels")}
-        ${selectCell("Date format", "scales", "dateFormat", DATE_FORMAT_OPTIONS)}
-        ${selectCell("Time hours format", "scales", "timeHoursFormat", TIME_HOURS_FORMAT_OPTIONS)}
-        ${checkRow("Save chart left edge position when changing interval", "scales", "saveLeftEdgeOnIntervalChange")}`,
+        ${selectCell("Date format", "scales", "dateFormat", dateFormatOptionsForUi(showDow))}
+        ${selectCell("Time hours format", "scales", "timeHoursFormat", TIME_HOURS_FORMAT_OPTIONS)}`,
     )}`;
   }
 
@@ -628,12 +750,6 @@ export function mountChartSettings(opts) {
       "Scales",
       `${scalesTextFieldRow("canvas")}
         ${colorFieldRow("Lines", "canvas", "scalesLineColor", { alpha: true })}`,
-      { fields: true },
-    )}${sectionBlock(
-      "Buttons",
-      `${selectCell("Navigation", "canvas", "navButtonsVisibility", SCALE_VISIBILITY_OPTIONS)}
-        ${selectCell("Pane", "canvas", "paneButtonsVisibility", SCALE_VISIBILITY_OPTIONS)}
-        ${checkRow("TradingView logo", "canvas", "attributionLogo")}`,
       { fields: true },
     )}${sectionBlock(
       "Margins",
@@ -657,7 +773,8 @@ export function mountChartSettings(opts) {
           <select class="tv-set__select" data-theme-select aria-label="Color theme">${opts}</select>
           <span class="tv-set__select-chev">${ICONS.chevron}</span>
         </div>
-      </div>`,
+      </div>
+      ${checkRow("TradingView logo", "canvas", "attributionLogo")}`,
       { fields: true },
     )}`;
   }
@@ -756,11 +873,11 @@ export function mountChartSettings(opts) {
       dialogEl = document.createElement("div");
       dialogEl.className = "tv-settings";
       dialogEl.hidden = true;
-      dialogEl.innerHTML = `<div class="tv-settings__backdrop" data-action="cancel"></div>
+      dialogEl.innerHTML = `<div class="tv-settings__backdrop" data-action="ok"></div>
         <div class="tv-settings__dialog" role="dialog" aria-modal="true" aria-label="Settings">
           <div class="tv-settings__head">
             <div class="tv-settings__head-title">Settings</div>
-            <button type="button" class="tv-settings__head-close" data-action="cancel" aria-label="Close">${ICONS.close}</button>
+            <button type="button" class="tv-settings__head-close" data-action="ok" aria-label="Close">${ICONS.close}</button>
           </div>
           <div class="tv-settings__main">
             <div class="tv-settings__tabs" role="tablist" aria-orientation="vertical"></div>
@@ -788,6 +905,7 @@ export function mountChartSettings(opts) {
 
         const pickBtn = ev.target.closest("[data-color-pick]");
         if (pickBtn) {
+          if (pickBtn.disabled) return;
           closeMultiSelectMenus();
           ev.preventDefault();
           ev.stopPropagation();
@@ -816,19 +934,34 @@ export function mountChartSettings(opts) {
           ev.stopPropagation();
           const section = lineWidthBtn.dataset.section;
           const widthKey = lineWidthBtn.dataset.widthKey;
+          const styleKey = lineWidthBtn.dataset.styleKey || "";
+          const previewColorKey = lineWidthBtn.dataset.previewColorKey || "";
           if (!section || !widthKey) return;
-          const up = String(getDraft()[section]?.symbolLabelLineUpColor ?? "#089981");
+          const sc = getDraft()[section] ?? {};
+          const previewColor = previewColorKey
+            ? String(sc[previewColorKey] ?? "#2962FF")
+            : String(sc.symbolLabelLineUpColor ?? "#089981");
+          const isQuoteLineStyle = Boolean(styleKey && previewColorKey);
           colorPicker.openLine(
             lineWidthBtn,
             {
-              color: up,
-              width: Number(getDraft()[section]?.[widthKey]) || 1,
+              color: previewColor,
+              width: Number(sc[widthKey]) || 1,
+              style: styleKey ? Number(sc[styleKey] ?? 1) : 2,
             },
             {
-              onChange: ({ width }) => {
+              showColor: !isQuoteLineStyle,
+              showLineStyle: isQuoteLineStyle,
+              onChange: ({ width, style }) => {
                 const skipHistory = colorUndoMarked;
                 if (!colorUndoMarked) colorUndoMarked = true;
-                setDraftLine(section, null, widthKey, { width }, { skipHistory });
+                setDraftLine(
+                  section,
+                  null,
+                  widthKey,
+                  { width, style: isQuoteLineStyle ? style : undefined },
+                  { styleKey: isQuoteLineStyle ? styleKey : undefined, skipHistory },
+                );
               },
               onClose: () => {
                 colorUndoMarked = false;
@@ -897,7 +1030,9 @@ export function mountChartSettings(opts) {
           const section = multiCheck.dataset.section;
           const key = multiCheck.dataset.key;
           if (section && key) {
-            setDraft(section, key, !getDraft()[section]?.[key]);
+            const next = !getDraft()[section]?.[key];
+            setDraft(section, key, next, { skipRender: true });
+            updateMultiCheckUi(multiCheck, next);
             const wrap = multiCheck.closest("[data-multi-select-wrap]");
             const summary = wrap?.querySelector("[data-multi-select-summary]");
             if (summary && section === "canvas" && WATERMARK_PARTS.some((p) => p.key === key)) {
@@ -905,6 +1040,12 @@ export function mountChartSettings(opts) {
             }
             if (summary && section === "scales" && SYMBOL_LABEL_PARTS.some((p) => p.key === key)) {
               summary.textContent = symbolLabelSummary(section);
+            }
+            if (summary && section === "scales" && BID_LABEL_PARTS.some((p) => p.key === key)) {
+              summary.textContent = quoteLabelSummary(section, BID_LABEL_PARTS);
+            }
+            if (summary && section === "scales" && ASK_LABEL_PARTS.some((p) => p.key === key)) {
+              summary.textContent = quoteLabelSummary(section, ASK_LABEL_PARTS);
             }
           }
           return;
@@ -1041,5 +1182,5 @@ export function mountChartSettings(opts) {
     handleUndoRedo(ev);
   });
 
-  return { open, close, bindTrigger };
+  return { open, close, bindTrigger, syncDraftFromStore };
 }

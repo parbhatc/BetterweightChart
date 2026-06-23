@@ -65,14 +65,16 @@ export function applySymbolLineStyle(opts) {
                   ? visible.at(-2)
                   : undefined,
           };
+      const lineStyle = Number(sc.symbolLabelLineStyle ?? 2);
       const options = {
         lastValueVisible: useCustomPriceLabel ? false : Boolean(sc.symbolLabelValue),
         priceLineVisible: useCustomPriceLabel ? false : Boolean(sc.symbolLabelLine),
         priceLineColor: resolveSymbolLineColor(sc, sym, bar, prevBar),
         priceLineWidth: Number(sc.symbolLabelLineWidth) || 1,
+        priceLineStyle: lineStyle,
         title: sc.symbolLabelName ? pane.symbol : "",
       };
-      const key = `${useCustomPriceLabel}|${options.lastValueVisible}|${options.priceLineVisible}|${options.priceLineWidth}|${options.title}`;
+      const key = `${useCustomPriceLabel}|${options.lastValueVisible}|${options.priceLineVisible}|${options.priceLineWidth}|${lineStyle}|${options.title}`;
       if (paneStyleKeys.get(pane.index) === key) continue;
       paneStyleKeys.set(pane.index, key);
       pane.series.applyOptions(options);

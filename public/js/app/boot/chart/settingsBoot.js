@@ -3,7 +3,9 @@ import {
   priceFormatFromPrecisionSetting,
   resolveTimezone,
 } from "../../../chart/timezone/list.js";
-import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes } from "../../../chart/settings/applier.js";
+import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes, applyLockPriceBarRatioForPane } from "../../../chart/settings/applier.js";
+import { measurePriceBarRatio } from "../../../chart/price/barRatio.js";
+import { withPreservedViewport } from "../../../chart/pane/viewport.js";
 import { mountChartSettings } from "../../../ui/chart/settings.js";
 import { loadShowMobilePlacementBar, saveShowMobilePlacementBar } from "../../../drawings/toolbars/utility/settings/store.js";
 import { applyCanvasPresetForTheme } from "../themes.js";
@@ -20,13 +22,27 @@ export function attachSettingsBoot(ctx) {
   let lastChartDataRefreshKey = undefined;
   /** @type {string | undefined} */
   let lastChartTimezone = undefined;
+  let lockRatioWasEnabled = false;
 
   function mountChartSettingsUi() {
     if (chartSettings) return chartSettings;
     chartSettings = mountChartSettings({
       store: ctx.settingsStore,
       triggerEl: document.getElementById("settings-btn") ?? undefined,
-      onLiveChange: () => ctx.applyChartSettings(),
+      onLiveChange: () => {
+        const sc = ctx.settingsStore.get().scales ?? {};
+        const lockOn = Boolean(sc.lockPriceToBarRatio);
+        if (lockOn && !lockRatioWasEnabled) {
+          const primary = ctx.chartPanes.get(0);
+          if (primary) {
+            applyLockPriceBarRatioForPane(primary, ctx.settingsStore, activePriceScaleId, {
+              capture: true,
+            });
+          }
+          chartSettings?.syncDraftFromStore?.();
+        }
+        ctx.applyChartSettings();
+      },
       getTheme: () => ctx.currentTheme,
       onThemeChange: (mode) => {
         saveThemePreference(mode);
@@ -35,6 +51,12 @@ export function attachSettingsBoot(ctx) {
       getDrawingSettings: () => ({
         showMobilePlacementBar: ctx.drawing?.getShowMobilePlacementBar?.() ?? loadShowMobilePlacementBar(),
       }),
+      getQuotesEnabled: () => Boolean(ctx.quotesEnabled),
+      getLivePriceBarRatio: () => {
+        const primary = ctx.chartPanes.get(0);
+        if (!primary?.chart || !primary?.series) return null;
+        return measurePriceBarRatio(primary.chart, primary.series);
+      },
       setDrawingSetting: (key, value) => {
         if (key !== "showMobilePlacementBar") return;
         ctx.drawing?.setShowMobilePlacementBar?.(value);
@@ -124,13 +146,19 @@ export function attachSettingsBoot(ctx) {
     if (ctx.watermarkText && cv.watermarkColor) ctx.watermarkText.style.color = cv.watermarkColor;
     refreshWatermark();
 
-    ctx.chartWrap?.classList.toggle("tv-scale-currency-hover", sc.currencyUnitVisibility === "visibleOnMouseOver");
-    ctx.chartWrap?.classList.toggle("tv-scale-modes-hover", sc.scaleModesVisibility === "visibleOnMouseOver");
     ctx.chartWrap?.classList.toggle("tv-nav-buttons-hover", cv.navButtonsVisibility === "visibleOnMouseOver");
     ctx.chartWrap?.classList.toggle("tv-pane-buttons-hover", cv.paneButtonsVisibility === "visibleOnMouseOver");
 
     for (const pane of ctx.getAllChartPanes()) {
-      applySettingsToChartLocal(pane.chart, pane.series, pane);
+      if (pane.chart) {
+        withPreservedViewport(
+          pane.chart,
+          () => applySettingsToChartLocal(pane.chart, pane.series, pane),
+          { followUpFrames: 2 },
+        );
+      } else {
+        applySettingsToChartLocal(pane.chart, pane.series, pane);
+      }
     }
 
     ctx.applySymbolLineStyleLocal();
@@ -142,8 +170,14 @@ export function attachSettingsBoot(ctx) {
     ctx.refreshStatusLine();
     for (const pane of ctx.getAllChartPanes()) {
       pane.priceLineLabel?.requestRefresh();
+      pane.bidAskLines?.requestRefresh();
     }
 
+    if (sc.lockPriceToBarRatio) {
+      ctx.maintainLockedRatio?.();
+    }
+
+    lockRatioWasEnabled = Boolean(sc.lockPriceToBarRatio);
   }
 
   function applySymbolFormat(info) {

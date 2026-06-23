@@ -1,9 +1,9 @@
-import { ColorType, CrosshairMode, LineStyle, TickMarkType } from "lightweight-charts";
+import { CrosshairMode, LineStyle, TickMarkType } from "lightweight-charts";
 import { FUTURE_RIGHT_OFFSET } from "../view/index.js";
-import { gridAxisVisible } from "../canvas/settings.js";
+import { gridAxisVisible, resolveLayoutBackground } from "../canvas/settings.js";
 import {
-  isScaleVisible,
   priceScaleModeFromSettings,
+  resolvePriceScaleModeKey,
   resolvePriceScalePlacement,
 } from "../scale/settings.js";
 import { invalidateChartTimeCache } from "../timezone/chartTime.js";
@@ -16,10 +16,23 @@ import {
 } from "../time/labelFormat.js";
 import { toDate } from "../format.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
-import { enforcePriceBarRatio } from "../price/barRatio.js";
+import { enforcePriceBarRatio, measurePriceBarRatio } from "../price/barRatio.js";
 
 /** Series times are pseudo-UTC (local wall clock); format as UTC, not with a tz offset. */
 const CHART_TIME_LABEL_TZ = "Etc/UTC";
+
+/** @param {object} sc @param {object} cv @param {string} activeScale */
+function priceScaleSettingsKey(sc, cv, activeScale) {
+  return [
+    sc.autoScale,
+    sc.lockPriceToBarRatio,
+    sc.invertScale,
+    resolvePriceScaleModeKey(sc),
+    cv.marginTop,
+    cv.marginBottom,
+    activeScale,
+  ].join("\0");
+}
 
 /**
  * Apply chart + series options from the settings store to one pane.
@@ -40,7 +53,6 @@ export function applySettingsToChart(opts) {
   const sym = s.symbol ?? {};
   const gridMode = cv.gridLinesMode ?? "vertAndHorz";
   const placement = resolvePriceScalePlacement(sc.scalesPlacement);
-  const currencyVisible = isScaleVisible(sc.currencyUnitVisibility);
   const marginTop = Number(cv.marginTop);
   const marginBottom = Number(cv.marginBottom);
   const marginRight = Number(cv.marginRight);
@@ -60,7 +72,7 @@ export function applySettingsToChart(opts) {
 
   targetChart.applyOptions({
     layout: {
-      background: { type: ColorType.Solid, color: cv.backgroundColor || themeColors.bg },
+      background: resolveLayoutBackground(cv, themeColors),
       textColor: cv.scalesTextColor || themeColors.text,
       fontSize: Number(cv.scalesFontSize) || 12,
       attributionLogo: Boolean(cv.attributionLogo),
@@ -81,12 +93,12 @@ export function applySettingsToChart(opts) {
       horzLine: { color: crosshairColor, width: crosshairWidth, style: crosshairLineStyle },
     },
     rightPriceScale: {
-      visible: placement.right && currencyVisible,
+      visible: placement.right,
       borderVisible: sc.scaleLines !== false,
       borderColor: cv.scalesLineColor ?? themeColors.border,
     },
     leftPriceScale: {
-      visible: placement.left && currencyVisible,
+      visible: placement.left,
       borderVisible: sc.scaleLines !== false,
       borderColor: cv.scalesLineColor ?? themeColors.border,
     },
@@ -138,8 +150,12 @@ export function applySettingsToChart(opts) {
   // Manual scale (autoScale: false): do not re-apply here — LWC tutorial sets this once
   // after data exists. Re-applying on every settings/layout restore breaks the axis.
 
-  targetSeries.priceScale().applyOptions(scaleOpts);
-  targetChart.priceScale(activePriceScaleId()).applyOptions(scaleOpts);
+  const scaleKey = priceScaleSettingsKey(sc, cv, activeScale);
+  if (pane._lastPriceScaleSettingsKey !== scaleKey) {
+    pane._lastPriceScaleSettingsKey = scaleKey;
+    targetSeries.priceScale().applyOptions(scaleOpts);
+    targetChart.priceScale(activePriceScaleId()).applyOptions(scaleOpts);
+  }
 
   targetSeries.applyOptions({
     priceScaleId: activeScale,
@@ -154,6 +170,47 @@ export function applySettingsToChart(opts) {
     priceFormat: priceFormatFromPrecisionSetting(sym.precision, paneSymbolInfo),
     title: pane.index === 0 && sc.symbolLabelName ? pane.symbol : "",
   });
+
+  if (sc.lockPriceToBarRatio) {
+    requestAnimationFrame(() => {
+      applyLockPriceBarRatioForPane(pane, settingsStore, activePriceScaleId);
+    });
+  }
+}
+
+/**
+ * TradingView-style lock: fixed px-per-price-per-bar; zoom time → adjust price scale, zoom price → bar spacing.
+ * @param {object} pane
+ * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
+ * @param {() => "left" | "right"} activePriceScaleId
+ * @param {{ capture?: boolean }} [opts]
+ */
+export function applyLockPriceBarRatioForPane(pane, settingsStore, activePriceScaleId, opts = {}) {
+  const sc = settingsStore.get().scales ?? {};
+  if (!sc.lockPriceToBarRatio || !pane?.chart || !pane?.series) return;
+
+  let target = Number(sc.lockPriceToBarRatioValue);
+  if (opts.capture) {
+    const measured = measurePriceBarRatio(pane.chart, pane.series);
+    if (measured != null && Number.isFinite(measured) && measured > 0) {
+      target = measured;
+      settingsStore.set("scales", "lockPriceToBarRatioValue", measured, { skipHistory: true });
+      settingsStore.set("scales", "autoScale", false, { skipHistory: true });
+    }
+  }
+
+  if (!Number.isFinite(target) || target <= 0) return;
+
+  const scaleId = activePriceScaleId();
+  const margins = scaleMarginsFromSettings(settingsStore);
+  pane._manualScaleLocked = true;
+  pane.series.priceScale().applyOptions({ autoScale: false, scaleMargins: margins });
+  try {
+    pane.chart.priceScale(scaleId).applyOptions({ autoScale: false, scaleMargins: margins });
+  } catch {
+    /* ignore */
+  }
+  enforcePriceBarRatio(pane.chart, pane.series, scaleId, target);
 }
 
 /**
@@ -305,6 +362,12 @@ export function applyPriceScaleMarginsAfterBarLoad(pane, settingsStore, activePr
       pane.chart.priceScale(priceScaleId).applyOptions({ autoScale: false, scaleMargins: margins });
     } catch {
       /* ignore */
+    }
+    const target = Number(sc.lockPriceToBarRatioValue);
+    if (Number.isFinite(target) && target > 0) {
+      requestAnimationFrame(() => {
+        enforcePriceBarRatio(pane.chart, pane.series, priceScaleId, target);
+      });
     }
     return;
   }

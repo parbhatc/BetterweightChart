@@ -16,6 +16,7 @@ export function attachPaneExtrasBoot(ctx) {
     });
     for (const pane of ctx.getAllChartPanes()) {
       pane.priceLineLabel?.requestRefresh();
+      pane.bidAskLines?.requestRefresh();
     }
   }
   ctx.applySymbolLineStyleLocal = applySymbolLineStyleLocal;
@@ -47,6 +48,8 @@ export function attachPaneExtrasBoot(ctx) {
     ui: ctx.ui,
     viewportDeps: ctx.viewportDeps,
     getReplayActive: () => ctx.replay?.isActive?.() ?? false,
+    quotesEnabled: () => Boolean(ctx.quotesEnabled),
+    getQuoteForSymbol: (symbol) => ctx.getQuoteForSymbol?.(symbol) ?? null,
   });
 
   ctx.paneExtras = paneExtras;

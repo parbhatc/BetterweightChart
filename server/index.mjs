@@ -18,6 +18,10 @@ import {
   tradingViewSearch,
 } from "./lib/tradingview/datafeed.mjs";
 import { subscribeTradingViewBars } from "./lib/tradingview/client.mjs";
+import {
+  fetchTradingViewQuoteSnapshot,
+  subscribeTradingViewQuotes,
+} from "./lib/tradingview/quotes.mjs";
 import { newsCalendar, newsConfig } from "./lib/news/index.mjs";
 import { csvDatafeedSymbols } from "./lib/csv/history.mjs";
 
@@ -150,6 +154,43 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
 
     const unsub = subscribeTradingViewBars(symbol, resolution, (bar) => {
       res.write(`data: ${JSON.stringify(bar)}\n\n`);
+    });
+
+    const ping = setInterval(() => res.write(": ping\n\n"), 15000);
+    res.on("close", () => {
+      clearInterval(ping);
+      unsub();
+    });
+    return true;
+  }
+
+  if (pathname === "/datafeed/tv/quotes") {
+    const symbol = sp.get("symbol") || "";
+    if (!symbol) {
+      json(res, 400, { s: "error", errmsg: "symbol required" });
+      return true;
+    }
+
+    if (sp.get("snapshot") === "1") {
+      try {
+        const quote = await fetchTradingViewQuoteSnapshot(symbol);
+        json(res, 200, { s: "ok", ...quote });
+      } catch (err) {
+        json(res, 200, { s: "error", errmsg: err.message || "Quote failed" });
+      }
+      return true;
+    }
+
+    res.writeHead(200, {
+      ...HDR,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    res.write(": connected\n\n");
+
+    const unsub = subscribeTradingViewQuotes(symbol, (quote) => {
+      res.write(`data: ${JSON.stringify(quote)}\n\n`);
     });
 
     const ping = setInterval(() => res.write(": ping\n\n"), 15000);
