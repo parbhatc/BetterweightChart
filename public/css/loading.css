@@ -15,6 +15,19 @@
   pointer-events: none;
 }
 
+/* Replay / deferred refresh: spinner over chart; block pan/zoom while loading */
+.app-loader--overlay {
+  z-index: 40;
+  background: color-mix(in srgb, var(--tv-bg) 18%, transparent);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: wait;
+}
+
+.app-loader--overlay .app-loader__spinner {
+  pointer-events: none;
+}
+
 .app-loader__spinner {
   position: relative;
   width: 2.5rem;

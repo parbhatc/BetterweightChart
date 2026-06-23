@@ -2,7 +2,7 @@ import { readPageOptions } from "../../../datafeed/index.js";
 import { getPaneSymbol } from "../../../ui/chart/symbol/store.js";
 import { loadLastResolution, saveLastResolution } from "../../../ui/timeframe/favorites.js";
 import { createChartSettings } from "../../../ui/chart/settings.js";
-import { createAppLoader } from "../../../ui/loader/app.js";
+import { createAppLoader, createChartOverlayLoader } from "../../../ui/loader/app.js";
 import { resolveTimezone } from "../../../chart/timezone/list.js";
 import { createFeatureFlags } from "../../../chart/features.js";
 
@@ -19,6 +19,7 @@ import { createFeatureFlags } from "../../../chart/features.js";
  * @property {object} datafeed
  * @property {ReturnType<typeof createChartSettings>} settingsStore
  * @property {ReturnType<typeof createAppLoader>} loader
+ * @property {ReturnType<typeof createChartOverlayLoader>} chartOverlayLoader
  * @property {string} symbol
  * @property {string} resolution
  * @property {object | null} symbolInfo
@@ -161,6 +162,7 @@ export function createBootContext(overrides) {
     datafeed: null,
     settingsStore,
     loader: createAppLoader(document.querySelector(".tv-stage")),
+    chartOverlayLoader: createChartOverlayLoader(),
     symbol,
     resolution,
     symbolInfo,

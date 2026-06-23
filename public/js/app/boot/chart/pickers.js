@@ -46,6 +46,28 @@ function capturePaneBarLayouts(ctx, panes) {
   return panes.map((p) => captureViewportBarLayout(p, ctx.settingsStore, ctx.resolutions));
 }
 
+/** @param {object | object[]} panes */
+function chartStagesForPanes(panes) {
+  const list = Array.isArray(panes) ? panes : [panes];
+  return list
+    .map(
+      (pane) =>
+        pane?.el?.closest?.(".tv-chart-wrap")?.querySelector(".tv-chart-wrap__stage") ?? null,
+    )
+    .filter((el) => el instanceof HTMLElement);
+}
+
+/** @param {import("./state.js").BootContext} ctx @param {object | object[]} panes */
+function showChartPendingOverlay(ctx, panes) {
+  const stages = chartStagesForPanes(panes);
+  if (stages.length) ctx.chartOverlayLoader.show(stages);
+}
+
+/** @param {import("./state.js").BootContext} ctx */
+function hideChartPendingOverlay(ctx) {
+  ctx.chartOverlayLoader.hide();
+}
+
 /**
  * @param {import("./state.js").BootContext} ctx
  * @param {object[]} panes
@@ -152,16 +174,24 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           }
           ctx.symbol = sym;
           ctx.refreshWatermark();
-          await ctx.loadBarsForPanes(panes, { force: true });
-          restorePaneViewports(panes, saved);
-          finishSeriesReload(ctx, panes);
-          const active = ctx.getActivePane();
-          if (active) {
-            ctx.symbolInfo = active.symbolInfo;
-            ctx.applySymbolFormat(ctx.symbolInfo);
+          showChartPendingOverlay(ctx, panes);
+          try {
+            await ctx.loadBarsForPanes(panes, { force: true, deferChartRefresh: true });
+            for (const pane of panes) {
+              ctx.refreshPaneCandleData?.(pane);
+            }
+            restorePaneViewports(panes, saved);
+            finishSeriesReload(ctx, panes);
+            const active = ctx.getActivePane();
+            if (active) {
+              ctx.symbolInfo = active.symbolInfo;
+              ctx.applySymbolFormat(ctx.symbolInfo);
+            }
+            ctx.persistPaneSymbols();
+            notifyHostSymbolChange(ctx, sym);
+          } finally {
+            hideChartPendingOverlay(ctx);
           }
-          ctx.persistPaneSymbols();
-          notifyHostSymbolChange(ctx, sym);
           return;
         }
         const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
@@ -179,15 +209,21 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         if (pane.index === 0) ctx.chartPanes.get(0).symbol = sym;
         ctx.symbol = sym;
         ctx.refreshWatermark();
-        pane.symbolInfo = await ctx.datafeed.resolveSymbol(sym);
-        ctx.symbolInfo = pane.symbolInfo;
-        ctx.applySymbolFormat(ctx.symbolInfo);
-        await ctx.loadPaneBars(pane, { force: true });
-        restorePaneViewports([pane], saved);
-        finishSeriesReload(ctx, [pane]);
-        ctx.refreshStatusLine();
-        ctx.persistPaneSymbols();
-        notifyHostSymbolChange(ctx, sym);
+        showChartPendingOverlay(ctx, pane);
+        try {
+          pane.symbolInfo = await ctx.datafeed.resolveSymbol(sym);
+          ctx.symbolInfo = pane.symbolInfo;
+          ctx.applySymbolFormat(ctx.symbolInfo);
+          await ctx.loadPaneBars(pane, { force: true, deferChartRefresh: true });
+          ctx.refreshPaneCandleData?.(pane);
+          restorePaneViewports([pane], saved);
+          finishSeriesReload(ctx, [pane]);
+          ctx.refreshStatusLine();
+          ctx.persistPaneSymbols();
+          notifyHostSymbolChange(ctx, sym);
+        } finally {
+          hideChartPendingOverlay(ctx);
+        }
       },
     });
     await ctx.symbolSearchUi.init();
@@ -224,20 +260,25 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           ctx.refreshWatermark();
           ctx.refreshStatusLine();
           const deferChartRefresh = ctx.replayEngine?.isReplayLocked?.() ?? false;
-          await ctx.loadBarsForPanes(panes, {
-            force: true,
-            deferChartRefresh,
-            skipPriceScaleMargins: true,
-          });
-          if (deferChartRefresh) {
-            await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
-            finishSeriesReload(ctx, panes);
-          } else {
-            finishSeriesReload(ctx, panes);
-            await afterTimeframeChangeThenRestoreViewport(ctx, () => {
-              if (ctx.replayEngine?.isReplayLocked?.()) return;
-              restorePaneBarLayouts(ctx, panes, savedLayouts);
+          if (deferChartRefresh) showChartPendingOverlay(ctx, panes);
+          try {
+            await ctx.loadBarsForPanes(panes, {
+              force: true,
+              deferChartRefresh,
+              skipPriceScaleMargins: true,
             });
+            if (deferChartRefresh) {
+              await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
+              finishSeriesReload(ctx, panes);
+            } else {
+              finishSeriesReload(ctx, panes);
+              await afterTimeframeChangeThenRestoreViewport(ctx, () => {
+                if (ctx.replayEngine?.isReplayLocked?.()) return;
+                restorePaneBarLayouts(ctx, panes, savedLayouts);
+              });
+            }
+          } finally {
+            if (deferChartRefresh) hideChartPendingOverlay(ctx);
           }
           return;
         }
@@ -261,27 +302,32 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         ctx.refreshWatermark();
         ctx.refreshStatusLine();
         const deferChartRefresh = ctx.replayEngine?.isReplayLocked?.() ?? false;
-        await ctx.loadPaneBars(pane, {
-          force: true,
-          deferChartRefresh,
-          skipPriceScaleMargins: true,
-        });
-        if (deferChartRefresh) {
-          await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
-          finishSeriesReload(ctx, [pane]);
-        } else {
-          finishSeriesReload(ctx, [pane]);
-          await afterTimeframeChangeThenRestoreViewport(ctx, () => {
-            if (ctx.replayEngine?.isReplayLocked?.()) return;
-            restoreViewportBarLayout(
-              pane,
-              savedLayout,
-              ctx.settingsStore,
-              ctx.resolutions,
-              "timeframe",
-              ctx.activePriceScaleId,
-            );
+        if (deferChartRefresh) showChartPendingOverlay(ctx, pane);
+        try {
+          await ctx.loadPaneBars(pane, {
+            force: true,
+            deferChartRefresh,
+            skipPriceScaleMargins: true,
           });
+          if (deferChartRefresh) {
+            await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
+            finishSeriesReload(ctx, [pane]);
+          } else {
+            finishSeriesReload(ctx, [pane]);
+            await afterTimeframeChangeThenRestoreViewport(ctx, () => {
+              if (ctx.replayEngine?.isReplayLocked?.()) return;
+              restoreViewportBarLayout(
+                pane,
+                savedLayout,
+                ctx.settingsStore,
+                ctx.resolutions,
+                "timeframe",
+                ctx.activePriceScaleId,
+              );
+            });
+          }
+        } finally {
+          if (deferChartRefresh) hideChartPendingOverlay(ctx);
         }
       },
     });
