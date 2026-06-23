@@ -1,4 +1,4 @@
-import { buildTvPeriodParams } from "../app/bar/periodParams.js";
+import { buildTvPeriodParams, alignBarTime } from "../app/bar/periodParams.js";
 import { resolutionSec } from "../chart/resolutions.js";
 import { replayBarsPerStep, replayPlayIntervalMs, normalizeStepInterval } from "./menus.js";
 import {
@@ -728,6 +728,49 @@ export function attachReplayEngine(ctx, replay) {
 
   /**
    * @param {object} pane
+   * @param {number} cutTime
+   * @param {number | null | undefined} hintedLiveEnd
+   */
+  function resolveReplayLiveEndBarTime(pane, cutTime, hintedLiveEnd) {
+    const barSec = ctx.barSecForPaneLocal?.(pane) ?? resolutionSec(pane.resolution) ?? 60;
+    const nowAligned = alignBarTime(Date.now() / 1000, barSec);
+    const marketEnd = pane._replayMarketEndUtc ?? null;
+    let liveEnd =
+      hintedLiveEnd ??
+      marketEnd ??
+      ctx.replayLiveEndUtc ??
+      replayLiveEndUtc ??
+      pane.bars.at(-1)?.time ??
+      cutTime;
+    if (marketEnd != null) liveEnd = Math.max(liveEnd, marketEnd);
+    if (liveEnd <= cutTime && nowAligned > cutTime) liveEnd = nowAligned;
+    return liveEnd;
+  }
+
+  /** @param {object} pane @param {number} cutTime */
+  function refreshSnapshotLiveEndIfStale(pane, cutTime) {
+    const snap = pane._replaySnapshot;
+    if (!snap || cutTime == null) return;
+    const liveEnd = resolveReplayLiveEndBarTime(pane, cutTime, snap.liveEndBarTime);
+    if (liveEnd <= (snap.liveEndBarTime ?? cutTime)) return;
+    snap.liveEndBarTime = liveEnd;
+    snap.partial = cutTime < liveEnd;
+    replayLiveEndUtc = liveEnd;
+    ctx.replayLiveEndUtc = liveEnd;
+    replayDebug("liveEnd.refresh", { pane: pane.index, cutTime, liveEnd, partial: snap.partial });
+  }
+
+  function refreshAllSnapshotLiveEnds() {
+    const state = replay.getState();
+    const cut = state.currentBarTime ?? state.selectedBarTime;
+    if (cut == null) return;
+    for (const pane of ctx.getAllChartPanes()) {
+      refreshSnapshotLiveEndIfStale(pane, cut);
+    }
+  }
+
+  /**
+   * @param {object} pane
    * @param {number} cutTime simulated "now" (selected bar)
    * @param {number | null | undefined} liveEndBarTime real market end for forward fetch
    */
@@ -760,11 +803,12 @@ export function attachReplayEngine(ctx, replay) {
   }
 
   function hasForwardBars() {
+    refreshAllSnapshotLiveEnds();
     for (const pane of ctx.getAllChartPanes()) {
       const snap = pane._replaySnapshot;
       if (!snap?.partial) continue;
       const last = snap.bars.at(-1);
-      const liveEnd = snap.liveEndBarTime ?? snap.fullEndBarTime;
+      const liveEnd = snap.liveEndBarTime ?? ctx.replayLiveEndUtc ?? replayLiveEndUtc;
       if (last && liveEnd != null && last.time < liveEnd) return true;
     }
     return false;
@@ -780,7 +824,8 @@ export function attachReplayEngine(ctx, replay) {
 
     for (const pane of ctx.getAllChartPanes()) {
       if (pane._replaySnapshot) continue;
-      initReplaySnapshotForPane(pane, cut, pane.bars.at(-1)?.time ?? cut);
+      const liveEnd = resolveReplayLiveEndBarTime(pane, cut, pane.bars.at(-1)?.time ?? cut);
+      initReplaySnapshotForPane(pane, cut, liveEnd);
       replayDebug("snapshot.cut", {
         pane: pane.index,
         cutTime: cut,
@@ -800,14 +845,16 @@ export function attachReplayEngine(ctx, replay) {
 
   function restoreSnapshotFromPartial(pane, session) {
     const cut = session.currentBarTime;
-    const liveEnd = session.fullEndBarTime;
+    const liveEnd = resolveReplayLiveEndBarTime(pane, cut, session.fullEndBarTime);
     initReplaySnapshotForPane(pane, cut, liveEnd);
     pane.bars = pane._replaySnapshot.bars.slice();
   }
 
   async function ensureSnapshotForward(pane) {
     const snap = pane._replaySnapshot;
-    const liveEnd = snap?.liveEndBarTime ?? snap?.fullEndBarTime;
+    const cut = snap?.cursorTime ?? replay.getState().currentBarTime;
+    if (cut != null) refreshSnapshotLiveEndIfStale(pane, cut);
+    const liveEnd = snap?.liveEndBarTime ?? ctx.replayLiveEndUtc ?? replayLiveEndUtc;
     if (!snap?.partial || liveEnd == null) return;
 
     const last = snap.bars.at(-1);
@@ -1141,6 +1188,7 @@ export function attachReplayEngine(ctx, replay) {
     const prevCursor = existingSnap?.cursorTime ?? existingSnap?.fullEndBarTime;
 
     captureSnapshots(cut);
+    refreshAllSnapshotLiveEnds();
 
     if (existingSnap && cut != null && prevCursor != null && cut < prevCursor) {
       trimReplaySnapshotsToCut(cut);
@@ -1251,11 +1299,12 @@ export function attachReplayEngine(ctx, replay) {
     const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
     if (!pane?.bars?.length) return false;
 
-    replayLiveEndUtc = session.fullEndBarTime;
-    ctx.replayLiveEndUtc = session.fullEndBarTime;
+    const liveEnd = resolveReplayLiveEndBarTime(pane, session.currentBarTime, session.fullEndBarTime);
+    replayLiveEndUtc = liveEnd;
+    ctx.replayLiveEndUtc = liveEnd;
 
     for (const p of ctx.getAllChartPanes()) {
-      restoreSnapshotFromPartial(p, session);
+      restoreSnapshotFromPartial(p, { ...session, fullEndBarTime: liveEnd });
     }
 
     const snap = pane._replaySnapshot;
@@ -1293,7 +1342,8 @@ export function attachReplayEngine(ctx, replay) {
       selectedIdx,
       currentIdx,
       bars: pane._replaySnapshot.bars.length,
-      fullEnd: session.fullEndBarTime,
+      fullEnd: liveEnd,
+      partial: pane._replaySnapshot.partial,
     });
     return true;
   }
@@ -1526,12 +1576,14 @@ export function attachReplayEngine(ctx, replay) {
     },
     getMaxBarIndex,
     hasForwardBars,
+    refreshReplayLiveEnd: refreshAllSnapshotLiveEnds,
     restoreSession,
     onChartResolutionChange,
     beforeResolutionChange,
     stepForward: async () => {
       const state = replay.getState();
       if (!state.active || state.currentBarTime == null) return;
+      refreshAllSnapshotLiveEnds();
       const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
       if (!pane) return;
       await ensureAllSnapshotsForward();

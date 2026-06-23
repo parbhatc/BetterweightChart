@@ -22,7 +22,7 @@ export function attachBarLoader(ctx) {
       const anchorFrom = Math.min(pending.selectedBarTime, pending.currentBarTime);
       return {
         anchorFrom,
-        loadTo: pending.fullEndBarTime ?? pending.currentBarTime,
+        loadTo: undefined,
         capDisplay: pending.currentBarTime,
       };
     }

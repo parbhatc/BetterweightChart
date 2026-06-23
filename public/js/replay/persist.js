@@ -80,8 +80,8 @@ export function buildReplaySessionPayload(state, ctx) {
   const snap = pane._replaySnapshot;
   const fullEndBarTime =
     snap?.liveEndBarTime ??
-    snap?.fullEndBarTime ??
-    snap?.bars?.at(-1)?.time ??
+    ctx.replayLiveEndUtc ??
+    pane._replayMarketEndUtc ??
     state.currentBarTime;
 
   return {

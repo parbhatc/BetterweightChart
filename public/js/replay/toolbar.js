@@ -259,6 +259,10 @@ export function mountReplayToolbar(opts) {
     footer.hidden = !state.active;
     if (!state.active) closeAllMenus();
 
+    if (state.active && state.selectedBarTime != null) {
+      ctx.replayEngine?.refreshReplayLiveEnd?.();
+    }
+
     const chartRes = getChartResolution();
     selectGroup?.classList.toggle("is-selecting", state.selectingBar);
     const hasSelection = state.selectedBarTime != null;

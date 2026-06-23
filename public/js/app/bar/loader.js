@@ -585,6 +585,8 @@ export function createBarLoader(opts) {
       pane._firstDataRequest = false;
       let bars = result.bars.slice();
       if (replayCapTo != null && Number.isFinite(replayCapTo)) {
+        const marketEnd = bars.at(-1)?.time;
+        if (marketEnd != null) pane._replayMarketEndUtc = marketEnd;
         bars = bars.filter((b) => b.time <= replayCapTo);
       }
       pane.bars = bars;
