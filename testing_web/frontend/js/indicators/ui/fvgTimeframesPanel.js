@@ -82,6 +82,23 @@ export function resolveFvgLayers(inputs, chartSec) {
   return layers;
 }
 
+/**
+ * When hideLowerTf is on, drop lower-TF layers only if the chart timeframe row is not enabled.
+ * If the user explicitly enabled chart + HTF rows, keep both.
+ * @param {{ tfSec: number, tfId: string, label: string }[]} layers
+ * @param {object} inputs
+ * @param {number} chartSec
+ */
+export function applyHideLowerTfFilter(layers, inputs, chartSec) {
+  if (inputs.hideLowerTf === false || !layers.length) return layers;
+  const chartRowEnabled = resolveFvgTimeframeRows(inputs).some(
+    (row) => row.enabled && (row.timeframe ?? "chart") === "chart",
+  );
+  if (chartRowEnabled) return layers;
+  const maxSec = Math.max(...layers.map((l) => l.tfSec));
+  return layers.filter((l) => l.tfSec === maxSec);
+}
+
 /** @param {string} tfId @param {{ id: string, label: string }[]} options */
 function timeframeOptionLabel(tfId, options) {
   const found = options.find((o) => o.id === tfId);

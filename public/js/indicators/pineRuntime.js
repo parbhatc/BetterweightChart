@@ -23,6 +23,7 @@ export function createBarScriptContext(opts) {
     plotIds,
     symbolInfo = null,
     overlayCtx = null,
+    instance = null,
   } = opts;
 
   /** @type {Record<string, Array<number | null>>} */
@@ -46,6 +47,7 @@ export function createBarScriptContext(opts) {
     bars: utcBars,
     chartBars,
     overlayCtx,
+    instance,
     labels,
     boxes,
     lines,

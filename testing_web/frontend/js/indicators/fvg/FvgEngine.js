@@ -10,7 +10,7 @@ import {
   fvgZonePassesSizeFilter,
   resolveFvgSizeFilterLimits,
 } from "../ui/symbolSizeRulesPanel.js";
-import { resolveFvgLayers } from "../ui/fvgTimeframesPanel.js";
+import { resolveFvgLayers, applyHideLowerTfFilter } from "../ui/fvgTimeframesPanel.js";
 import { mapUtcTimeToChartTime } from "/js/indicators/math/barTimeMap.js";
 import { inputColorWithOpacity } from "/js/indicators/styleColor.js";
 import {
@@ -21,6 +21,7 @@ import {
   debugFvgInitSkip,
   debugFvgZoneEvent,
 } from "./fvgDebug.js";
+import { overlayGeometryEqual } from "/js/indicators/overlayCache.js";
 
 const LABEL_DISTANCE_BARS = 10;
 
@@ -138,6 +139,12 @@ function layerMatchesCorrelatedTfSel(sel, layer, chartSec) {
   return wantSec != null && layer.tfSec === wantSec;
 }
 
+/** @param {Map<string, object[]> | undefined} map */
+function cloneZoneMap(map) {
+  if (!map) return new Map();
+  return new Map([...map.entries()].map(([key, zones]) => [key, zones.map((zone) => ({ ...zone }))]));
+}
+
 export class FvgEngine {
   /** @param {import("../../pineRuntime.js").BarScriptContext} script */
   constructor(script) {
@@ -220,9 +227,11 @@ export class FvgEngine {
       return;
     }
 
-    if (inputs.hideLowerTf !== false) {
-      const maxSec = Math.max(...layers.map((l) => l.tfSec));
-      layers = layers.filter((l) => l.tfSec === maxSec);
+    layers = applyHideLowerTfFilter(layers, inputs, chartSec);
+    if (!layers.length) {
+      this.script.state.skip = true;
+      debugFvgInitSkip("no layers after hideLowerTf");
+      return;
     }
 
     const requireCorrelatedFvg = inputs.requireCorrelatedFvg === true;
@@ -325,6 +334,232 @@ export class FvgEngine {
     }
     if (this.script.index !== this.script.bars.length - 1) return;
     this.emitAllBoxes();
+    if (this.script.instance) {
+      this.script.instance._fvgSnapshot = this.captureSnapshot();
+    }
+  }
+
+  /** @returns {object} */
+  captureSnapshot() {
+    const state = this.script.state;
+    return {
+      skip: Boolean(state.skip),
+      barLen: this.script.bars.length,
+      cfg: state.cfg ? { ...state.cfg } : null,
+      chartLayers: (state.chartLayers ?? []).map((entry) => ({
+        layer: entry.layer,
+        startIdx: entry.startIdx,
+        series: entry.series.map((bar) => (bar ? { ...bar } : bar)),
+      })),
+      htfLayers: (state.htfLayers ?? []).map((entry) => ({
+        layer: entry.layer,
+        series: entry.series.map((bar) => (bar ? { ...bar } : bar)),
+      })),
+      layerActive: cloneZoneMap(state.layerActive),
+      layerIfvg: cloneZoneMap(state.layerIfvg),
+      compareSeriesByLayer: state.compareSeriesByLayer
+        ? new Map(
+            [...state.compareSeriesByLayer.entries()].map(([key, series]) => [
+              key,
+              series.map((bar) => (bar ? { ...bar } : bar)),
+            ]),
+          )
+        : null,
+    };
+  }
+
+  /** @param {object} ub @param {object} cb @param {number} i */
+  chartBarPoint(ub, cb, i) {
+    return {
+      ...ub,
+      sourceIndex: i,
+      startSourceIndex: i,
+      chartTime: cb?.time ?? ub.time,
+      confirmChartTime: cb?.time ?? ub.time,
+    };
+  }
+
+  /** @param {object} snapshot @param {object[]} utcBars @param {object[]} chartBars */
+  restoreSnapshotState(snapshot, utcBars, chartBars) {
+    this.script.state.skip = snapshot.skip;
+    this.script.state.cfg = snapshot.cfg ? { ...snapshot.cfg } : null;
+    this.script.state.htfLayers = snapshot.htfLayers;
+    this.script.state.compareSeriesByLayer = snapshot.compareSeriesByLayer;
+    this.script.state.layerActive = cloneZoneMap(snapshot.layerActive);
+    this.script.state.layerIfvg = cloneZoneMap(snapshot.layerIfvg);
+  }
+
+  /**
+   * Re-process only the forming bar (live tick) without a full historical rescan.
+   * @param {object} snapshot
+   * @param {object[]} [previousBoxes]
+   */
+  runLiveTick(snapshot, previousBoxes = []) {
+    if (snapshot.skip || !snapshot.cfg) {
+      return { boxes: [], snapshot };
+    }
+
+    const utcBars = this.script.bars;
+    const chartBars = this.script.chartBars;
+    this.restoreSnapshotState(snapshot, utcBars, chartBars);
+    const maxBack = snapshot.cfg.maxBack ?? 300;
+    this.script.state.chartLayers = snapshot.chartLayers.map((entry) => {
+      const series = entry.series.map((bar, i) => {
+        if (!bar || i !== entry.series.length - 1) return bar ? { ...bar } : bar;
+        const ub = utcBars[i];
+        const cb = chartBars[i];
+        if (!ub) return bar ? { ...bar } : bar;
+        return this.chartBarPoint(ub, cb, i);
+      });
+      return {
+        layer: entry.layer,
+        series,
+        startIdx: Math.max(2, series.length - maxBack),
+      };
+    });
+
+    for (const entry of this.script.state.chartLayers) {
+      const lastIdx = entry.series.length - 1;
+      if (lastIdx < entry.startIdx) continue;
+      this.onBarLayer(entry.layer, entry.series, entry.startIdx, lastIdx);
+    }
+
+    return this.finishIncrementalEmit(previousBoxes);
+  }
+
+  /**
+   * Append one confirmed bar + new forming bar without a full historical rescan.
+   * @param {object} snapshot
+   * @param {object[]} [previousBoxes]
+   */
+  runAppendBar(snapshot, previousBoxes = []) {
+    if (snapshot.skip || !snapshot.cfg) {
+      return { boxes: [], snapshot };
+    }
+
+    const utcBars = this.script.bars;
+    const chartBars = this.script.chartBars;
+    const newLen = utcBars.length;
+    if (newLen < 2 || newLen !== snapshot.barLen + 1) {
+      return null;
+    }
+
+    this.restoreSnapshotState(snapshot, utcBars, chartBars);
+    const maxBack = snapshot.cfg.maxBack ?? 300;
+    const lastChartTime = chartBars.at(-1)?.time;
+    if (lastChartTime != null && this.script.state.cfg) {
+      this.script.state.cfg.lastChartTime = lastChartTime;
+    }
+
+    this.script.state.chartLayers = snapshot.chartLayers.map((entry) => {
+      const prevLen = entry.series.length;
+      /** @type {object[]} */
+      const series = entry.series.map((bar) => (bar ? { ...bar } : bar));
+      for (let i = prevLen; i < newLen; i++) {
+        const ub = utcBars[i];
+        const cb = chartBars[i];
+        if (ub) series.push(this.chartBarPoint(ub, cb, i));
+      }
+      const confirmIdx = newLen - 2;
+      if (confirmIdx >= 0 && confirmIdx < series.length) {
+        const ub = utcBars[confirmIdx];
+        const cb = chartBars[confirmIdx];
+        if (ub) series[confirmIdx] = this.chartBarPoint(ub, cb, confirmIdx);
+      }
+      return {
+        layer: entry.layer,
+        series,
+        startIdx: Math.max(2, series.length - maxBack),
+      };
+    });
+
+    for (const entry of this.script.state.chartLayers) {
+      const lastIdx = entry.series.length - 1;
+      const confirmIdx = lastIdx - 1;
+      if (confirmIdx >= entry.startIdx) {
+        this.onBarLayer(entry.layer, entry.series, entry.startIdx, confirmIdx);
+      }
+      if (lastIdx >= entry.startIdx) {
+        this.onBarLayer(entry.layer, entry.series, entry.startIdx, lastIdx);
+      }
+    }
+
+    const result = this.finishIncrementalEmit(previousBoxes);
+    if (result) result.snapshot.barLen = newLen;
+    return result;
+  }
+
+  /**
+   * Emit overlay boxes silently and only return new geometry when it changed.
+   * @param {object[]} previousBoxes
+   */
+  finishIncrementalEmit(previousBoxes) {
+    this.script.boxes.length = 0;
+    this.emitAllBoxes({ silent: true });
+    const boxes = [...this.script.boxes];
+    const nextSnapshot = this.captureSnapshot();
+    nextSnapshot.barLen = this.script.bars.length;
+
+    if (previousBoxes.length && overlayGeometryEqual(previousBoxes, boxes)) {
+      return { boxes: previousBoxes, snapshot: nextSnapshot };
+    }
+    return { boxes, snapshot: nextSnapshot };
+  }
+
+  /**
+   * Rebuild HTF layers when security series data arrives/grows (no full chart rescan).
+   * @param {object} snapshot
+   * @param {object[]} [previousBoxes]
+   */
+  runHtfRefresh(snapshot, previousBoxes = []) {
+    if (snapshot.skip || !snapshot.cfg) {
+      return { boxes: [], snapshot };
+    }
+
+    const utcBars = this.script.bars;
+    const chartBars = this.script.chartBars;
+    this.restoreSnapshotState(snapshot, utcBars, chartBars);
+    const maxBack = snapshot.cfg.maxBack ?? 300;
+    const lastChartTime = chartBars.at(-1)?.time;
+    if (lastChartTime != null && this.script.state.cfg) {
+      this.script.state.cfg.lastChartTime = lastChartTime;
+    }
+
+    this.script.state.chartLayers = snapshot.chartLayers.map((entry) => {
+      const series = entry.series.map((bar, i) => {
+        if (!bar) return bar;
+        const ub = utcBars[i];
+        const cb = chartBars[i];
+        if (!ub) return { ...bar };
+        return this.chartBarPoint(ub, cb, i);
+      });
+      return {
+        layer: entry.layer,
+        series,
+        startIdx: Math.max(2, series.length - maxBack),
+      };
+    });
+
+    /** @type {{ layer: { tfSec: number, tfId: string, label: string }, series: object[] }[]} */
+    const newHtfLayers = [];
+    for (const entry of snapshot.htfLayers ?? []) {
+      const { layer } = entry;
+      const htf = getSecuritySeries(this.script.overlayCtx ?? {}, undefined, layer.tfId);
+      if (!htf?.utcBars?.length) {
+        newHtfLayers.push({
+          layer,
+          series: entry.series.map((bar) => (bar ? { ...bar } : bar)),
+        });
+        continue;
+      }
+      const series = mapHtfBarsToSeries(htf);
+      const startIdx = Math.max(2, series.length - maxBack);
+      this.scanLayerSeries(layer, series, startIdx);
+      newHtfLayers.push({ layer, series });
+    }
+    this.script.state.htfLayers = newHtfLayers;
+
+    return this.finishIncrementalEmit(previousBoxes);
   }
 
   /** @param {import("../../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer */
@@ -515,10 +750,11 @@ export class FvgEngine {
     this.script.state.layerIfvg.set(layer.label, ifvgActive);
   }
 
-  /** @param {import("../../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object} zone @param {object[]} series @param {{ isIfvg?: boolean, layerLabel?: string }} opts */
+  /** @param {import("../../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object} zone @param {object[]} series @param {{ isIfvg?: boolean, layerLabel?: string, silent?: boolean }} opts */
   emitZoneBox(layer, series, zone, opts = {}) {
     const cfg = this.script.state.cfg;
     const isIfvg = opts.isIfvg === true;
+    const silent = opts.silent === true;
     if (isIfvg && !cfg.showIfvg) return;
     if (!isIfvg && zone.forming && !cfg.showLiveForming) return;
     if (!isIfvg && !zone.forming && !cfg.showFvg) return;
@@ -598,7 +834,7 @@ export class FvgEngine {
 
     const showLabel = cfg.showLabels && Boolean(label && String(label).trim());
 
-    debugFvgDrawBox(layer, zone, series, label, showLabel);
+    debugFvgDrawBox(layer, zone, series, label, showLabel, silent);
 
     this.script.drawBox({
       timeStart: startTime,
@@ -621,8 +857,9 @@ export class FvgEngine {
     });
   }
 
-  /** @param {import("../../pineRuntime.js").BarScriptContext} script */
-  emitAllBoxes() {
+  /** @param {{ silent?: boolean }} [opts] */
+  emitAllBoxes(opts = {}) {
+    const silent = opts.silent === true;
     const cfg = this.script.state.cfg;
     /** @type {{ layer: object, series: object[], zone: object, sortTime: number }[]} */
     const fvgCandidates = [];
@@ -721,13 +958,14 @@ export class FvgEngine {
       fvgZones,
       ifvgZones,
       cfg,
+      silent,
     });
 
     for (const item of fvgZones) {
-      this.emitZoneBox(item.layer, item.series, item.zone, { layerLabel: item.layer.label });
+      this.emitZoneBox(item.layer, item.series, item.zone, { layerLabel: item.layer.label, silent });
     }
     for (const item of ifvgZones) {
-      this.emitZoneBox(item.layer, item.series, item.zone, { isIfvg: true });
+      this.emitZoneBox(item.layer, item.series, item.zone, { isIfvg: true, silent });
     }
   }
 }

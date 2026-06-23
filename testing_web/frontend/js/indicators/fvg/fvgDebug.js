@@ -138,7 +138,7 @@ export function debugFvgZoneEvent(layer, zone, series, barIdx, event) {
  * @param {object} opts.cfg
  */
 export function debugFvgEmitResult(opts) {
-  if (!isChartDebugEnabled()) return;
+  if (!isChartDebugEnabled() || opts.silent) return;
 
   const mapDrawn = (items, isIfvg) =>
     items.map((item) => ({
@@ -173,8 +173,8 @@ export function debugFvgEmitResult(opts) {
  * @param {string} label
  * @param {boolean} showLabel
  */
-export function debugFvgDrawBox(layer, zone, series, label, showLabel) {
-  if (!isChartDebugEnabled()) return;
+export function debugFvgDrawBox(layer, zone, series, label, showLabel, silent = false) {
+  if (!isChartDebugEnabled() || silent) return;
   const key = `draw:${layer.label}:${zone.kind}:${zone.startTime}:${Boolean(zone.forming)}:${Boolean(zone.partial)}`;
   chartDebugThrottle(
     "fvg",

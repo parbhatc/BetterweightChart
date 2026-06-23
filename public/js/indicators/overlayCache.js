@@ -39,12 +39,16 @@ export function overlayRecomputeKey(instance, chartBars, Indicator) {
   return `${instance.defId}|${head}|${tail}|${len}|${JSON.stringify(instance.inputs)}|${stylePart}`;
 }
 
-/** @param {object} instance */
-export function clearOverlayInstanceCache(instance) {
+/** @param {object} instance @param {object} opts */
+export function clearOverlayInstanceCache(instance, opts = {}) {
   instance._overlayRecomputeKey = undefined;
   instance._overlayGeomKey = undefined;
   instance._overlayBoxCache = undefined;
   instance._overlayLastSyncToken = undefined;
   instance._overlayAppliedGeomKey = undefined;
   instance._pendingOverlayApply = undefined;
+  if (!opts.soft) {
+    delete instance._fvgRuntime;
+    delete instance._fvgSnapshot;
+  }
 }

@@ -138,9 +138,13 @@ export function createOverlaySync(deps) {
       !instance._initPending &&
       instance._overlayRecomputeKey === recomputeKey &&
       Array.isArray(instance._overlayBoxCache);
+    const refreshLiveOnCacheHit =
+      cacheHit &&
+      typeof Indicator.shouldRefreshOverlayOnCacheHit === "function" &&
+      Indicator.shouldRefreshOverlayOnCacheHit(instance, overlayCtx);
     if (instance._initPending) {
       overlayData = [];
-    } else if (cacheHit) {
+    } else if (cacheHit && !refreshLiveOnCacheHit) {
       overlayData = instance._overlayBoxCache;
     } else {
       overlayData = Indicator.computeOverlay?.(utcBars, chartBars, instance, overlayCtx) ?? [];
@@ -242,7 +246,9 @@ export function createOverlaySync(deps) {
           instanceUsesCompareSymbols(instance, paneCtx, getIndicatorClass, filter.compareSymbols);
         if (!usesHtf && !usesCompare) continue;
       }
-      clearOverlayInstanceCache(instance);
+      clearOverlayInstanceCache(instance, {
+        soft: Boolean(filter?.htfKeys?.size && instance.defId === "fvg" && instance._fvgRuntime?.snapshot),
+      });
       if (instance.lastPlots) instance.lastPlots.overlay = [];
     }
   }
