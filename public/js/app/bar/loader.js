@@ -534,7 +534,11 @@ export function createBarLoader(opts) {
       if (opts.force) {
         unsubscribePane(pane.index);
         pane._historyErrorUntil = null;
-        const loadOpts = { scrollToLatest: false };
+        const loadOpts = {
+          scrollToLatest: false,
+          deferChartRefresh: Boolean(opts.deferChartRefresh),
+          skipPriceScaleMargins: Boolean(opts.skipPriceScaleMargins),
+        };
         const restored = await tryReplayCacheLoad(loadOpts);
         if (restored) return restored;
         clearPaneBarState(pane);

@@ -3,4 +3,5 @@ node_modules/
 *.log
 .env
 .env.*
+/data/
 server/data/

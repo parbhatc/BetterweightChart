@@ -22,6 +22,22 @@ function logicalToUtc(ta, mapBars, barSec, logical) {
 /**
  * @param {object} pane
  * @param {number} realCount
+ * @param {ReturnType<typeof captureViewportBarLayout>} layout
+ */
+function barLayoutLogicalRange(pane, realCount, layout) {
+  const anchorIndex = viewportAnchorIndex(pane, realCount);
+  let to = anchorIndex + layout.toBeyondAnchor;
+  let from = to - layout.width;
+  if (from < 0) {
+    to -= from;
+    from = 0;
+  }
+  return { from, to };
+}
+
+/**
+ * @param {object} pane
+ * @param {number} realCount
  */
 function viewportAnchorIndex(pane, realCount) {
   if (pane.replayCursorEndIndex != null && pane.replayCursorEndIndex >= 0) {
@@ -175,9 +191,7 @@ export function captureViewportBarLayout(pane, settingsStore, resolutions) {
 export function computeViewportBarLayoutLogical(pane, layout) {
   const realCount = pane.bars?.length ?? 0;
   if (!layout || !realCount) return null;
-  const anchorIndex = viewportAnchorIndex(pane, realCount);
-  const to = anchorIndex + layout.toBeyondAnchor;
-  return { from: to - layout.width, to };
+  return barLayoutLogicalRange(pane, realCount, layout);
 }
 
 /**
@@ -230,11 +244,12 @@ export function restoreViewportBarLayout(
   const realCount = pane.bars?.length ?? 0;
   if (!realCount) return null;
 
+  const { from, to } = barLayoutLogicalRange(pane, realCount, layout);
   const anchorIndex = viewportAnchorIndex(pane, realCount);
-  const to = anchorIndex + layout.toBeyondAnchor;
-  const from = to - layout.width;
 
-  ts.setVisibleLogicalRange({ from, to });
+  if (!opts.skipLogical) {
+    ts.setVisibleLogicalRange({ from, to });
+  }
 
   const priceResult =
     !opts.skipPrice && layout.price
@@ -306,7 +321,9 @@ export function restoreViewportBarLayoutFromUtc(
   const to = timeToLogical(mapBars, barSec, visibleToUtc);
   if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) return null;
 
-  pane.chart.timeScale().setVisibleLogicalRange({ from, to });
+  if (!opts.skipLogical) {
+    pane.chart.timeScale().setVisibleLogicalRange({ from, to });
+  }
 
   const priceResult =
     !opts.skipPrice && layout.price

@@ -1,5 +1,5 @@
 /**
- * Lightweight per-chart spinner while data stays on screen (e.g. replay TF switch).
+ * Lightweight per-chart spinner while data stays on screen (symbol / TF / replay switches).
  */
 export function createChartOverlayLoader() {
   /** @type {Map<HTMLElement, HTMLElement>} */

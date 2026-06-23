@@ -15,7 +15,7 @@
   pointer-events: none;
 }
 
-/* Replay / deferred refresh: spinner over chart; block pan/zoom while loading */
+/* Symbol / TF / replay switches: spinner over chart; block pan/zoom while loading */
 .app-loader--overlay {
   z-index: 40;
   background: color-mix(in srgb, var(--tv-bg) 18%, transparent);

@@ -2,9 +2,12 @@ import { mountSymbolSearch } from "../../../ui/symbol/search.js";
 import { mountTimeframePicker } from "../../../ui/timeframe/picker.js";
 import { debugSymbolChange, debugTimeframeChange } from "../../../debug/chart/symbolTimeframe.js";
 import { captureVisibleViewport, restoreVisibleViewport } from "../../../chart/pane/viewport.js";
+import { resolutionSec } from "../../../chart/resolutions.js";
 import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
+  computeViewportBarLayoutLogical,
+  computeViewportLogicalFromUtc,
 } from "../../../chart/pane/viewportBarLayout.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { seedHtfBars } from "../../bar/htfBarCache.js";
@@ -66,6 +69,71 @@ function showChartPendingOverlay(ctx, panes) {
 /** @param {import("./state.js").BootContext} ctx */
 function hideChartPendingOverlay(ctx) {
   ctx.chartOverlayLoader.hide();
+}
+
+/** @param {string | null | undefined} fromRes @param {string | null | undefined} toRes */
+function viewportResolutionJumpRatio(fromRes, toRes) {
+  const fromSec = resolutionSec(fromRes);
+  const toSec = resolutionSec(toRes);
+  if (!fromSec || !toSec) return 1;
+  return Math.max(fromSec, toSec) / Math.min(fromSec, toSec);
+}
+
+/**
+ * @param {object} pane
+ * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
+ * @param {import("./state.js").BootContext} ctx
+ */
+function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
+  if (!layout || !pane?.bars?.length) return null;
+  const barLogical = computeViewportBarLayoutLogical(pane, layout);
+  if (barLogical) return barLogical;
+  if (viewportResolutionJumpRatio(layout.resolution, pane.resolution) <= 12) {
+    return computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
+  }
+  return null;
+}
+
+/**
+ * setData + viewport in one paint; price margins restored without re-clamping bar slots.
+ * @param {import("./state.js").BootContext} ctx
+ * @param {object} pane
+ * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} savedLayout
+ */
+function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
+  const logicalRange = resolveTimeframeSwitchLogicalRange(pane, savedLayout, ctx);
+  ctx.refreshPaneCandleData?.(pane, {
+    logicalRange: logicalRange ?? undefined,
+    deferSessionBg: true,
+  });
+  if (!savedLayout) return;
+  restoreViewportBarLayout(
+    pane,
+    savedLayout,
+    ctx.settingsStore,
+    ctx.resolutions,
+    "timeframe",
+    ctx.activePriceScaleId,
+    { skipLogical: Boolean(logicalRange) },
+  );
+}
+
+/** @param {object | object[]} panes */
+function suppressPaneHistoryPrefetch(panes) {
+  const list = Array.isArray(panes) ? panes : [panes];
+  for (const pane of list) {
+    if (pane) pane._suppressHistoryPrefetch = true;
+  }
+}
+
+/** @param {object | object[]} panes */
+function releasePaneHistoryPrefetch(panes) {
+  const list = Array.isArray(panes) ? panes : [panes];
+  requestAnimationFrame(() => {
+    for (const pane of list) {
+      if (pane) delete pane._suppressHistoryPrefetch;
+    }
+  });
 }
 
 /**
@@ -151,6 +219,9 @@ function finishSeriesReload(ctx, panes) {
  * @param {import("./state.js").BootContext} ctx
  */
 export async function wireSymbolAndTimeframePickers(ctx) {
+  /** @type {number} */
+  let tfChangeGen = 0;
+
   if (ctx.symbolPicker) {
     ctx.symbolSearchUi = mountSymbolSearch({
       root: ctx.symbolPicker,
@@ -238,6 +309,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         ctx.resolutions = res;
       },
       onChange: async (res) => {
+        const gen = ++tfChangeGen;
         const sync = ctx.layoutManager?.getSync();
         if (ctx.layoutManager && sync?.interval) {
           const from = ctx.resolution;
@@ -259,26 +331,31 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           ctx.resolution = res;
           ctx.refreshWatermark();
           ctx.refreshStatusLine();
-          const deferChartRefresh = ctx.replayEngine?.isReplayLocked?.() ?? false;
-          if (deferChartRefresh) showChartPendingOverlay(ctx, panes);
+          const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
+          suppressPaneHistoryPrefetch(panes);
+          showChartPendingOverlay(ctx, panes);
           try {
             await ctx.loadBarsForPanes(panes, {
               force: true,
-              deferChartRefresh,
+              deferChartRefresh: true,
               skipPriceScaleMargins: true,
             });
-            if (deferChartRefresh) {
+            if (gen !== tfChangeGen) return;
+            if (replayLocked) {
               await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
               finishSeriesReload(ctx, panes);
             } else {
+              for (let i = 0; i < panes.length; i += 1) {
+                paintPaneAfterTimeframeLoad(ctx, panes[i], savedLayouts[i]);
+              }
               finishSeriesReload(ctx, panes);
-              await afterTimeframeChangeThenRestoreViewport(ctx, () => {
-                if (ctx.replayEngine?.isReplayLocked?.()) return;
-                restorePaneBarLayouts(ctx, panes, savedLayouts);
-              });
+              await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
             }
           } finally {
-            if (deferChartRefresh) hideChartPendingOverlay(ctx);
+            if (gen === tfChangeGen) {
+              releasePaneHistoryPrefetch(panes);
+              hideChartPendingOverlay(ctx);
+            }
           }
           return;
         }
@@ -301,33 +378,29 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         ctx.resolution = res;
         ctx.refreshWatermark();
         ctx.refreshStatusLine();
-        const deferChartRefresh = ctx.replayEngine?.isReplayLocked?.() ?? false;
-        if (deferChartRefresh) showChartPendingOverlay(ctx, pane);
+        const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
+        suppressPaneHistoryPrefetch(pane);
+        showChartPendingOverlay(ctx, pane);
         try {
           await ctx.loadPaneBars(pane, {
             force: true,
-            deferChartRefresh,
+            deferChartRefresh: true,
             skipPriceScaleMargins: true,
           });
-          if (deferChartRefresh) {
+          if (gen !== tfChangeGen) return;
+          if (replayLocked) {
             await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
             finishSeriesReload(ctx, [pane]);
           } else {
+            paintPaneAfterTimeframeLoad(ctx, pane, savedLayout);
             finishSeriesReload(ctx, [pane]);
-            await afterTimeframeChangeThenRestoreViewport(ctx, () => {
-              if (ctx.replayEngine?.isReplayLocked?.()) return;
-              restoreViewportBarLayout(
-                pane,
-                savedLayout,
-                ctx.settingsStore,
-                ctx.resolutions,
-                "timeframe",
-                ctx.activePriceScaleId,
-              );
-            });
+            await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
           }
         } finally {
-          if (deferChartRefresh) hideChartPendingOverlay(ctx);
+          if (gen === tfChangeGen) {
+            releasePaneHistoryPrefetch(pane);
+            hideChartPendingOverlay(ctx);
+          }
         }
       },
     });
