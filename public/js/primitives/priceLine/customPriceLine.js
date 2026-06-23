@@ -1,5 +1,6 @@
 import { LineStyle } from "lightweight-charts";
 import { safePriceToY } from "../../chart/coords/timeScale.js";
+import { formatDisplayPrice } from "../../chart/format.js";
 import { lineStyleDashPattern } from "../../chart/line/style.js";
 import { resolveStudyLabelPositions } from "../../indicators/primitives/scaleLabels.js";
 import {
@@ -102,7 +103,7 @@ function formatSeriesPrice(series, price) {
   } catch {
     //
   }
-  return String(price);
+  return formatDisplayPrice(price, 2);
 }
 
 class CustomPriceLinesPrimitive {

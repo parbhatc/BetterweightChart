@@ -1,6 +1,7 @@
 import { renderStatusLine } from "../../chart/status/line.js";
 import { getMarketStatusDetails } from "../../chart/market/status.js";
 import { precisionFromSettings } from "../../chart/timezone/list.js";
+import { formatDisplayPrice } from "../../chart/format.js";
 import { resolvePriceScalePlacement } from "../../chart/scale/settings.js";
 import { rafThrottle, trackChartPanning } from "../../chart/pan/perf.js";
 import { timeToBarIndex } from "../../chart/coords/timeScale.js";
@@ -173,10 +174,7 @@ export function createPaneExtras(deps) {
           priceText:
             close == null || !Number.isFinite(close)
               ? ""
-              : Number(close).toLocaleString(undefined, {
-                  minimumFractionDigits: precision,
-                  maximumFractionDigits: precision,
-                }),
+              : formatDisplayPrice(close, precision),
         };
       },
     });
@@ -433,11 +431,7 @@ export function createPaneExtras(deps) {
           pane.quote ?? getQuoteForSymbol?.(pane.symbol) ?? null;
         if (!quote || quote.bid == null || quote.ask == null) return { enabled: false };
         const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
-        const fmt = (n) =>
-          Number(n).toLocaleString(undefined, {
-            minimumFractionDigits: precision,
-            maximumFractionDigits: precision,
-          });
+        const fmt = (n) => formatDisplayPrice(n, precision);
         const placement = resolvePriceScalePlacement(sc.scalesPlacement);
         const scaleVisible = true;
         const cv = settingsStore.get().canvas ?? {};

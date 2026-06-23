@@ -7,7 +7,8 @@ import {
   resolvePriceScalePlacement,
 } from "../scale/settings.js";
 import { invalidateChartTimeCache } from "../timezone/chartTime.js";
-import { priceFormatFromPrecisionSetting, resolveTimezone } from "../timezone/list.js";
+import { priceFormatFromPrecisionSetting, precisionFromSettings, resolveTimezone } from "../timezone/list.js";
+import { formatDisplayPrice } from "../format.js";
 import {
   formatAxisDateTick,
   formatAxisMonthTick,
@@ -17,6 +18,7 @@ import {
 import { toDate } from "../format.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { enforcePriceBarRatio, measurePriceBarRatio } from "../price/barRatio.js";
+import { resolutionSec } from "../resolutions.js";
 
 /** Series times are pseudo-UTC (local wall clock); format as UTC, not with a tz offset. */
 const CHART_TIME_LABEL_TZ = "Etc/UTC";
@@ -122,8 +124,13 @@ export function applySettingsToChart(opts) {
     },
     localization: {
       locale: navigator.language,
-      timeFormatter: (t) =>
-        formatChartTimeLabel(t, sc, CHART_TIME_LABEL_TZ, { includeTime: true }),
+      priceFormatter: (price) => formatDisplayPrice(price, precisionFromSettings(s, paneSymbolInfo)),
+      timeFormatter: (t) => {
+        const barSec = pane._chartView?.barSec ?? resolutionSec(pane.resolution) ?? 60;
+        return formatChartTimeLabel(t, sc, CHART_TIME_LABEL_TZ, {
+          includeTime: barSec < 86400,
+        });
+      },
     },
   });
 

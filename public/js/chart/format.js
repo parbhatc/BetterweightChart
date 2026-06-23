@@ -7,6 +7,16 @@ export function toDate(t) {
   return new Date(0);
 }
 
+/** @param {number} price @param {number} precision */
+export function formatDisplayPrice(price, precision) {
+  if (price == null || !Number.isFinite(price)) return "";
+  const p = Math.max(0, Number(precision) || 0);
+  return Number(price).toLocaleString(undefined, {
+    minimumFractionDigits: p,
+    maximumFractionDigits: p,
+  });
+}
+
 /** @param {Date} d */
 export function dateTime12h(d) {
   return d.toLocaleString(undefined, {

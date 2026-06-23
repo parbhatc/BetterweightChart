@@ -3,6 +3,7 @@ import {
   priceFormatFromPrecisionSetting,
   resolveTimezone,
 } from "../../../chart/timezone/list.js";
+import { formatDisplayPrice } from "../../../chart/format.js";
 import { applySettingsToChart, applyChartTimezone as applyChartTimezoneToPanes, applyLockPriceBarRatioForPane } from "../../../chart/settings/applier.js";
 import { measurePriceBarRatio } from "../../../chart/price/barRatio.js";
 import { withPreservedViewport } from "../../../chart/pane/viewport.js";
@@ -95,11 +96,7 @@ export function attachSettingsBoot(ctx) {
 
   function formatPrice(n) {
     if (n == null || !Number.isFinite(n)) return "—";
-    const precision = precisionFromSettings(ctx.settingsStore.get(), ctx.symbolInfo);
-    return Number(n).toLocaleString(undefined, {
-      minimumFractionDigits: precision,
-      maximumFractionDigits: precision,
-    });
+    return formatDisplayPrice(n, precisionFromSettings(ctx.settingsStore.get(), ctx.symbolInfo));
   }
 
   function activePriceScaleId() {
