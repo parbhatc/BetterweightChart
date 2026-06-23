@@ -1,7 +1,7 @@
 import { resolveStudyLabelPositions } from "../../indicators/primitives/scaleLabels.js";
+import { hasShellBorder } from "./pillLayout.js";
 
-export const ORDER_LINE_FONT =
-  "-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif";
+export const ORDER_LINE_FONT = "'Trebuchet MS', Roboto, Ubuntu, sans-serif";
 export const ORDER_LINE_ROW_H = 18;
 export const ORDER_LINE_WIDTH = 1;
 
@@ -13,18 +13,53 @@ export function orderLineCenterY(y) {
 export const ORDER_LINE_CANCEL_W = 18;
 export const ORDER_LINE_GAP = 0;
 export const ORDER_LINE_PAD_X = 6;
-export const ORDER_LINE_FONT_SIZE = 11;
+export const ORDER_LINE_FONT_SIZE = 12;
 export const ORDER_LINE_MIN_BODY_W = 36;
 export const ORDER_LINE_MIN_QTY_W = 22;
 export const ORDER_LINE_PILL_INSET = 4;
+export const DEFAULT_ORDER_LINE_FONT_WEIGHT = 900;
+export const DEFAULT_ORDER_LINE_FONT_SIZE = 12;
+export const DEFAULT_ORDER_LINE_FONT_FAMILY = ORDER_LINE_FONT;
+
+/** @param {string | undefined} family */
+export function resolveOrderLineFontFamily(family) {
+  const s = String(family ?? "").trim();
+  return s || DEFAULT_ORDER_LINE_FONT_FAMILY;
+}
+
+/** @param {number | undefined} size */
+export function resolveOrderLineFontSize(size) {
+  const n = Number(size);
+  if (!Number.isFinite(n)) return DEFAULT_ORDER_LINE_FONT_SIZE;
+  return Math.min(16, Math.max(9, Math.round(n)));
+}
+
+/** @param {number | undefined} weight */
+export function resolveOrderLineFontWeight(weight) {
+  const n = Number(weight);
+  if (!Number.isFinite(n)) return DEFAULT_ORDER_LINE_FONT_WEIGHT;
+  return Math.min(900, Math.max(100, Math.round(n)));
+}
 
 /**
  * @param {CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null} ctx
  * @param {string} text
+ * @param {number} [fontWeight]
+ * @param {number} [fontSize]
+ * @param {string} [fontFamily]
  */
-function measureTextWidth(ctx, text) {
+function measureTextWidth(
+  ctx,
+  text,
+  fontWeight = DEFAULT_ORDER_LINE_FONT_WEIGHT,
+  fontSize = DEFAULT_ORDER_LINE_FONT_SIZE,
+  fontFamily = DEFAULT_ORDER_LINE_FONT_FAMILY,
+) {
   if (!ctx) return text.length * 7;
-  ctx.font = `600 ${ORDER_LINE_FONT_SIZE}px ${ORDER_LINE_FONT}`;
+  const w = resolveOrderLineFontWeight(fontWeight);
+  const px = resolveOrderLineFontSize(fontSize);
+  const fam = resolveOrderLineFontFamily(fontFamily);
+  ctx.font = `${w} ${px}px ${fam}`;
   return ctx.measureText(text).width;
 }
 
@@ -41,9 +76,17 @@ export function measureOrderLineRow(state, ctx = null) {
 
   const bodyText = state.text?.trim() || " ";
   const qtyText = state.quantity?.trim() || "";
+  const bodyWeight = resolveOrderLineFontWeight(state.bodyFontWeight);
+  const qtyWeight = resolveOrderLineFontWeight(state.quantityFontWeight);
+  const bodySize = resolveOrderLineFontSize(state.bodyFontSize);
+  const qtySize = resolveOrderLineFontSize(state.quantityFontSize);
+  const bodyFamily = resolveOrderLineFontFamily(state.bodyFontFamily);
+  const qtyFamily = resolveOrderLineFontFamily(state.quantityFontFamily);
 
-  const bodyInner = measureTextWidth(paintCtx, bodyText);
-  const qtyInner = qtyText ? measureTextWidth(paintCtx, qtyText) : 0;
+  const bodyInner = measureTextWidth(paintCtx, bodyText, bodyWeight, bodySize, bodyFamily);
+  const qtyInner = qtyText
+    ? measureTextWidth(paintCtx, qtyText, qtyWeight, qtySize, qtyFamily)
+    : 0;
 
   const bodyW = Math.max(ORDER_LINE_MIN_BODY_W, Math.ceil(bodyInner + ORDER_LINE_PAD_X * 2));
   const qtyW = qtyText
@@ -72,6 +115,19 @@ export function layoutOrderLineGeometry(state, paneW, _scaleW) {
     plotEdge: plotRight,
     rowLeft,
   };
+}
+
+/**
+ * Plot-area width (excludes the price scale). Matches chart.paneSize().width.
+ * @param {import("lightweight-charts").IChartApi | object} chart
+ * @param {HTMLElement | null | undefined} [el]
+ */
+export function plotPaneWidth(chart, el) {
+  const paneW = chart?.paneSize?.()?.width;
+  if (Number.isFinite(paneW) && paneW > 0) return paneW;
+  const scaleW = chart?.priceScale?.("right")?.width?.() ?? 0;
+  const rectW = el?.getBoundingClientRect?.().width ?? 0;
+  return Math.max(0, rectW - scaleW);
 }
 
 /** @param {number} price */
@@ -179,15 +235,34 @@ export function drawOrderLineAxisPriceBadge(ctx, state, y, scaleW, centerYOverri
         ? "#ffffff"
         : state.bodyTextColor || "#ffffff";
   ctx.fillStyle = axisText;
-  ctx.font = `600 12px ${ORDER_LINE_FONT}`;
+  const axisWeight = resolveOrderLineFontWeight(state.bodyFontWeight);
+  const axisFamily = resolveOrderLineFontFamily(state.bodyFontFamily);
+  ctx.font = `${axisWeight} 12px ${axisFamily}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(priceText, scaleW / 2, top + rowH / 2);
   ctx.restore();
 }
 
+/** @param {string | undefined} color */
+function dividerColor(color) {
+  return color && color !== "transparent" ? color : "";
+}
+
+/** @param {import("./types.js").OrderLineState} state */
+function qtyDividerColor(state) {
+  return dividerColor(state.quantityBorderColor) || dividerColor(state.bodyBorderColor);
+}
+
+/** @param {CanvasRenderingContext2D} ctx @param {string} text @param {number} x @param {number} y */
+function fillBoldText(ctx, text, x, y) {
+  ctx.lineWidth = 0.35;
+  ctx.strokeStyle = ctx.fillStyle;
+  ctx.strokeText(text, x, y);
+  ctx.fillText(text, x, y);
+}
+
 /**
- * Order control pill on the chart pane — vertically centered on the line.
  * @param {CanvasRenderingContext2D} ctx
  * @param {import("./types.js").OrderLineState} state
  * @param {number} left
@@ -201,10 +276,19 @@ export function drawOrderLineRow(ctx, state, left, y) {
   const bodyBg = state.bodyBackgroundColor || accent;
   const qtyBg = state.quantityBackgroundColor || accent;
   const cancelLeft = x + totalW - ORDER_LINE_CANCEL_W;
-  const mainW = totalW - ORDER_LINE_CANCEL_W;
+  const shellBorder = hasShellBorder(state);
+  const qtyDiv = qtyDividerColor(state);
+
+  const bodyWeight = resolveOrderLineFontWeight(state.bodyFontWeight);
+  const qtyWeight = resolveOrderLineFontWeight(state.quantityFontWeight);
+  const bodySize = resolveOrderLineFontSize(state.bodyFontSize);
+  const qtySize = resolveOrderLineFontSize(state.quantityFontSize);
+  const bodyFamily = resolveOrderLineFontFamily(state.bodyFontFamily);
+  const qtyFamily = resolveOrderLineFontFamily(state.quantityFontFamily);
 
   ctx.save();
-  ctx.font = `600 ${ORDER_LINE_FONT_SIZE}px ${ORDER_LINE_FONT}`;
+  if (state.isMoving) ctx.globalAlpha = 0.92;
+  ctx.font = `${bodyWeight} ${bodySize}px ${bodyFamily}`;
 
   roundRect(ctx, x, top, totalW, ORDER_LINE_ROW_H, 2, 2, 2, 2);
   ctx.fillStyle = bodyBg;
@@ -215,13 +299,14 @@ export function drawOrderLineRow(ctx, state, left, y) {
     ctx.fillRect(x + bodyW, top, qtyW, ORDER_LINE_ROW_H);
   }
 
-  ctx.fillStyle = "rgba(255,255,255,0.96)";
+  ctx.fillStyle = state.cancelButtonBackgroundColor || "rgba(255,255,255,0.96)";
   ctx.fillRect(cancelLeft, top, ORDER_LINE_CANCEL_W, ORDER_LINE_ROW_H);
 
   roundRect(ctx, x, top, totalW, ORDER_LINE_ROW_H, 2, 2, 2, 2);
   ctx.clip();
 
-  ctx.strokeStyle = "rgba(255,255,255,0.28)";
+  const dividerStroke = shellBorder && qtyDiv ? qtyDiv : "rgba(255,255,255,0.28)";
+  ctx.strokeStyle = dividerStroke;
   ctx.lineWidth = 1;
   if (qtyW) {
     ctx.beginPath();
@@ -237,11 +322,12 @@ export function drawOrderLineRow(ctx, state, left, y) {
   ctx.fillStyle = state.bodyTextColor || "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(bodyText, x + bodyW / 2, top + ORDER_LINE_ROW_H / 2);
+  fillBoldText(ctx, bodyText, x + bodyW / 2, top + ORDER_LINE_ROW_H / 2);
 
   if (qtyW) {
+    ctx.font = `${qtyWeight} ${qtySize}px ${qtyFamily}`;
     ctx.fillStyle = state.quantityTextColor || "#ffffff";
-    ctx.fillText(qtyText, x + bodyW + qtyW / 2, top + ORDER_LINE_ROW_H / 2);
+    fillBoldText(ctx, qtyText, x + bodyW + qtyW / 2, top + ORDER_LINE_ROW_H / 2);
   }
 
   ctx.strokeStyle = state.cancelButtonIconColor || "rgba(0,0,0,0.5)";
@@ -258,5 +344,18 @@ export function drawOrderLineRow(ctx, state, left, y) {
 
   ctx.restore();
 
-  return { left: x, top, width: totalW, height: ORDER_LINE_ROW_H, cancelLeft, mainW };
+  if (shellBorder) {
+    const border = dividerColor(state.bodyBorderColor);
+    if (border) {
+      ctx.save();
+      if (state.isMoving) ctx.globalAlpha = 0.92;
+      ctx.strokeStyle = border;
+      ctx.lineWidth = 1;
+      roundRect(ctx, x + 0.5, top + 0.5, totalW - 1, ORDER_LINE_ROW_H - 1, 2, 2, 2, 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  return { left: x, top, width: totalW, height: ORDER_LINE_ROW_H, cancelLeft, bodyW, qtyW };
 }

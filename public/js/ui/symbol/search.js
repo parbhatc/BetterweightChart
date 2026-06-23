@@ -28,7 +28,28 @@ export function mountSymbolSearch(opts) {
   let activeSymbol = initialSymbol;
 
   function displayTicker(sym, meta) {
-    return meta?.ticker ?? sym.split(":").pop() ?? sym;
+    if (meta?.ticker) return meta.ticker;
+    if (meta?.exchange && meta?.symbol && !String(meta.symbol).includes(":")) {
+      return `${meta.exchange}:${meta.symbol}`;
+    }
+    const raw = sym.split(":").pop() ?? sym;
+    if (meta?.exchange && raw) return `${meta.exchange}:${raw}`;
+    return sym;
+  }
+
+  /** Short root for list rows — exchange is shown in its own column. */
+  function listItemTicker(sym, meta) {
+    const full = displayTicker(sym, meta);
+    const colon = full.lastIndexOf(":");
+    if (colon >= 0) return full.slice(colon + 1);
+    return full;
+  }
+
+  function matchesActiveSymbol(sym, meta, active) {
+    if (!active) return false;
+    if (sym === active || meta?.ticker === active || meta?.streamTicker === active) return true;
+    const root = active.includes(":") ? active.split(":").pop() : active;
+    return sym === root || meta?.symbol === root;
   }
 
   function setLogo(el, url) {
@@ -42,17 +63,23 @@ export function mountSymbolSearch(opts) {
     }
   }
 
+  function resultLabel(r) {
+    return r.name || r.description || r.full_name || r.symbol || "";
+  }
+
   function setDisplay(sym, meta) {
     activeSymbol = sym;
     const ticker = displayTicker(sym, meta);
     if (tickerEl) tickerEl.textContent = ticker;
     if (nameEl) {
       const sub = meta?.contractDescription;
-      nameEl.textContent = sub ? `${meta?.name ?? ticker} · ${sub}` : meta?.name ?? meta?.description ?? ticker;
+      nameEl.textContent = sub
+        ? `${resultLabel(meta) || ticker} · ${sub}`
+        : resultLabel(meta) || ticker;
     }
     if (exchangeEl) exchangeEl.textContent = meta?.exchange ?? "";
     setLogo(logoEl, meta?.logoUrl);
-    trigger?.setAttribute("aria-label", `${ticker}${meta?.name ? ` — ${meta.name}` : ""}`);
+    trigger?.setAttribute("aria-label", `${ticker}${resultLabel(meta) ? ` — ${resultLabel(meta)}` : ""}`);
   }
 
   function close() {
@@ -113,15 +140,16 @@ export function mountSymbolSearch(opts) {
       listEl.innerHTML = results
         .map((r) => {
           const active = r.symbol === activeSymbol ? " is-active" : "";
-          const ticker = displayTicker(r.symbol, r);
+          const ticker = listItemTicker(r.symbol, r);
           const logo = r.logoUrl
             ? `<img class="tv-symbol__item-logo" src="${r.logoUrl}" alt="" loading="lazy" />`
             : `<span class="tv-symbol__item-logo tv-symbol__item-logo--empty" aria-hidden="true"></span>`;
+          const label = resultLabel(r);
           const sub = r.contractDescription ? ` · ${r.contractDescription}` : "";
           return `<li role="option" class="tv-symbol__item${active}" data-symbol="${r.symbol}" aria-selected="${r.symbol === activeSymbol}">
             ${logo}
             <span class="tv-symbol__item-ticker">${ticker}</span>
-            <span class="tv-symbol__item-name">${r.name}${sub}</span>
+            <span class="tv-symbol__item-name">${label}${sub}</span>
             <span class="tv-symbol__item-exchange">${r.exchange}</span>
           </li>`;
         })
@@ -174,14 +202,20 @@ export function mountSymbolSearch(opts) {
       const results = await datafeed.searchSymbols(seed || "NQ");
       results.forEach((s) => metaBySymbol.set(s.symbol, s));
       const meta =
-        metaBySymbol.get(activeSymbol) ?? results.find((s) => s.symbol === activeSymbol);
+        metaBySymbol.get(activeSymbol) ??
+        results.find((s) => matchesActiveSymbol(s.symbol, s, activeSymbol));
       if (meta) setDisplay(activeSymbol, meta);
       else {
         const info = await datafeed.resolveSymbol(activeSymbol);
+        const root = activeSymbol.includes(":") ? activeSymbol.split(":").pop() : activeSymbol;
+        const exchange = info.listed_exchange || info.exchange?.replace(/\s*\(Delayed\)$/i, "") || "CME";
         setDisplay(activeSymbol, {
           name: info.description,
-          exchange: info.exchange,
-          ticker: info.ticker,
+          exchange,
+          symbol: root,
+          ticker: info.ticker?.includes("-Delayed:")
+            ? info.ticker.replace(/-Delayed:/i, ":")
+            : info.ticker || `${exchange}:${root}`,
           logoUrl: info.logoUrl,
         });
       }

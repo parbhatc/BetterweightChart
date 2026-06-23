@@ -217,6 +217,7 @@ export function createChartWidgetApi(ctx) {
         await loadBarsForPanes(getAllChartPanes(), { force: true });
         const active = getActivePane();
         if (active) applySymbolFormat(active.symbolInfo);
+        ctx.opts?.onSymbolChange?.(sym);
         return;
       }
       const pane = getActivePane();
@@ -227,6 +228,7 @@ export function createChartWidgetApi(ctx) {
       applySymbolFormat(pane.symbolInfo);
       await loadPaneBars(pane, { force: true });
       refreshStatusLine();
+      ctx.opts?.onSymbolChange?.(sym);
     },
 
     /** Change interval and reload. */

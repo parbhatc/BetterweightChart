@@ -4,9 +4,11 @@ import { OrderLinesPrimitive } from "./OrderLinesPrimitive.js";
 import { symbolLabelAnchorsForPane } from "../scale/symbolLabelAnchors.js";
 import {
   layoutOrderLineGeometry,
+  measureOrderLineRow,
   orderLineCenterY,
   ORDER_LINE_CANCEL_W,
   ORDER_LINE_ROW_H,
+  plotPaneWidth,
 } from "./rowLayout.js";
 
 const ROW_HIT_PAD = 8;
@@ -160,6 +162,7 @@ export class OrderLineManager {
     mount.addEventListener("pointerdown", this._onPointerDown, true);
     mount.addEventListener("pointermove", this._onPointerMove, true);
     mount.addEventListener("pointerup", this._onPointerUp, true);
+    mount.addEventListener("pointercancel", this._onPointerUp, true);
     mount.addEventListener("pointerleave", this._onPointerLeave, true);
     mount.addEventListener("contextmenu", this._onContextMenu, true);
     this._listenersBound = true;
@@ -244,15 +247,16 @@ export class OrderLineManager {
     if (y == null) return null;
 
     const centerY = orderLineCenterY(y);
-    const plotW = pane.el.getBoundingClientRect().width;
+    const plotW = plotPaneWidth(pane.chart, pane.el);
     const { totalW, rowLeft } = layoutOrderLineGeometry(state, plotW, scaleW);
     const top = centerY - ORDER_LINE_ROW_H / 2;
+    const cancelLeft = rowLeft + totalW - ORDER_LINE_CANCEL_W;
     const row = {
       left: rowLeft,
       top,
       width: totalW,
       height: ORDER_LINE_ROW_H,
-      cancelLeft: rowLeft + totalW - ORDER_LINE_CANCEL_W,
+      cancelLeft,
     };
 
     if (px < row.left || px > row.left + row.width || py < row.top - ROW_HIT_PAD || py > row.top + row.height + ROW_HIT_PAD) {
@@ -398,7 +402,7 @@ export class OrderLineManager {
     const mount = this._mountEl;
     if (!mount) return;
     if (ev.target instanceof Element && ev.target.closest(".order-line-control")) {
-      mount.style.cursor = "pointer";
+      mount.style.cursor = "default";
       return;
     }
     const hit = this._hitTest(ev);
@@ -407,7 +411,7 @@ export class OrderLineManager {
       return;
     }
     if (hit.kind === "line") mount.style.cursor = "ns-resize";
-    else mount.style.cursor = "pointer";
+    else mount.style.cursor = "default";
   }
 
   /** @param {MouseEvent} ev */

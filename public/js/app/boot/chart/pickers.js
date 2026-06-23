@@ -9,6 +9,15 @@ import {
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { seedHtfBars } from "../../bar/htfBarCache.js";
 
+/** @param {import("./state.js").BootContext} ctx @param {string} sym */
+function notifyHostSymbolChange(ctx, sym) {
+  try {
+    ctx.opts?.onSymbolChange?.(sym);
+  } catch (err) {
+    console.error("[BWC] onSymbolChange failed:", err);
+  }
+}
+
 /**
  * @param {object[]} panes
  */
@@ -152,6 +161,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             ctx.applySymbolFormat(ctx.symbolInfo);
           }
           ctx.persistPaneSymbols();
+          notifyHostSymbolChange(ctx, sym);
           return;
         }
         const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
@@ -177,6 +187,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         finishSeriesReload(ctx, [pane]);
         ctx.refreshStatusLine();
         ctx.persistPaneSymbols();
+        notifyHostSymbolChange(ctx, sym);
       },
     });
     await ctx.symbolSearchUi.init();

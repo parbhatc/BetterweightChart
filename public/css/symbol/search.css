@@ -139,7 +139,7 @@
 
 .tv-symbol__item {
   display: grid;
-  grid-template-columns: 1.35rem 3.5rem 1fr auto;
+  grid-template-columns: 1.35rem minmax(0, 5.5rem) minmax(0, 1fr) auto;
   gap: var(--space-2) var(--space-3);
   align-items: center;
   padding: var(--space-2) var(--space-3);
@@ -154,8 +154,13 @@
 }
 
 .tv-symbol__item-ticker {
+  font-size: var(--text-xs);
   font-weight: var(--weight-bold);
   color: var(--tv-text);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv-symbol__item-logo {
@@ -172,6 +177,7 @@
 
 .tv-symbol__item-name {
   color: var(--tv-muted);
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

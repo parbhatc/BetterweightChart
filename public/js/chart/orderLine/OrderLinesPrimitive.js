@@ -40,7 +40,9 @@ export class OrderLinesPrimitive {
     const onRange = () => this._requestUpdate?.();
     ts.subscribeVisibleLogicalRangeChange(onRange);
     this._unsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
-    queueMicrotask(() => this._requestUpdate?.());
+    const kick = () => this._requestUpdate?.();
+    queueMicrotask(kick);
+    requestAnimationFrame(kick);
   }
 
   detached() {
@@ -100,11 +102,8 @@ export class OrderLinesPrimitive {
       }
       if (state.pillSide === "left") {
         lineStartX = Math.max(lineStartX, geom.rowLeft + geom.totalW);
-      } else {
-        lineEndX = Math.min(lineEndX, geom.rowLeft);
-        if (!state.lineFullWidth && lineStartX >= geom.rowLeft) {
-          lineStartX = 0;
-        }
+      } else if (geom.rowLeft > 0 && lineStartX >= geom.rowLeft) {
+        lineStartX = 0;
       }
 
       out.push({
@@ -150,8 +149,7 @@ class OrderLinesPaneRenderer {
         const { state, y, lineStartX, lineEndX } = layout;
         if (lineEndX <= lineStartX) continue;
         const lineWidth = ORDER_LINE_WIDTH;
-        const yy =
-          Math.round(orderLineCenterY(y) * verticalPixelRatio);
+        const yy = Math.round(orderLineCenterY(y) * verticalPixelRatio);
         const x1 = Math.round(lineStartX * horizontalPixelRatio);
         const x2 = Math.round(lineEndX * horizontalPixelRatio);
         const dash = lineStyleDashPattern(state.lineStyle === 2 ? 2 : 0, lineWidth).map(

@@ -1,3 +1,9 @@
+import {
+  resolveOrderLineFontFamily,
+  resolveOrderLineFontSize,
+  resolveOrderLineFontWeight,
+} from "./rowLayout.js";
+
 /**
  * TradingView-compatible order line adapter returned by chart.createOrderLine().
  * @param {import("./OrderLineManager.js").OrderLineManager} manager
@@ -31,6 +37,12 @@ export function createOrderLineAdapter(manager, id) {
     pillSide: "right",
     pillOffset: 20,
     lineFullWidth: false,
+    bodyFontWeight: 900,
+    quantityFontWeight: 900,
+    bodyFontSize: 12,
+    quantityFontSize: 12,
+    bodyFontFamily: "",
+    quantityFontFamily: "",
   };
 
   /** @type {import("./types.js").OrderLineHandlers} */
@@ -205,6 +217,36 @@ export function createOrderLineAdapter(manager, id) {
     },
     setLineFullWidth(full) {
       state.lineFullWidth = Boolean(full);
+      manager.requestRefresh();
+      return adapter;
+    },
+    setBodyFontWeight(weight) {
+      state.bodyFontWeight = resolveOrderLineFontWeight(weight);
+      manager.requestRefresh();
+      return adapter;
+    },
+    setQuantityFontWeight(weight) {
+      state.quantityFontWeight = resolveOrderLineFontWeight(weight);
+      manager.requestRefresh();
+      return adapter;
+    },
+    setBodyFontSize(size) {
+      state.bodyFontSize = resolveOrderLineFontSize(size);
+      manager.requestRefresh();
+      return adapter;
+    },
+    setQuantityFontSize(size) {
+      state.quantityFontSize = resolveOrderLineFontSize(size);
+      manager.requestRefresh();
+      return adapter;
+    },
+    setBodyFontFamily(family) {
+      state.bodyFontFamily = resolveOrderLineFontFamily(family);
+      manager.requestRefresh();
+      return adapter;
+    },
+    setQuantityFontFamily(family) {
+      state.quantityFontFamily = resolveOrderLineFontFamily(family);
       manager.requestRefresh();
       return adapter;
     },

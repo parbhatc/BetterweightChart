@@ -292,7 +292,7 @@
   pointer-events: auto;
   overflow: hidden;
   transform: translateY(-50%);
-  font-family: -apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  font-family: "Trebuchet MS", Roboto, Ubuntu, sans-serif;
 }
 
 .order-line-control--moving {
@@ -318,12 +318,26 @@
   border: 0;
   padding: 0;
   margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  cursor: pointer;
+  font-size: 12px;
+  cursor: default;
   line-height: 1;
   flex-shrink: 0;
   transition: filter var(--duration-fast) var(--ease-out);
+  font-weight: 900;
+}
+
+.order-line-control__body,
+.order-line-control__qty {
+  font-family: "Trebuchet MS", Roboto, Ubuntu, sans-serif;
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  font-synthesis: weight;
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+  -webkit-text-stroke: 0.35px currentColor;
+  paint-order: stroke fill;
+  letter-spacing: -0.01em;
 }
 
 .order-line-control__segment:hover {
@@ -337,6 +351,7 @@
 .order-line-control__cancel {
   background: rgba(255, 255, 255, 0.96);
   border-left: 1px solid color-mix(in srgb, #000 10%, transparent);
+  cursor: default;
 }
 
 .order-line-control__cancel-icon {

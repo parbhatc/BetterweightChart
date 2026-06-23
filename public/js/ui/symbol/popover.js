@@ -38,6 +38,13 @@ export function openSymbolSearchPopover(opts) {
     return meta?.ticker ?? sym.split(":").pop() ?? sym;
   }
 
+  function listItemTicker(sym, meta) {
+    const full = displayTicker(sym, meta);
+    const colon = full.lastIndexOf(":");
+    if (colon >= 0) return full.slice(colon + 1);
+    return full;
+  }
+
   function renderList(query) {
     return datafeed.searchSymbols(query).then((results) => {
       results.forEach((r) => metaBySymbol.set(r.symbol, r));
@@ -48,7 +55,7 @@ export function openSymbolSearchPopover(opts) {
       listEl.innerHTML = results
         .map((r) => {
           const active = r.symbol === activeSymbol ? " is-active" : "";
-          const ticker = displayTicker(r.symbol, r);
+          const ticker = listItemTicker(r.symbol, r);
           const logo = r.logoUrl
             ? `<img class="tv-symbol__item-logo" src="${r.logoUrl}" alt="" loading="lazy" />`
             : `<span class="tv-symbol__item-logo tv-symbol__item-logo--empty" aria-hidden="true"></span>`;

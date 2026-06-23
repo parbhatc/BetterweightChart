@@ -25,6 +25,12 @@
  * @property {"left"|"right"} [pillSide] control pill anchor on chart pane
  * @property {number} [pillOffset] px inset from the anchored edge (right default)
  * @property {boolean} [lineFullWidth] span the horizontal line across the full chart pane
+ * @property {number} [bodyFontWeight] CSS font-weight for body pill text (100–900)
+ * @property {number} [quantityFontWeight] CSS font-weight for quantity pill text (100–900)
+ * @property {number} [bodyFontSize] CSS font-size in px for body pill text (9–16)
+ * @property {number} [quantityFontSize] CSS font-size in px for quantity pill text (9–16)
+ * @property {string} [bodyFontFamily] CSS font-family for body pill text
+ * @property {string} [quantityFontFamily] CSS font-family for quantity pill text
  */
 
 /**

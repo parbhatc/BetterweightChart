@@ -1,10 +1,13 @@
-import {
+﻿import {
   measureOrderLineRow,
   orderLineCenterY,
   ORDER_LINE_CANCEL_W,
   ORDER_LINE_FONT,
   ORDER_LINE_FONT_SIZE,
   ORDER_LINE_ROW_H,
+  resolveOrderLineFontFamily,
+  resolveOrderLineFontSize,
+  resolveOrderLineFontWeight,
 } from "./rowLayout.js";
 import { hasShellBorder } from "./pillLayout.js";
 
@@ -26,6 +29,12 @@ function controlSignature(state) {
     state.bodyTooltip,
     state.quantityTooltip,
     state.cancelTooltip,
+    state.bodyFontWeight,
+    state.quantityFontWeight,
+    state.bodyFontSize,
+    state.quantityFontSize,
+    state.bodyFontFamily,
+    state.quantityFontFamily,
   ].join("\0");
 }
 
@@ -37,6 +46,31 @@ function dividerColor(color) {
 /** @param {import("./types.js").OrderLineState} state */
 function qtyDividerColor(state) {
   return dividerColor(state.quantityBorderColor) || dividerColor(state.bodyBorderColor);
+}
+
+/**
+ * @param {Element | null} el
+ * @param {string | undefined} color
+ * @param {number | undefined} weight
+ * @param {number | undefined} size
+ * @param {string | undefined} family
+ */
+function applySegmentTextStyle(el, color, weight, size, family) {
+  if (!(el instanceof HTMLElement)) return;
+  const fam = resolveOrderLineFontFamily(family);
+  const w = resolveOrderLineFontWeight(weight);
+  const px = resolveOrderLineFontSize(size);
+  // Set sub-properties individually — `button { font: inherit }` in base.css
+  // can swallow a partial font shorthand update.
+  el.style.fontFamily = fam;
+  el.style.fontSize = `${px}px`;
+  el.style.fontWeight = String(w);
+  el.style.lineHeight = "1";
+  el.style.color = color || "#000000";
+  el.style.setProperty("-webkit-font-smoothing", "auto");
+  el.style.setProperty("-moz-osx-font-smoothing", "auto");
+  el.style.setProperty("-webkit-text-stroke", "0.35px currentColor");
+  el.style.setProperty("paint-order", "stroke fill");
 }
 
 /**
@@ -89,7 +123,26 @@ export function createOrderLineControlsOverlay(paneEl) {
     el.classList.toggle("order-line-control--tv", hasShellBorder(state));
 
     const signature = controlSignature(state);
-    if (el.dataset.olSignature === signature) return;
+    const prevSignature = el.dataset.olSignature;
+    if (prevSignature === signature) {
+      const body = el.querySelector(".order-line-control__body");
+      const qty = el.querySelector(".order-line-control__qty");
+      applySegmentTextStyle(
+        body,
+        state.bodyTextColor,
+        state.bodyFontWeight,
+        state.bodyFontSize,
+        state.bodyFontFamily,
+      );
+      applySegmentTextStyle(
+        qty,
+        state.quantityTextColor,
+        state.quantityFontWeight,
+        state.quantityFontSize,
+        state.quantityFontFamily,
+      );
+      return;
+    }
     el.dataset.olSignature = signature;
 
     const { bodyText, qtyText, bodyW, qtyW } = measureOrderLineRow(state);
@@ -113,7 +166,13 @@ export function createOrderLineControlsOverlay(paneEl) {
     body.dataset.olPart = "body";
     body.style.width = `${bodyW}px`;
     body.style.backgroundColor = state.bodyBackgroundColor || accent;
-    body.style.color = state.bodyTextColor || "#ffffff";
+    applySegmentTextStyle(
+      body,
+      state.bodyTextColor,
+      state.bodyFontWeight,
+      state.bodyFontSize,
+      state.bodyFontFamily,
+    );
     body.textContent = bodyText;
     body.title = state.bodyTooltip || "Modify order";
     el.appendChild(body);
@@ -125,7 +184,13 @@ export function createOrderLineControlsOverlay(paneEl) {
       qty.dataset.olPart = "qty";
       qty.style.width = `${qtyW}px`;
       qty.style.backgroundColor = state.quantityBackgroundColor || accent;
-      qty.style.color = state.quantityTextColor || "#ffffff";
+      applySegmentTextStyle(
+        qty,
+        state.quantityTextColor,
+        state.quantityFontWeight,
+        state.quantityFontSize,
+        state.quantityFontFamily,
+      );
       if (qtyDiv) {
         qty.style.borderLeft = `1px solid ${qtyDiv}`;
         qty.style.borderRight = `1px solid ${qtyDiv}`;
@@ -160,4 +225,9 @@ export function createOrderLineControlsOverlay(paneEl) {
   return { root, sync, destroy };
 }
 
-export { ORDER_LINE_ROW_H, ORDER_LINE_CANCEL_W, ORDER_LINE_FONT, ORDER_LINE_FONT_SIZE };
+export {
+  ORDER_LINE_ROW_H,
+  ORDER_LINE_CANCEL_W,
+  ORDER_LINE_FONT,
+  ORDER_LINE_FONT_SIZE,
+} from "./rowLayout.js";
