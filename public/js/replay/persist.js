@@ -166,8 +166,15 @@ export function estimateReplayCountBack(anchorFrom, loadTo, barSec, minCount = 5
   return Math.max(minCount, Math.ceil(span / sec) + 80);
 }
 
-/** @param {object[]} bars @param {number} anchorFrom */
-export function barsCoverReplayAnchor(bars, anchorFrom) {
+/** @param {object[]} bars @param {number} anchorFrom @param {number} [barSec] */
+export function barsCoverReplayAnchor(bars, anchorFrom, barSec) {
   if (!bars?.length || anchorFrom == null || !Number.isFinite(anchorFrom)) return false;
-  return bars[0].time <= anchorFrom && bars.at(-1).time >= anchorFrom;
+  if (bars[0].time > anchorFrom) return false;
+  const lastTime = bars.at(-1).time;
+  if (lastTime >= anchorFrom) return true;
+  const sec = Number(barSec);
+  if (Number.isFinite(sec) && sec > 0) {
+    return lastTime + sec > anchorFrom;
+  }
+  return barIndexAtOrBeforeUtcTime(bars, anchorFrom) != null;
 }

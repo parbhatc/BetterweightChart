@@ -272,7 +272,7 @@ export function attachReplayEngine(ctx, replay) {
     if (
       lt?.bars?.length &&
       paneSec <= resolutionSec(lt.resolution) &&
-      barsCoverReplayAnchor(lt.bars, cursorUtc)
+      barsCoverReplayAnchor(lt.bars, cursorUtc, resolutionSec(lt.resolution))
     ) {
       activePane.bars = trimBarsToUtcTime(lt.bars, cursorUtc);
       invalidatePaneChartView(activePane);
@@ -291,7 +291,7 @@ export function attachReplayEngine(ctx, replay) {
     }
 
     const cached = replayBarsByResolution.get(activePane.resolution);
-    if (cached?.bars?.length && barsCoverReplayAnchor(cached.bars, cursorUtc)) {
+    if (cached?.bars?.length && barsCoverReplayAnchor(cached.bars, cursorUtc, paneSec)) {
       activePane.bars = trimBarsToUtcTime(cached.bars, cursorUtc);
       invalidatePaneChartView(activePane);
       replayDebug("resolutionChange.restoreCached", {
@@ -356,6 +356,16 @@ export function attachReplayEngine(ctx, replay) {
   }
 
   /**
+   * UTC time-span restore collapses on large TF jumps (e.g. 1m→1D); prefer bar-slot layout.
+   * @param {number | null | undefined} fromSec
+   * @param {number | null | undefined} toSec
+   */
+  function replayViewportPrefersBarSlots(fromSec, toSec) {
+    if (fromSec == null || toSec == null || fromSec <= 0 || toSec <= 0) return false;
+    return Math.max(fromSec, toSec) / Math.min(fromSec, toSec) > 12;
+  }
+
+  /**
    * @param {object} pane
    * @param {number} endIndex
    * @param {string | null} [fromResolution]
@@ -384,6 +394,9 @@ export function attachReplayEngine(ctx, replay) {
     } else if (fromSec != null && toSec != null && toSec < fromSec && savedTarget) {
       layout = savedTarget;
       reason = "htf-lt";
+    } else if (fromSec != null && toSec != null && toSec < fromSec && fromLayout) {
+      layout = fromLayout;
+      reason = "htf-lt-leaving";
     } else if (savedTarget) {
       layout = savedTarget;
       reason = "cached";
@@ -405,6 +418,7 @@ export function attachReplayEngine(ctx, replay) {
     }
 
     if (
+      !replayViewportPrefersBarSlots(fromSec, toSec) &&
       fromLayout?.visibleFromUtc != null &&
       fromLayout?.visibleToUtc != null &&
       ctx.settingsStore &&
@@ -424,6 +438,21 @@ export function attachReplayEngine(ctx, replay) {
           ...utcLogical,
         });
         return utcLogical;
+      }
+    }
+
+    if (fromLayout) {
+      const barLogical = computeViewportBarLayoutLogical(pane, fromLayout);
+      if (barLogical) {
+        replayDebug("viewport.compute.barDim", {
+          reason: "from-leaving",
+          fromResolution: fromRes,
+          toResolution: targetRes,
+          width: fromLayout.width,
+          toBeyondAnchor: fromLayout.toBeyondAnchor,
+          ...barLogical,
+        });
+        return barLogical;
       }
     }
 
@@ -526,6 +555,26 @@ export function attachReplayEngine(ctx, replay) {
       return;
     }
 
+    // Coarser -> finer (first visit): reuse leaving TF bar width.
+    if (fromSec != null && toSec != null && toSec < fromSec && fromLayout) {
+      restoreViewportBarLayout(
+        pane,
+        fromLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-htf-lt-leaving",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.htfLtLeaving", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        width: fromLayout.width,
+        toBeyondAnchor: fromLayout.toBeyondAnchor,
+      });
+      return;
+    }
+
     if (savedTarget) {
       restoreViewportBarLayout(
         pane,
@@ -544,7 +593,11 @@ export function attachReplayEngine(ctx, replay) {
       return;
     }
 
-    if (fromLayout?.visibleFromUtc != null && fromLayout?.visibleToUtc != null) {
+    if (
+      !replayViewportPrefersBarSlots(fromSec, toSec) &&
+      fromLayout?.visibleFromUtc != null &&
+      fromLayout?.visibleToUtc != null
+    ) {
       restoreViewportBarLayoutFromUtc(
         pane,
         fromLayout,
@@ -559,6 +612,25 @@ export function attachReplayEngine(ctx, replay) {
         toResolution: targetRes,
         visibleFromUtc: fromLayout.visibleFromUtc,
         visibleToUtc: fromLayout.visibleToUtc,
+      });
+      return;
+    }
+
+    if (fromLayout) {
+      restoreViewportBarLayout(
+        pane,
+        fromLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-bar-dim",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.barDim", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        width: fromLayout.width,
+        toBeyondAnchor: fromLayout.toBeyondAnchor,
       });
       return;
     }
@@ -591,7 +663,7 @@ export function attachReplayEngine(ctx, replay) {
         ctx.settingsStore,
         ctx.resolutions,
       );
-      if (viewportLayout) {
+      if (viewportLayout && viewportLayout.width >= 10) {
         replayViewportByResolution.set(ltResolutionBeforeTfSwitch, viewportLayout);
       }
       replayBarsByResolution.set(ltResolutionBeforeTfSwitch, {
@@ -1228,7 +1300,8 @@ export function attachReplayEngine(ctx, replay) {
 
   /** @param {object} pane @param {number} cutUtc */
   async function ensurePaneBarsReachReplayCut(pane, cutUtc) {
-    if (barsCoverReplayAnchor(pane.bars, cutUtc)) return true;
+    const barSec = ctx.barSecForPaneLocal?.(pane) ?? resolutionSec(pane.resolution) ?? 60;
+    if (barsCoverReplayAnchor(pane.bars, cutUtc, barSec)) return true;
 
     replayDebug("resolutionChange.reload", {
       pane: pane.index,
@@ -1236,10 +1309,14 @@ export function attachReplayEngine(ctx, replay) {
       liveEndUtc: replayLiveEndUtc ?? ctx.replayLiveEndUtc,
       first: pane.bars[0]?.time,
       last: pane.bars.at(-1)?.time,
+      barSec,
     });
 
-    await ctx.loadPaneBars?.(pane, { force: true });
-    return barsCoverReplayAnchor(pane.bars, cutUtc);
+    await ctx.loadPaneBars?.(pane, {
+      force: true,
+      deferChartRefresh: replayTfChangeInFlight,
+    });
+    return barsCoverReplayAnchor(pane.bars, cutUtc, barSec);
   }
 
   async function onChartResolutionChange() {
