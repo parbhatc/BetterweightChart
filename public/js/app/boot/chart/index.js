@@ -212,6 +212,12 @@ export async function bootChart(overrides = {}) {
       replayEngine: ctx.replayEngine,
       resolutions: ctx.resolutions,
       activePriceScaleId: ctx.activePriceScaleId,
+      chartOverlayLoader: ctx.chartOverlayLoader,
+      opts: ctx.opts,
+      afterTimeframeChange: ctx.afterTimeframeChange,
+      setViewportRestorePending: (v) => {
+        ctx._viewportRestorePending = v;
+      },
     });
     if (typeof window !== "undefined") {
       window.__BWC_WIDGET__ = widget;

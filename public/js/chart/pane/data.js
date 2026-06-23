@@ -7,7 +7,12 @@ import {
   isFutureWhitespaceEnabled,
 } from "../future/whitespace.js";
 import { BAR_SEC } from "../constants.js";
-import { chartDebug, chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
+import {
+  chartDebug,
+  chartDebugCount,
+  chartDebugForming,
+  chartDebugTime,
+} from "../../debug/chart/index.js";
 import { withPreservedViewport } from "./viewport.js";
 import {
   getPaneChartView,
@@ -296,11 +301,11 @@ export function updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInf
     try {
       pane.series.update(candle, true);
       chartDebugCount("data", "update");
-      chartDebug("data", "update forming", { pane: pane.index, time: bar.time, close: bar.close });
+      chartDebugForming("update forming", { pane: pane.index, time: bar.time, close: bar.close });
       return true;
     } catch (err) {
       chartDebugCount("data", "updateFail");
-      chartDebug("data", "update forming failed", { pane: pane.index, err: String(err) });
+      chartDebugForming("update forming failed", { pane: pane.index, err: String(err) });
       return false;
     }
   });

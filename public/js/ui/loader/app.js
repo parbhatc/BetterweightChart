@@ -1,10 +1,15 @@
 /**
  * Lightweight per-chart spinner while data stays on screen (symbol / TF / replay switches).
  */
+const OVERLAY_MIN_VISIBLE_MS = 180;
+
 export function createChartOverlayLoader() {
   /** @type {Map<HTMLElement, HTMLElement>} */
   const hosts = new Map();
   let pending = 0;
+  let shownAt = 0;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let hideTimer = null;
 
   /** @param {HTMLElement} stage */
   function mount(stage) {
@@ -42,15 +47,37 @@ export function createChartOverlayLoader() {
     );
   }
 
+  function scheduleHide() {
+    clearTimeout(hideTimer ?? undefined);
+    const elapsed = Date.now() - shownAt;
+    const delay = Math.max(0, OVERLAY_MIN_VISIBLE_MS - elapsed);
+    hideTimer = setTimeout(() => {
+      hideTimer = null;
+      if (pending === 0) unmountAll();
+    }, delay);
+  }
+
   return {
     /** @param {HTMLElement | HTMLElement[] | null | undefined} [roots] */
     show(roots) {
+      clearTimeout(hideTimer ?? undefined);
+      hideTimer = null;
       pending += 1;
+      if (pending === 1) shownAt = Date.now();
       for (const stage of resolveStages(roots)) mount(stage);
     },
     hide() {
       pending = Math.max(0, pending - 1);
-      if (pending === 0) unmountAll();
+      if (pending === 0) scheduleHide();
+      return new Promise((resolve) => {
+        if (pending > 0) {
+          resolve();
+          return;
+        }
+        const elapsed = Date.now() - shownAt;
+        const delay = Math.max(0, OVERLAY_MIN_VISIBLE_MS - elapsed);
+        setTimeout(resolve, delay);
+      });
     },
     /** @param {HTMLElement | HTMLElement[] | null | undefined} roots @param {() => Promise<unknown>} fn */
     async wrap(roots, fn) {

@@ -9,17 +9,43 @@
  * @example
  * window.__BWC_DEBUG__.stats()   // counters + slow ops
  * window.__BWC_DEBUG__.clear()
+ * window.__BWC_DEBUG__.setFormingLogs(false)  // persisted as bwc-debug-forming in localStorage
  */
 
 import { destroyDebugHud, ensureDebugHud } from "./hud.js";
 
 const LS_KEY = "bwc-debug";
+const LS_FORMING_KEY = "bwc-debug-forming";
 
 /** @type {Set<string>} */
 let tags = new Set();
 let enabled = false;
 let slowMs = 8;
 let verbose = false;
+/** Live tick / forming-bar patch logs (very noisy when `data` debug is on). */
+let formingLogs = true;
+
+function readStoredFormingLogs() {
+  if (typeof window === "undefined") return;
+  try {
+    const stored = localStorage.getItem(LS_FORMING_KEY);
+    if (stored === "0" || stored === "false") formingLogs = false;
+    else if (stored === "1" || stored === "true") formingLogs = true;
+  } catch {
+    //
+  }
+}
+
+function writeStoredFormingLogs(on) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(LS_FORMING_KEY, on ? "1" : "0");
+  } catch {
+    //
+  }
+}
+
+readStoredFormingLogs();
 
 /** @type {Record<string, number>} */
 const counters = {};
@@ -52,6 +78,7 @@ function tagAllowed(category) {
 export function configureChartDebug(opts = {}) {
   if (opts.slowMs != null) slowMs = Math.max(0, Number(opts.slowMs));
   if (opts.tags != null) tags = parseTags(opts.tags);
+  readStoredFormingLogs();
 
   if (opts.force != null) {
     enabled = Boolean(opts.force);
@@ -97,6 +124,26 @@ export function isChartDebugEnabled() {
 
 export function setChartDebugVerbose(on = true) {
   verbose = on;
+}
+
+/** Toggle `[BWC:data] update forming` logs (on by default when data debug is enabled). Persists in localStorage. */
+export function setChartDebugFormingLogs(on = true) {
+  formingLogs = Boolean(on);
+  writeStoredFormingLogs(formingLogs);
+}
+
+export function chartDebugFormingEnabled() {
+  return formingLogs;
+}
+
+/**
+ * Forming-bar live tick logs — gated by {@link setChartDebugFormingLogs}.
+ * @param {string} message
+ * @param {unknown} [detail]
+ */
+export function chartDebugForming(message, detail) {
+  if (!formingLogs || !tagAllowed("data")) return;
+  chartDebug("data", message, detail);
 }
 
 /**
@@ -263,6 +310,7 @@ export function getChartDebugStats() {
     enabled,
     tags: [...tags],
     slowMs,
+    formingLogs,
     counters: { ...counters },
     slowOps: [...slowLog],
   };
@@ -306,6 +354,7 @@ export function installChartDebugGlobal() {
     stats: getChartDebugStats,
     clear: clearChartDebugStats,
     setVerbose: setChartDebugVerbose,
+    setFormingLogs: setChartDebugFormingLogs,
     setSlowMs: (ms) => {
       slowMs = Math.max(0, Number(ms));
     },

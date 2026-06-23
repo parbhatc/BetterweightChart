@@ -11,6 +11,10 @@ import {
 } from "../../../chart/pane/viewportBarLayout.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { seedHtfBars } from "../../bar/htfBarCache.js";
+import {
+  showChartPendingOverlay,
+  hideChartPendingOverlay,
+} from "../../../ui/loader/chartPendingOverlay.js";
 
 /** @param {import("./state.js").BootContext} ctx @param {string} sym */
 function notifyHostSymbolChange(ctx, sym) {
@@ -47,28 +51,6 @@ function restorePaneViewports(panes, saved) {
  */
 function capturePaneBarLayouts(ctx, panes) {
   return panes.map((p) => captureViewportBarLayout(p, ctx.settingsStore, ctx.resolutions));
-}
-
-/** @param {object | object[]} panes */
-function chartStagesForPanes(panes) {
-  const list = Array.isArray(panes) ? panes : [panes];
-  return list
-    .map(
-      (pane) =>
-        pane?.el?.closest?.(".tv-chart-wrap")?.querySelector(".tv-chart-wrap__stage") ?? null,
-    )
-    .filter((el) => el instanceof HTMLElement);
-}
-
-/** @param {import("./state.js").BootContext} ctx @param {object | object[]} panes */
-function showChartPendingOverlay(ctx, panes) {
-  const stages = chartStagesForPanes(panes);
-  if (stages.length) ctx.chartOverlayLoader.show(stages);
-}
-
-/** @param {import("./state.js").BootContext} ctx */
-function hideChartPendingOverlay(ctx) {
-  ctx.chartOverlayLoader.hide();
 }
 
 /** @param {string | null | undefined} fromRes @param {string | null | undefined} toRes */
@@ -246,7 +228,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           }
           ctx.symbol = sym;
           ctx.refreshWatermark();
-          showChartPendingOverlay(ctx, panes);
+          await showChartPendingOverlay(ctx, panes);
           try {
             await ctx.loadBarsForPanes(panes, { force: true, deferChartRefresh: true });
             for (const pane of panes) {
@@ -269,7 +251,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
               ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
             }
           } finally {
-            hideChartPendingOverlay(ctx);
+            await hideChartPendingOverlay(ctx);
           }
           return;
         }
@@ -288,7 +270,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         if (pane.index === 0) ctx.chartPanes.get(0).symbol = sym;
         ctx.symbol = sym;
         ctx.refreshWatermark();
-        showChartPendingOverlay(ctx, pane);
+        await showChartPendingOverlay(ctx, pane);
         try {
           pane.symbolInfo = await ctx.datafeed.resolveSymbol(sym);
           ctx.symbolInfo = pane.symbolInfo;
@@ -305,7 +287,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           }
           ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
         } finally {
-          hideChartPendingOverlay(ctx);
+          await hideChartPendingOverlay(ctx);
         }
       },
     });
@@ -345,7 +327,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           ctx.refreshStatusLine();
           const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
           suppressPaneHistoryPrefetch(panes);
-          showChartPendingOverlay(ctx, panes);
+          await showChartPendingOverlay(ctx, panes);
           try {
             await ctx.loadBarsForPanes(panes, {
               force: true,
@@ -366,7 +348,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           } finally {
             if (gen === tfChangeGen) {
               releasePaneHistoryPrefetch(panes);
-              hideChartPendingOverlay(ctx);
+              await hideChartPendingOverlay(ctx);
             }
           }
           return;
@@ -392,7 +374,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         ctx.refreshStatusLine();
         const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
         suppressPaneHistoryPrefetch(pane);
-        showChartPendingOverlay(ctx, pane);
+        await showChartPendingOverlay(ctx, pane);
         try {
           await ctx.loadPaneBars(pane, {
             force: true,
@@ -411,7 +393,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         } finally {
           if (gen === tfChangeGen) {
             releasePaneHistoryPrefetch(pane);
-            hideChartPendingOverlay(ctx);
+            await hideChartPendingOverlay(ctx);
           }
         }
       },

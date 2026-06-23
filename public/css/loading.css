@@ -17,7 +17,7 @@
 
 /* Symbol / TF / replay switches: spinner over chart; block pan/zoom while loading */
 .app-loader--overlay {
-  z-index: 40;
+  z-index: 100;
   background: color-mix(in srgb, var(--tv-bg) 18%, transparent);
   pointer-events: auto;
   touch-action: none;

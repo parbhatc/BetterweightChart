@@ -10,6 +10,10 @@ import {
 } from "../../chart/orderLine/index.js";
 import { createExecutionShapeManager } from "../../chart/executionShape/index.js";
 import { createWidgetShortcutRegistry } from "../../chart/widgetShortcuts.js";
+import {
+  showChartPendingOverlay,
+  hideChartPendingOverlay,
+} from "../../ui/loader/chartPendingOverlay.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -52,6 +56,10 @@ export function createChartWidgetApi(ctx) {
     replayEngine,
     resolutions,
     activePriceScaleId,
+    chartOverlayLoader,
+    opts,
+    afterTimeframeChange,
+    setViewportRestorePending,
   } = ctx;
 
   const orderLines = createOrderLineManager(getActivePane, {
@@ -212,23 +220,34 @@ export function createChartWidgetApi(ctx) {
     async setSymbol(sym) {
       const sync = layoutManager?.getSync();
       if (layoutManager && sync?.symbol) {
-        for (const pane of getAllChartPanes()) pane.symbol = sym;
+        const panes = getAllChartPanes();
+        for (const pane of panes) pane.symbol = sym;
         refreshWatermark();
-        await loadBarsForPanes(getAllChartPanes(), { force: true });
-        const active = getActivePane();
-        if (active) applySymbolFormat(active.symbolInfo);
-        ctx.opts?.onSymbolChange?.(sym);
+        await showChartPendingOverlay({ chartOverlayLoader }, panes);
+        try {
+          await loadBarsForPanes(panes, { force: true, deferChartRefresh: true });
+          const active = getActivePane();
+          if (active) applySymbolFormat(active.symbolInfo);
+          opts?.onSymbolChange?.(sym);
+        } finally {
+          await hideChartPendingOverlay({ chartOverlayLoader });
+        }
         return;
       }
       const pane = getActivePane();
       if (!pane) return;
       pane.symbol = sym;
       refreshWatermark();
-      pane.symbolInfo = await datafeed.resolveSymbol(sym);
-      applySymbolFormat(pane.symbolInfo);
-      await loadPaneBars(pane, { force: true });
-      refreshStatusLine();
-      ctx.opts?.onSymbolChange?.(sym);
+      await showChartPendingOverlay({ chartOverlayLoader }, pane);
+      try {
+        pane.symbolInfo = await datafeed.resolveSymbol(sym);
+        applySymbolFormat(pane.symbolInfo);
+        await loadPaneBars(pane, { force: true, deferChartRefresh: true });
+        refreshStatusLine();
+        opts?.onSymbolChange?.(sym);
+      } finally {
+        await hideChartPendingOverlay({ chartOverlayLoader });
+      }
     },
 
     /** Change interval and reload. */
@@ -245,22 +264,31 @@ export function createChartWidgetApi(ctx) {
         }
         refreshWatermark();
         refreshStatusLine();
-        await loadBarsForPanes(panes, { force: true, skipPriceScaleMargins: true });
-        ctx._viewportRestorePending = true;
+        await showChartPendingOverlay({ chartOverlayLoader }, panes);
         try {
-          await ctx.afterTimeframeChange?.();
-          for (let i = 0; i < panes.length; i += 1) {
-            restoreViewportBarLayout(
-              panes[i],
-              savedLayouts[i],
-              settingsStore,
-              resolutions,
-              "timeframe",
-              activePriceScaleId,
-            );
+          await loadBarsForPanes(panes, {
+            force: true,
+            deferChartRefresh: true,
+            skipPriceScaleMargins: true,
+          });
+          setViewportRestorePending?.(true);
+          try {
+            await afterTimeframeChange?.();
+            for (let i = 0; i < panes.length; i += 1) {
+              restoreViewportBarLayout(
+                panes[i],
+                savedLayouts[i],
+                settingsStore,
+                resolutions,
+                "timeframe",
+                activePriceScaleId,
+              );
+            }
+          } finally {
+            setViewportRestorePending?.(false);
           }
         } finally {
-          ctx._viewportRestorePending = false;
+          await hideChartPendingOverlay({ chartOverlayLoader });
         }
         return;
       }
@@ -271,20 +299,29 @@ export function createChartWidgetApi(ctx) {
       pane.resolution = res;
       refreshWatermark();
       refreshStatusLine();
-      await loadPaneBars(pane, { force: true, skipPriceScaleMargins: true });
-      ctx._viewportRestorePending = true;
+      await showChartPendingOverlay({ chartOverlayLoader }, pane);
       try {
-        await ctx.afterTimeframeChange?.();
-        restoreViewportBarLayout(
-          pane,
-          savedLayout,
-          settingsStore,
-          resolutions,
-          "timeframe",
-          activePriceScaleId,
-        );
+        await loadPaneBars(pane, {
+          force: true,
+          deferChartRefresh: true,
+          skipPriceScaleMargins: true,
+        });
+        setViewportRestorePending?.(true);
+        try {
+          await afterTimeframeChange?.();
+          restoreViewportBarLayout(
+            pane,
+            savedLayout,
+            settingsStore,
+            resolutions,
+            "timeframe",
+            activePriceScaleId,
+          );
+        } finally {
+          setViewportRestorePending?.(false);
+        }
       } finally {
-        ctx._viewportRestorePending = false;
+        await hideChartPendingOverlay({ chartOverlayLoader });
       }
     },
 
