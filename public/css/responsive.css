@@ -268,6 +268,10 @@
   .tv-tf__favorites .tv-tf__btn:nth-child(n + 4) {
     display: none;
   }
+
+  .tv-chart-tools__favorites .tv-chart-tools__fav-pill:nth-child(n + 4) {
+    display: none;
+  }
 }
 
 /* ── Drawing toolbar: compact touch tweaks (<840px) ── */

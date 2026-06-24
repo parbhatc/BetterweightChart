@@ -14,6 +14,61 @@
   display: none;
 }
 
+.status-line__studies.is-legend-collapsed .study-legend__item {
+  display: none !important;
+}
+
+.study-legend-toggler {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 2.75rem;
+  height: 1.625rem;
+  margin: 0;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--tv-border) 55%, transparent);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--tv-bg) 80%, transparent);
+  color: var(--tv-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+  align-self: flex-start;
+  backdrop-filter: blur(6px);
+  transition: var(--transition-colors), transform 0.15s ease;
+}
+
+.status-line--bg .study-legend-toggler {
+  background: var(--status-line-bg);
+  border-color: var(--status-line-border-color);
+}
+
+.study-legend-toggler:hover {
+  color: var(--tv-text);
+  background: color-mix(in srgb, var(--tv-surface-hover) 75%, transparent);
+}
+
+.study-legend-toggler__arrow,
+.study-legend-toggler__icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 0;
+}
+
+.study-legend-toggler__arrow svg,
+.study-legend-toggler__icon svg {
+  display: block;
+}
+
+.study-legend-toggler.is-collapsed .study-legend-toggler__arrow {
+  transform: rotate(180deg);
+}
+
+.study-legend-toggler__counter {
+  display: none;
+}
+
 .status-line:not(.study-pane-legends__status) .study-legend {
   display: contents;
   margin: 0;

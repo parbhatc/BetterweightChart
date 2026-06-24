@@ -1,4 +1,5 @@
 import { ICON_DELETE, ICON_EYE, ICON_EYE_OFF, ICON_SETTINGS } from "./icons.js";
+import { ensureLegendToggler, syncLegendToggler } from "./legendToggler.js";
 
 /**
  * @param {HTMLElement} statusEl
@@ -18,15 +19,35 @@ export function mountIndicatorLegend(statusEl, opts) {
   let lastValuesKey = "";
   /** @type {string | null} */
   let hoverId = null;
+  let legendCollapsed = false;
 
-  function ensureStudiesEl() {
+  function ensureStudiesShell() {
     let studiesEl = statusEl.querySelector(".status-line__studies");
     if (!studiesEl) {
       studiesEl = document.createElement("div");
       studiesEl.className = "status-line__studies";
       statusEl.appendChild(studiesEl);
     }
-    return studiesEl;
+
+    let legendEl = studiesEl.querySelector(".study-legend");
+    if (!legendEl) {
+      legendEl = document.createElement("div");
+      legendEl.className = "study-legend";
+      studiesEl.insertBefore(legendEl, studiesEl.firstChild);
+    }
+
+    const togglerEl = ensureLegendToggler(studiesEl);
+    if (!togglerEl.dataset.wired) {
+      togglerEl.dataset.wired = "1";
+      togglerEl.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        legendCollapsed = !legendCollapsed;
+        syncLegendToggler(studiesEl, togglerEl, getStudies().length, legendCollapsed);
+      });
+    }
+
+    return { studiesEl, legendEl, togglerEl };
   }
 
   /** @param {object[]} values */
@@ -45,9 +66,9 @@ export function mountIndicatorLegend(statusEl, opts) {
     return s.selected || hoverId === s.instanceId;
   }
 
-  /** @param {HTMLElement} studiesEl */
-  function syncExpandedClass(studiesEl) {
-    studiesEl.querySelectorAll(".study-legend__item").forEach((item) => {
+  /** @param {HTMLElement} legendEl */
+  function syncExpandedClass(legendEl) {
+    legendEl.querySelectorAll(".study-legend__item").forEach((item) => {
       if (!(item instanceof HTMLElement)) return;
       item.classList.toggle("is-expanded", item.dataset.id === hoverId || item.classList.contains("is-selected"));
     });
@@ -79,17 +100,17 @@ export function mountIndicatorLegend(statusEl, opts) {
     </div>`;
   }
 
-  /** @param {HTMLElement} studiesEl @param {object[]} studies */
-  function fullRender(studiesEl, studies) {
-    studiesEl.innerHTML = `<div class="study-legend">${studies.map(itemHtml).join("")}</div>`;
+  /** @param {HTMLElement} legendEl @param {object[]} studies */
+  function fullRender(legendEl, studies) {
+    legendEl.innerHTML = studies.map(itemHtml).join("");
   }
 
-  /** @param {HTMLElement} studiesEl @param {object[]} studies */
-  function patchValues(studiesEl, studies) {
+  /** @param {HTMLElement} legendEl @param {object[]} studies */
+  function patchValues(legendEl, studies) {
     for (const s of studies) {
-      const item = studiesEl.querySelector(`.study-legend__item[data-id="${s.instanceId}"]`);
+      const item = legendEl.querySelector(`.study-legend__item[data-id="${s.instanceId}"]`);
       if (!(item instanceof HTMLElement)) {
-        fullRender(studiesEl, studies);
+        fullRender(legendEl, studies);
         return;
       }
       item.classList.toggle("is-selected", Boolean(s.selected));
@@ -130,16 +151,19 @@ export function mountIndicatorLegend(statusEl, opts) {
   }
 
   function render() {
-    const studiesEl = ensureStudiesEl();
+    const { studiesEl, legendEl, togglerEl } = ensureStudiesShell();
     const studies = getStudies();
     if (!studies.length) {
-      studiesEl.innerHTML = "";
+      legendEl.innerHTML = "";
       studiesEl.hidden = true;
+      legendCollapsed = false;
       lastStructureKey = "";
       lastValuesKey = "";
+      syncLegendToggler(studiesEl, togglerEl, 0, false);
       return;
     }
     studiesEl.hidden = false;
+    syncLegendToggler(studiesEl, togglerEl, studies.length, legendCollapsed);
 
     const structureKey = studies
       .map(
@@ -156,16 +180,16 @@ export function mountIndicatorLegend(statusEl, opts) {
       )
       .join(";");
 
-    if (structureKey !== lastStructureKey || !studiesEl.querySelector(".study-legend")) {
+    if (structureKey !== lastStructureKey || !legendEl.querySelector(".study-legend__item")) {
       lastStructureKey = structureKey;
       lastValuesKey = valuesKey;
-      fullRender(studiesEl, studies);
+      fullRender(legendEl, studies);
     } else if (valuesKey !== lastValuesKey) {
       lastValuesKey = valuesKey;
-      patchValues(studiesEl, studies);
+      patchValues(legendEl, studies);
     }
 
-    syncExpandedClass(studiesEl);
+    syncExpandedClass(legendEl);
   }
 
   statusEl.addEventListener(
@@ -175,7 +199,7 @@ export function mountIndicatorLegend(statusEl, opts) {
       if (!(item instanceof HTMLElement) || !item.dataset.id) return;
       if (hoverId === item.dataset.id) return;
       hoverId = item.dataset.id;
-      syncExpandedClass(ensureStudiesEl());
+      syncExpandedClass(ensureStudiesShell().legendEl);
     },
     true,
   );
@@ -185,13 +209,14 @@ export function mountIndicatorLegend(statusEl, opts) {
     if (related instanceof Node && statusEl.contains(related)) return;
     if (hoverId == null) return;
     hoverId = null;
-    syncExpandedClass(ensureStudiesEl());
+    syncExpandedClass(ensureStudiesShell().legendEl);
   });
 
   statusEl.addEventListener("click", (ev) => {
     const target = ev.target;
     if (!(target instanceof Element)) return;
     if (!target.closest(".status-line__studies")) return;
+    if (target.closest(".study-legend-toggler")) return;
 
     const actionBtn = target.closest("[data-action]");
     if (actionBtn instanceof HTMLElement) {

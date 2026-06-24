@@ -1,4 +1,4 @@
-import { CHEVRON_DOWN, INDICATORS, REPLAY } from "./icons.js";
+import { INDICATORS, REPLAY } from "./icons.js";
 
 /**
  * TradingView-style Indicators + Replay controls on the left header bar.
@@ -26,18 +26,7 @@ export function mountChartToolbarTools(mountEl, opts = {}) {
       <span class="tv-chart-tools__icon" aria-hidden="true">${INDICATORS}</span>
       <span class="tv-chart-tools__label">Indicators</span>
     </button>
-    <button
-      type="button"
-      class="tv-chart-tools__fav-btn"
-      data-name="show-favorite-indicators"
-      aria-label="Favorite indicators"
-      title="Favorite indicators"
-      data-tooltip="Favorite indicators"
-      aria-haspopup="menu"
-      aria-expanded="false"
-    >
-      <span class="tv-chart-tools__chev" aria-hidden="true">${CHEVRON_DOWN}</span>
-    </button>
+    <div class="tv-chart-tools__favorites" role="group" aria-label="Favorite indicators"></div>
   </div>`;
 
   /** @type {HTMLButtonElement | null} */
@@ -59,11 +48,11 @@ export function mountChartToolbarTools(mountEl, opts = {}) {
   if (replayBtn) mountEl.appendChild(replayBtn);
 
   const indicatorsBtn = indicatorsWrap.querySelector('[data-name="open-indicators-dialog"]');
-  const favBtn = indicatorsWrap.querySelector("[data-name=show-favorite-indicators]");
+  const favoritesEl = indicatorsWrap.querySelector(".tv-chart-tools__favorites");
 
   return {
     indicatorsBtn,
-    favBtn,
+    favoritesEl,
     replayBtn,
   };
 }

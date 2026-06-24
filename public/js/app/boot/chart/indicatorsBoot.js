@@ -1,6 +1,7 @@
 import { resolutionDisplayTitle } from "../../../chart/resolutionFormat.js";
 import { createIndicatorController } from "../../../indicators/controller.js";
 import { createIndicatorsLibraryDialog } from "../../../indicators/ui/libraryDialog.js";
+import { loadIndicatorFavorites } from "../../../indicators/ui/favorites.js";
 import { createIndicatorSettingsDialog } from "../../../indicators/ui/settingsDialog.js";
 import { mountIndicatorLegend } from "../../../indicators/ui/legend.js";
 import { attachStudyScaleLabelsPrimitive } from "../../../indicators/primitives/scaleLabels.js";
@@ -13,8 +14,6 @@ import { listIndicators, getIndicatorClass } from "../../../indicators/catalog.j
 import { createIndicatorDataLoader } from "./indicatorDataLoader.js";
 import { createSecurityContext } from "../../bar/requestSecurity.js";
 import { symbolLabelAnchorsForPane } from "../../../chart/scale/symbolLabelAnchors.js";
-
-const FAV_KEY = "bwc-indicator-favorites";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -78,6 +77,7 @@ export function attachIndicatorsBoot(ctx) {
       controller.addIndicator(defId, pane?.index ?? 0);
       indicatorData.scheduleLoad(0);
     },
+    onFavoritesChange: () => renderIndicatorFavorites(),
   });
 
   const settings = createIndicatorSettingsDialog({
@@ -301,62 +301,39 @@ export function attachIndicatorsBoot(ctx) {
   }
 
   const indicatorsBtn = ctx.chartToolbarTools?.indicatorsBtn;
-  const favBtn = ctx.chartToolbarTools?.favBtn;
+  const favoritesEl = ctx.chartToolbarTools?.favoritesEl;
+
+  /** @param {string} defId */
+  function addIndicatorFromLibrary(defId) {
+    const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
+    controller.addIndicator(defId, pane?.index ?? 0);
+    indicatorData.scheduleLoad(0);
+  }
+
+  function renderIndicatorFavorites() {
+    if (!favoritesEl) return;
+    const favIds = loadIndicatorFavorites();
+    const favDefs = listIndicators().filter((Indicator) => favIds.includes(Indicator.id));
+    favoritesEl.innerHTML = favDefs
+      .map(
+        (Indicator) =>
+          `<button type="button" class="tv-chart-tools__fav-pill" data-def="${Indicator.id}" title="${Indicator.title}" aria-label="Add ${Indicator.title}">${Indicator.shortTitle || Indicator.title}</button>`,
+      )
+      .join("");
+    favoritesEl.hidden = favDefs.length === 0;
+  }
+
+  favoritesEl?.addEventListener("click", (ev) => {
+    const btn = ev.target instanceof Element ? ev.target.closest("[data-def]") : null;
+    const defId = btn instanceof HTMLElement ? btn.dataset.def : null;
+    if (defId) addIndicatorFromLibrary(defId);
+  });
+
   indicatorsBtn?.addEventListener("click", () => {
     library.open(indicatorsBtn);
   });
 
-  favBtn?.addEventListener("click", (ev) => {
-    ev.stopPropagation();
-    openFavoritesMenu(favBtn);
-    favBtn?.setAttribute("aria-expanded", "true");
-  });
-
-  function openFavoritesMenu(anchor) {
-    let favIds = [];
-    try {
-      favIds = JSON.parse(localStorage.getItem(FAV_KEY) || "[]");
-    } catch {
-      favIds = [];
-    }
-    const menu = document.createElement("div");
-    menu.className = "tv-chart-tools__menu";
-    menu.setAttribute("role", "menu");
-    const favDefs = listIndicators().filter((Indicator) => favIds.includes(Indicator.id));
-    menu.innerHTML = favDefs.length
-      ? favDefs
-          .map(
-            (Indicator) =>
-              `<button type="button" class="tv-ind-prop__menu-item" role="menuitem" data-def="${Indicator.id}">${Indicator.title}</button>`,
-          )
-          .join("")
-      : `<div class="tv-chart-tools__menu-empty">No favorite indicators yet</div>`;
-    document.body.appendChild(menu);
-    const rect = anchor.getBoundingClientRect();
-    menu.style.top = `${rect.bottom + 4}px`;
-    menu.style.left = `${rect.left}px`;
-    menu.querySelectorAll("[data-def]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const defId = btn.getAttribute("data-def");
-        if (defId) {
-          const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
-          controller.addIndicator(defId, pane?.index ?? 0);
-          indicatorData.scheduleLoad(0);
-        }
-        menu.remove();
-      });
-    });
-    const close = () => menu.remove();
-    setTimeout(() => {
-      document.addEventListener(
-        "click",
-        (e) => {
-          if (!menu.contains(e.target) && !anchor.contains(e.target)) close();
-        },
-        { once: true },
-      );
-    }, 0);
-  }
+  renderIndicatorFavorites();
 
   const origRefreshPaneStatusLine = ctx.refreshPaneStatusLine;
   ctx.refreshPaneStatusLine = (pane) => {

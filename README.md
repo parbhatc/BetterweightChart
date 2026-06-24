@@ -49,7 +49,8 @@ public/
 │   │   ├── geometry/
 │   │   ├── primitives/
 │   │   └── toolbars/
-│   └── ui/             # Chrome: settings, menus, header
+│   ├── indicators/     # Studies: catalog, controller, UI (library, legend, favorites)
+│   └── ui/             # Chrome: settings, menus, header, timeframe picker
 │       └── settings/   # Settings defaults + store
 server/                 # Static host + fake datafeed
 ```
@@ -364,13 +365,22 @@ Whitespace is controlled only at chart creation — there is no settings toggle.
 
 Built-in studies: **EMA**, **Volume**, **RSI**, **MACD**, **Pivot Points High Low** (Pivots HL — local pivot labels on the chart), and **FVG** (Fair Value Gap boxes with multi-timeframe support).
 
-- Open **Indicators** (ƒx) in the toolbar → pick a study.
-- Click the legend row to edit **Inputs**, **Style**, and **Visibility**.
+### Library & favorites
+
+- Open **Indicators** (ƒx) in the toolbar → search or pick a study to add it to the chart.
+- **Favorite a study** — hover a row in the library and click the **star on the right** (same star UI as timeframe favorites). Up to **12** favorites; stored in `localStorage` (`bwc-indicator-favorites`).
+- **Favorites filter** — star button in the library search bar toggles a favorites-only list.
+- **Quick add** — favorited studies appear as **pills** next to the Indicators button in the header; click a pill to add that study without reopening the library.
+
+### Legend & settings
+
+- Studies show in the **status-line legend** when placed on the main pane. Use the **legend toggler** (layers icon under the status line) to collapse or expand legend rows when at least one study is on the status line.
+- Click a legend row to edit **Inputs**, **Style**, and **Visibility**.
 - Indicators save with layouts.
 
 **Custom indicators:** use `defineIndicator()` in `definitions/`, add to `definitions/index.js`. Full guide + Pine → JS mapping: **[docs/indicators.md](docs/indicators.md)**.
 
-Built-in studies (EMA, MACD, RSI, Volume, Pivots HL, FVG) all use the same `defineIndicator()` pattern. Shared math (EMA, RSI, MACD) lives in `math/`; study-specific logic stays in the definition file.
+Built-in studies (EMA, MACD, RSI, Volume, Pivots HL, FVG) all use the same `defineIndicator()` pattern. Shared math (EMA, RSI, MACD) lives in `math/`; study-specific logic stays in the definition file. Favorites helpers live in `public/js/indicators/ui/favorites.js`.
 
 ## Chart settings
 
