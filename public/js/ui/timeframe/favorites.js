@@ -1,18 +1,62 @@
+import { resolutionSec } from "../../chart/resolutions.js";
+
 export const FAV_STORAGE_KEY = "tv-tf-favorites";
 export const LAST_RESOLUTION_KEY = "tv-last-resolution";
 export const MAX_FAVORITES = 8;
+
+/** Default favorite bar order when none are saved yet. */
+export const DEFAULT_FAVORITES = ["30S", "1", "5", "15", "60"];
+
+/**
+ * @param {string[]} ids
+ * @param {Array<{ id: string }>} resolutions
+ */
+function normalizeFavorites(ids, resolutions) {
+  const allowed = new Set(resolutions.map((r) => r.id));
+  const seen = new Set();
+  const out = [];
+  for (const id of ids) {
+    if (!allowed.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out
+    .sort((a, b) => {
+      const da = resolutionSec(a);
+      const db = resolutionSec(b);
+      if (da !== db) return da - db;
+      return String(a).localeCompare(String(b));
+    })
+    .slice(0, MAX_FAVORITES);
+}
+
+/**
+ * @param {Array<{ id: string }>} resolutions
+ * @returns {string[]}
+ */
+function defaultFavorites(resolutions) {
+  return normalizeFavorites(DEFAULT_FAVORITES, resolutions);
+}
 
 /** @param {Array<{ id: string }>} resolutions */
 export function loadFavorites(resolutions) {
   try {
     const raw = localStorage.getItem(FAV_STORAGE_KEY);
-    if (!raw) return [];
+    if (!raw) return defaultFavorites(resolutions);
     const ids = JSON.parse(raw);
     if (!Array.isArray(ids)) throw new Error("bad");
-    return ids.filter((id) => resolutions.some((r) => r.id === id)).slice(0, MAX_FAVORITES);
+    const next = normalizeFavorites(ids, resolutions);
+    return next.length ? next : defaultFavorites(resolutions);
   } catch {
-    return [];
+    return defaultFavorites(resolutions);
   }
+}
+
+/** @param {string[]} favorites @param {Array<{ id: string }>} resolutions */
+function persistFavorites(favorites, resolutions) {
+  const next = normalizeFavorites(favorites, resolutions);
+  localStorage.setItem(FAV_STORAGE_KEY, JSON.stringify(next));
+  return next;
 }
 
 /** @param {string[]} favorites */
@@ -52,13 +96,10 @@ export function toggleFavorite(favorites, id, resolutions) {
 
   if (favorites.includes(id)) {
     const next = favorites.filter((f) => f !== id);
-    saveFavorites(next);
-    return next;
+    return persistFavorites(next, resolutions);
   }
 
-  const next = [...favorites, id];
-  saveFavorites(next);
-  return next;
+  return persistFavorites([...favorites, id], resolutions);
 }
 
 /** @param {string[]} favorites @param {string} id */
