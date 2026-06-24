@@ -1,3 +1,9 @@
+@media (hover: none) {
+  .tv-floating-toolbar__hint {
+    display: none !important;
+  }
+}
+
 .tv-drawing-edit-toolbar .tv-floating-toolbar__content {
   padding: 0;
 }

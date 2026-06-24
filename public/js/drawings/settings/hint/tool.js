@@ -1,5 +1,9 @@
 let hintEl = null;
 
+function toolbarHintsEnabled() {
+  return window.matchMedia?.("(hover: hover)")?.matches ?? true;
+}
+
 function ensureHint() {
   if (hintEl) return hintEl;
   hintEl = document.createElement("div");
@@ -30,7 +34,7 @@ function positionHint(anchor) {
 
 /** @param {HTMLElement} anchor @param {string} label */
 export function showToolbarHint(anchor, label) {
-  if (!label) return;
+  if (!toolbarHintsEnabled() || !label) return;
   const hint = ensureHint();
   hint.textContent = label;
   hint.hidden = false;
@@ -47,6 +51,8 @@ export function hideToolbarHint() {
  * @param {(el: HTMLElement) => string | null | undefined} resolveLabel
  */
 export function wireToolbarHints(root, selector, resolveLabel) {
+  if (!toolbarHintsEnabled()) return;
+
   root.addEventListener(
     "mouseover",
     (ev) => {
