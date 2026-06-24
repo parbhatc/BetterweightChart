@@ -1,4 +1,3 @@
-export const DEFAULT_FAVORITES = ["1", "5", "15", "60", "D"];
 export const FAV_STORAGE_KEY = "tv-tf-favorites";
 export const LAST_RESOLUTION_KEY = "tv-last-resolution";
 export const MAX_FAVORITES = 8;
@@ -7,12 +6,12 @@ export const MAX_FAVORITES = 8;
 export function loadFavorites(resolutions) {
   try {
     const raw = localStorage.getItem(FAV_STORAGE_KEY);
-    if (!raw) return DEFAULT_FAVORITES.filter((id) => resolutions.some((r) => r.id === id));
+    if (!raw) return [];
     const ids = JSON.parse(raw);
     if (!Array.isArray(ids)) throw new Error("bad");
     return ids.filter((id) => resolutions.some((r) => r.id === id)).slice(0, MAX_FAVORITES);
   } catch {
-    return DEFAULT_FAVORITES.filter((id) => resolutions.some((r) => r.id === id));
+    return [];
   }
 }
 

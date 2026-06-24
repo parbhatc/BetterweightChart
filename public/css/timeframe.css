@@ -283,14 +283,8 @@
   background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
-  opacity: 0;
   flex-shrink: 0;
-  transition: opacity var(--duration-fast) var(--ease-out), var(--transition-colors);
-}
-
-.tv-tf__interval:hover .tv-tf__fav-btn,
-.tv-tf__fav-btn.is-fav {
-  opacity: 1;
+  transition: var(--transition-colors);
 }
 
 .tv-tf__fav-btn:hover {

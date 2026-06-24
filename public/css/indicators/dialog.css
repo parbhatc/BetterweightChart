@@ -267,14 +267,8 @@ body.tv-ind-lib-open {
   background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
-  opacity: 0;
   flex-shrink: 0;
-  transition: opacity var(--duration-fast) var(--ease-out), var(--transition-colors);
-}
-
-.tv-ind-lib__item:hover .tv-ind-lib__fav-btn,
-.tv-ind-lib__fav-btn.is-fav {
-  opacity: 1;
+  transition: var(--transition-colors);
 }
 
 .tv-ind-lib__fav-btn:hover {
@@ -359,8 +353,19 @@ body.tv-ind-lib-open {
     right: calc(var(--space-3) + var(--space-1));
   }
 
+  .tv-ind-lib__body {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
   .tv-ind-lib__list {
+    flex: 1 1 auto;
+    min-height: 0;
     max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
   }
 
   .tv-ind-lib__item {
