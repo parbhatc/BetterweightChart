@@ -65,10 +65,14 @@ export function createIndicatorDataLoader({ ctx, controller }) {
 
   /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack @param {object} [symbolInfo] */
   async function fillHtfHistory(pane, symbol, resolution, countBack) {
-    const symbolInfo =
-      symbol === pane.symbol
-        ? (pane.symbolInfo ?? ctx.symbolInfo)
-        : await ctx.datafeed.resolveSymbol(symbol);
+    let symbolInfo;
+    if (symbol === pane.symbol) {
+      symbolInfo = pane.symbolInfo ?? ctx.symbolInfo;
+      if (!symbolInfo) return;
+    } else {
+      symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
+      if (!symbolInfo) return;
+    }
     let entry = await ensureHtfBars(htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo));
     let guard = 0;
     while (entry && entry.utcBars.length < countBack && !entry.historyExhausted && guard < PREPEND_GUARD) {

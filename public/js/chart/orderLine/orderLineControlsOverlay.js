@@ -145,6 +145,7 @@ export function createOrderLineControlsOverlay(paneEl) {
     }
     el.dataset.olSignature = signature;
 
+    const rawBody = state.text?.trim() || "";
     const { bodyText, qtyText, bodyW, qtyW } = measureOrderLineRow(state);
     const qtyDiv = qtyDividerColor(state);
 
@@ -175,7 +176,7 @@ export function createOrderLineControlsOverlay(paneEl) {
     );
     body.textContent = bodyText;
     body.title = state.bodyTooltip || "Modify order";
-    el.appendChild(body);
+    if (rawBody) el.appendChild(body);
 
     if (qtyW) {
       const qty = document.createElement("button");

@@ -219,6 +219,7 @@ export async function bootChart(overrides = {}) {
         ctx._viewportRestorePending = v;
       },
     });
+    ctx.orderLines = widget.orderLines;
     if (typeof window !== "undefined") {
       window.__BWC_WIDGET__ = widget;
       if (debugOn) {

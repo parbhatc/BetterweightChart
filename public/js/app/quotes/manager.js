@@ -37,6 +37,7 @@ export async function attachQuoteManager(ctx) {
       pane.bidAskLines?.requestRefresh?.();
       pane.priceLineLabel?.requestRefresh?.();
     }
+    ctx.orderLines?.requestRefresh?.();
   }
 
   /**

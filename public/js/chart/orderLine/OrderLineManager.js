@@ -1,5 +1,9 @@
 import { createOrderLineAdapter } from "./createOrderLineAdapter.js";
 import { createOrderLineControlsOverlay } from "./orderLineControlsOverlay.js";
+import {
+  createOrderLinePriceLineSync,
+  orderLineOverlayState,
+} from "./orderLinePriceLineSync.js";
 import { OrderLinesPrimitive } from "./OrderLinesPrimitive.js";
 import { symbolLabelAnchorsForPane } from "../scale/symbolLabelAnchors.js";
 import {
@@ -60,6 +64,13 @@ export class OrderLineManager {
     this._onContextMenu = this._onContextMenu.bind(this);
     this._onOverlayPointerDown = this._onOverlayPointerDown.bind(this);
 
+    this._priceLineSync = createOrderLinePriceLineSync(
+      getActivePane,
+      () => this._axisLabelConfig(),
+      this._settingsStore,
+      this._symbolInfo,
+    );
+
     this._settingsStore?.onChange?.(() => this.requestRefresh());
   }
 
@@ -94,7 +105,6 @@ export class OrderLineManager {
     this._primitive = new OrderLinesPrimitive(
       () => this._activeStates(),
       (layouts) => this._applyOverlayLayouts(layouts),
-      () => this._axisLabelConfig(),
     );
     pane.series.attachPrimitive(this._primitive);
     this._ensureOverlay(pane);
@@ -152,6 +162,7 @@ export class OrderLineManager {
     this._primitive = null;
     this._paneRef = null;
     this._destroyOverlay();
+    this._priceLineSync.destroy();
   }
 
   /** @param {object} pane */
@@ -194,6 +205,7 @@ export class OrderLineManager {
   }
 
   requestRefresh() {
+    this._priceLineSync.sync(this._activeStates());
     this._primitive?.requestRefresh();
     this._scheduleOverlaySync();
   }
@@ -215,7 +227,7 @@ export class OrderLineManager {
         id: layout.state.id,
         left: layout.rowLeft,
         y: layout.y,
-        state: layout.state,
+        state: orderLineOverlayState(layout.state),
       })),
     );
   }
@@ -248,7 +260,11 @@ export class OrderLineManager {
 
     const centerY = orderLineCenterY(y);
     const plotW = plotPaneWidth(pane.chart, pane.el);
-    const { totalW, rowLeft } = layoutOrderLineGeometry(state, plotW, scaleW);
+    const { totalW, rowLeft } = layoutOrderLineGeometry(
+      orderLineOverlayState(state),
+      plotW,
+      scaleW,
+    );
     const top = centerY - ORDER_LINE_ROW_H / 2;
     const cancelLeft = rowLeft + totalW - ORDER_LINE_CANCEL_W;
     const row = {

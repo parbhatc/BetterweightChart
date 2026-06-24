@@ -75,6 +75,8 @@ export function createChartWidgetApi(ctx) {
   let chartReady = false;
 
   const widget = {
+    /** Order-line manager (position / bracket overlays). */
+    orderLines,
     /** Raw lightweight-charts IChartApi instance. */
     lcChart: chart,
     series,

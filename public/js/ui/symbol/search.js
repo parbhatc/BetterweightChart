@@ -6,6 +6,10 @@
  * @param {string} opts.initialSymbol
  * @param {(symbol: string, meta: object) => void} opts.onSelect
  */
+
+/** Above embedded app chrome (e.g. Auren trade header z-110, mobile nav z-50). */
+const SYMBOL_DROPDOWN_Z_INDEX = 10050;
+
 export function mountSymbolSearch(opts) {
   const { root, datafeed, initialSymbol, onSelect } = opts;
 
@@ -26,6 +30,30 @@ export function mountSymbolSearch(opts) {
   const metaBySymbol = new Map();
   let open = false;
   let activeSymbol = initialSymbol;
+  let portaled = false;
+
+  function portalDropdown() {
+    if (dropdown.parentElement === document.body) return;
+    document.body.appendChild(dropdown);
+    dropdown.classList.add("is-portaled");
+    dropdown.style.zIndex = String(SYMBOL_DROPDOWN_Z_INDEX);
+    portaled = true;
+  }
+
+  function restoreDropdown() {
+    if (!portaled) return;
+    if (dropdown.parentElement === document.body) {
+      root.appendChild(dropdown);
+    }
+    dropdown.classList.remove("is-portaled");
+    dropdown.style.zIndex = "";
+    portaled = false;
+  }
+
+  function isDropdownTarget(target) {
+    if (!(target instanceof Node)) return false;
+    return dropdown.contains(target);
+  }
 
   function displayTicker(sym, meta) {
     if (meta?.ticker) return meta.ticker;
@@ -90,6 +118,7 @@ export function mountSymbolSearch(opts) {
     dropdown.style.left = "";
     dropdown.style.right = "";
     dropdown.style.width = "";
+    restoreDropdown();
     window.removeEventListener("resize", positionDropdown);
     window.removeEventListener("scroll", positionDropdown, true);
   }
@@ -120,6 +149,7 @@ export function mountSymbolSearch(opts) {
 
   function openDropdown() {
     open = true;
+    portalDropdown();
     dropdown.hidden = false;
     trigger?.setAttribute("aria-expanded", "true");
     searchInput.value = "";
@@ -186,7 +216,8 @@ export function mountSymbolSearch(opts) {
 
   document.addEventListener("click", (ev) => {
     if (!open) return;
-    if (root.contains(ev.target)) return;
+    const target = ev.target;
+    if (target instanceof Node && (root.contains(target) || isDropdownTarget(target))) return;
     close();
   });
 

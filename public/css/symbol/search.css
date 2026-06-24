@@ -92,6 +92,10 @@
   overflow: hidden;
 }
 
+.tv-symbol__dropdown.is-portaled {
+  z-index: 10050;
+}
+
 .tv-symbol__search {
   width: 100%;
   border: none;

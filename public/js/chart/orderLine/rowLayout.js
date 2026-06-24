@@ -74,7 +74,8 @@ export function measureOrderLineRow(state, ctx = null) {
       ? document.createElement("canvas").getContext("2d")
       : null);
 
-  const bodyText = state.text?.trim() || " ";
+  const rawBody = state.text?.trim() || "";
+  const bodyText = rawBody || " ";
   const qtyText = state.quantity?.trim() || "";
   const bodyWeight = resolveOrderLineFontWeight(state.bodyFontWeight);
   const qtyWeight = resolveOrderLineFontWeight(state.quantityFontWeight);
@@ -88,7 +89,9 @@ export function measureOrderLineRow(state, ctx = null) {
     ? measureTextWidth(paintCtx, qtyText, qtyWeight, qtySize, qtyFamily)
     : 0;
 
-  const bodyW = Math.max(ORDER_LINE_MIN_BODY_W, Math.ceil(bodyInner + ORDER_LINE_PAD_X * 2));
+  const bodyW = rawBody
+    ? Math.max(ORDER_LINE_MIN_BODY_W, Math.ceil(bodyInner + ORDER_LINE_PAD_X * 2))
+    : 0;
   const qtyW = qtyText
     ? Math.max(ORDER_LINE_MIN_QTY_W, Math.ceil(qtyInner + ORDER_LINE_PAD_X * 2))
     : 0;

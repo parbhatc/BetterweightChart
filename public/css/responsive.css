@@ -97,6 +97,10 @@
     flex-direction: column;
   }
 
+  .tv-symbol__dropdown.is-portaled {
+    z-index: 10050;
+  }
+
   .tv-symbol__list {
     max-height: none;
     flex: 1;

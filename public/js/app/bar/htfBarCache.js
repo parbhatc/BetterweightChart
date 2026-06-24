@@ -176,6 +176,7 @@ async function fetchHtfBars(opts) {
   }
 
   if (utcBars.length < want) {
+    if (!symbolInfo) return existing ?? null;
     const to =
       pane.bars?.length > 0
         ? alignBarTime(pane.bars.at(-1).time, barSec)
