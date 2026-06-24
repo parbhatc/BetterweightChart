@@ -149,6 +149,7 @@ widget.setResolution("5");
 widget.reload();
 widget.reset();           // price + time + scroll to latest
 widget.reset({ price: false }); // time scale only
+widget.reset({ data: true }); // clear bar cache + refetch history (e.g. feed reconnect)
 
 widget.getBars();
 widget.getSymbol();

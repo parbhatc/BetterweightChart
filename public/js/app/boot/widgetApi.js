@@ -14,6 +14,7 @@ import {
   showChartPendingOverlay,
   hideChartPendingOverlay,
 } from "../../ui/loader/chartPendingOverlay.js";
+import { clearResolutionCache } from "../bar/resolutionCache.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -192,10 +193,31 @@ export function createChartWidgetApi(ctx) {
     },
 
     /**
-     * Reset viewport — price scale, time scale, scroll to latest.
-     * @param {{ price?: boolean, time?: boolean }} [opts]
+     * Reset chart viewport and/or refetch history from the datafeed.
+     *
+     * @param {{ price?: boolean, time?: boolean, data?: boolean, viewport?: boolean }} [opts]
+     * - `{ data: true }` — clear resolution cache and force a fresh `getBars` load
+     *   (e.g. after a live feed reconnect). `viewport` defaults to `true`.
+     * - default — reset viewport only (price + time + scroll to latest).
      */
-    reset(opts = {}) {
+    async reset(opts = {}) {
+      if (opts.data) {
+        clearResolutionCache();
+        const panes = getAllChartPanes();
+        const sync = layoutManager?.getSync();
+        const loadAll = sync?.symbol || sync?.interval || panes.length > 1;
+        const targets = loadAll ? panes : [getActivePane()].filter(Boolean);
+        chartDebug("data", "widget.reset", { mode: "data", panes: targets.length });
+        await loadBarsForPanes(targets, { force: true });
+        if (opts.viewport !== false) {
+          const resetPrice = opts.price !== false;
+          const resetTime = opts.time !== false;
+          if (resetPrice) resetChartView();
+          else if (resetTime) resetTimeScale();
+          else scrollToLatest(getBarsSnapshot().length);
+        }
+        return;
+      }
       const resetPrice = opts.price !== false;
       const resetTime = opts.time !== false;
       if (resetPrice) resetChartView();
