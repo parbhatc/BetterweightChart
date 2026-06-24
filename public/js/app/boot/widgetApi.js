@@ -21,6 +21,7 @@ import {
  */
 export function createChartWidgetApi(ctx) {
   const {
+    releaseTouchScrollLock,
     datafeed,
     chart,
     series,
@@ -382,6 +383,15 @@ export function createChartWidgetApi(ctx) {
         },
         opts,
       );
+    },
+
+    /** Tear down host-global side effects (touch scroll lock, clocks). */
+    destroy() {
+      releaseTouchScrollLock?.();
+      ctx.tzClock?.destroy?.();
+      if (typeof window !== "undefined" && window.__BWC_WIDGET__ === widget) {
+        delete window.__BWC_WIDGET__;
+      }
     },
   };
 

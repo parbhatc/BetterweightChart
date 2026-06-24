@@ -62,7 +62,7 @@ export async function bootChart(overrides = {}) {
   ctx.featureFlags = featureFlags;
   ctx.debugOn = debugOn;
   document.documentElement.setAttribute("data-theme", ctx.currentTheme);
-  mountAppTouchScrollLock();
+  const releaseTouchScrollLock = mountAppTouchScrollLock();
 
   if (debugOn) chartDebug("boot", "bootChart start", { opts: ctx.opts });
 
@@ -177,6 +177,7 @@ export async function bootChart(overrides = {}) {
       });
     }
     const widget = createChartWidgetApi({
+      releaseTouchScrollLock,
       datafeed: ctx.datafeed,
       chart: ctx.chart,
       series: ctx.series,

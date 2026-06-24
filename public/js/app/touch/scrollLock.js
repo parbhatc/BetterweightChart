@@ -20,9 +20,14 @@ function findScrollableAncestor(target) {
   return null;
 }
 
+/** @type {(() => void) | null} */
+let activeTouchScrollRelease = null;
+
 /** Stop Safari/page rubber-band while still allowing in-app scroll areas. */
 export function mountAppTouchScrollLock() {
   if (!COARSE_POINTER_MQ.matches) return () => {};
+
+  releaseAppTouchScrollLock();
 
   document.documentElement.classList.add("tv-app--touch");
 
@@ -34,8 +39,17 @@ export function mountAppTouchScrollLock() {
 
   document.addEventListener("touchmove", onTouchMove, { passive: false, capture: true });
 
-  return () => {
+  const release = () => {
     document.documentElement.classList.remove("tv-app--touch");
     document.removeEventListener("touchmove", onTouchMove, { capture: true });
+    if (activeTouchScrollRelease === release) activeTouchScrollRelease = null;
   };
+
+  activeTouchScrollRelease = release;
+  return release;
+}
+
+/** Release the active touch scroll lock (safe when host unmounts the chart). */
+export function releaseAppTouchScrollLock() {
+  activeTouchScrollRelease?.();
 }
