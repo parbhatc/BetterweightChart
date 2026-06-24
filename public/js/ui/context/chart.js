@@ -1,4 +1,9 @@
-import { closeAllContextMenus, registerContextMenu } from "./registry.js";
+import {
+  closeAllContextMenus,
+  markContextMenuOpened,
+  registerContextMenu,
+  shouldDismissContextMenuOnScroll,
+} from "./registry.js";
 import { hitPriceScale, hitTimeScale } from "../../chart/scale/settings.js";
 import { DRAWING_UI_SELECTOR } from "../../drawings/constants.js";
 import { runContextMenuAction } from "../../debug/chart/contextMenu.js";
@@ -143,6 +148,7 @@ export function mountChartContextMenu(opts) {
     closeAllContextMenus(close);
     render();
     root.hidden = false;
+    markContextMenuOpened();
     const pad = 8;
     const rect = root.getBoundingClientRect();
     let left = x;
@@ -285,8 +291,13 @@ export function mountChartContextMenu(opts) {
     ev.preventDefault();
     openX = ev.clientX;
     openY = ev.clientY;
-    await onBeforeOpen?.();
     positionMenu(openX, openY);
+    try {
+      await onBeforeOpen?.();
+    } catch {
+      /* ignore */
+    }
+    if (!root.hidden) render();
   });
 
   document.addEventListener("keydown", (ev) => {
@@ -312,10 +323,15 @@ export function mountChartContextMenu(opts) {
   });
 
   window.addEventListener("resize", close);
-  window.addEventListener("scroll", () => {
-    if (root.hidden) return;
-    close();
-  }, true);
+  window.addEventListener(
+    "scroll",
+    (ev) => {
+      if (root.hidden) return;
+      if (!shouldDismissContextMenuOnScroll(ev)) return;
+      close();
+    },
+    true,
+  );
 
   registerContextMenu({
     close,

@@ -11,6 +11,7 @@ import {
   resolveFvgSizeFilterLimits,
 } from "../ui/symbolSizeRulesPanel.js";
 import { resolveFvgLayers, applyHideLowerTfFilter } from "../ui/fvgTimeframesPanel.js";
+import { resolveLayerExtend } from "../ui/fvgExtendBoxesPanel.js";
 import { mapUtcTimeToChartTime } from "/js/indicators/math/barTimeMap.js";
 import { inputColorWithOpacity } from "/js/indicators/styleColor.js";
 import {
@@ -173,7 +174,6 @@ export class FvgEngine {
     const chartSec = ctx.barSec ?? resolutionSec(ctx.chartResolution ?? "1");
     const maxBack = Math.max(10, Number(inputs.maxBarsBack) || 300);
     const deleteOnFill = inputs.deleteOnFill !== false;
-    const extendBoxes = Boolean(inputs.extendBoxes);
     const boxLen = Math.max(1, Number(inputs.boxLength) || 20);
     const fillType = inputs.filledType === "wick" ? "wick" : "close";
     const boxesVisible = style.graphicBoxes !== false;
@@ -272,7 +272,6 @@ export class FvgEngine {
       chartSec,
       maxBack,
       deleteOnFill,
-      extendBoxes,
       boxLen,
       fillType,
       showLabels,
@@ -840,7 +839,7 @@ export class FvgEngine {
     let endTime = boxEndBase + boxLenSec;
     let extendRight = false;
 
-    if (cfg.extendBoxes) {
+    if (resolveLayerExtend(layer, this.script.inputs)) {
       if (!isIfvg && zone.filled && zone.fillIndex != null) {
         endTime =
           barChartTime(this.script, series[zone.fillIndex], zone.fillIndex) ??

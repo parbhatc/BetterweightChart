@@ -1,4 +1,9 @@
-import { closeAllContextMenus, registerContextMenu } from "./registry.js";
+import {
+  closeAllContextMenus,
+  markContextMenuOpened,
+  registerContextMenu,
+  shouldDismissContextMenuOnScroll,
+} from "./registry.js";
 import { runContextMenuAction, debugContextMenu } from "../../debug/chart/contextMenu.js";
 import { hitTimeScale } from "../../chart/scale/settings.js";
 import { TIMEZONE_OPTIONS } from "../../chart/timezone/list.js";
@@ -179,6 +184,7 @@ export function mountTimeScaleContextMenu(opts) {
     closeAllContextMenus(close);
     render();
     root.hidden = false;
+    markContextMenuOpened();
     const pad = 8;
     const rect = root.getBoundingClientRect();
     let left = x;
@@ -246,10 +252,15 @@ export function mountTimeScaleContextMenu(opts) {
   });
 
   window.addEventListener("resize", close);
-  window.addEventListener("scroll", () => {
-    if (root.hidden && !submenuEl) return;
-    close();
-  }, true);
+  window.addEventListener(
+    "scroll",
+    (ev) => {
+      if (root.hidden && !submenuEl) return;
+      if (!shouldDismissContextMenuOnScroll(ev)) return;
+      close();
+    },
+    true,
+  );
 
   registerContextMenu({
     close,

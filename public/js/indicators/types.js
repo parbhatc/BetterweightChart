@@ -91,6 +91,16 @@
  */
 
 /**
+ * @typedef {object} FvgExtendBoxesInputDef
+ * @property {"fvgExtendBoxes"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {Record<string, boolean>} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
  * @typedef {object} FvgTimeframesInputDef
  * @property {"fvgTimeframes"} type
  * @property {string} id
@@ -141,7 +151,7 @@
  */
 
 /**
- * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef | NewsLevelsInputDef} InputDef
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | FvgExtendBoxesInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef | NewsLevelsInputDef} InputDef
  */
 
 /**

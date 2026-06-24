@@ -113,8 +113,11 @@ export function buildInputs() {
       },
     ),
     createBool("deleteOnFill", "Delete Boxes after fill", true, { section: "Box Settings" }),
-    createBool("extendBoxes", "Extend Boxes", false, { section: "Box Settings" }),
     createInt("boxLength", "Length of Boxes", 20, { section: "Box Settings" }),
+    createField("fvgExtendBoxes", "fvgExtendByTf", {}, {
+      title: "Extend boxes by timeframe",
+      section: "Extend Boxes",
+    }),
     inlinePair(
       "Box Settings",
       createColor("bullBoxColor", "Bullish", { color: "#00e676", opacity: 10 }),

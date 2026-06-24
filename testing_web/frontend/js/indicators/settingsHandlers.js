@@ -21,6 +21,7 @@ function handleTestingSettingsClick(ev, ctx) {
       appendFvgTimeframeRow(list, { enabled: true, label: "FVG", timeframe: "chart" }, timeframeOptions());
       readDraftFromUi();
       applyDraft();
+      renderInputsPanel();
     }
     return true;
   }
@@ -48,6 +49,14 @@ function handleTestingSettingsClick(ev, ctx) {
     readDraftFromUi();
     applyDraft();
     renderInputsPanel();
+    return true;
+  }
+
+  const fvgExtend = target.closest("[data-fvg-extend]");
+  if (fvgExtend instanceof HTMLElement && !fvgExtend.hasAttribute("disabled")) {
+    setTvCheck(fvgExtend, !fvgExtend.classList.contains("tv-set__check--on"));
+    readDraftFromUi();
+    applyDraft();
     return true;
   }
 
