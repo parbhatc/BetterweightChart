@@ -117,6 +117,7 @@ export function createTooltipOverlay(deps) {
   function hideValuesTooltip() {
     if (pinned) return;
     valuesTooltip.hidden = true;
+    onBarHover?.(null, null);
   }
 
   function isValuesTooltipPinned() {
@@ -126,6 +127,7 @@ export function createTooltipOverlay(deps) {
   function unpinValuesTooltip() {
     if (!pinned) {
       valuesTooltip.hidden = true;
+      onBarHover?.(null, null);
       return;
     }
     pinned = false;
@@ -136,6 +138,7 @@ export function createTooltipOverlay(deps) {
       });
     }
     onPinChange?.(false);
+    onBarHover?.(null, null);
   }
 
   function pinValuesTooltip(clientX, clientY) {

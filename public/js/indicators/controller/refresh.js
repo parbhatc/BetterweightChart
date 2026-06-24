@@ -76,13 +76,29 @@ export function createRefresh(deps) {
   }
 
   /** @param {number} [paneIndex] */
-  function refreshOverlaysImmediate(paneIndex) {
+  function refreshOverlaysSilent(paneIndex) {
     if (paneIndex == null) {
       for (const pane of getAllChartPanes()) refreshOverlaysForPaneNow(pane.index);
     } else {
       refreshOverlaysForPaneNow(paneIndex);
     }
+  }
+
+  /** @param {number} [paneIndex] */
+  function refreshOverlaysImmediate(paneIndex) {
+    refreshOverlaysSilent(paneIndex);
     emit();
+  }
+
+  /** @param {number} paneIndex */
+  function paneNeedsLiveOverlayRefresh(paneIndex) {
+    for (const inst of getInstances().values()) {
+      if (inst.paneIndex !== paneIndex || inst.hidden) continue;
+      const Indicator = getIndicatorClass(inst.defId);
+      if (!Indicator?.overlayPrimitive) continue;
+      if (Indicator.needsLiveOverlayRefresh(inst)) return true;
+    }
+    return false;
   }
 
   /** @param {number} [paneIndex] */
@@ -171,9 +187,11 @@ export function createRefresh(deps) {
     refreshPaneImmediate,
     refreshPaneData,
     refreshOverlaysImmediate,
+    refreshOverlaysSilent,
     refreshOverlaysForPane,
     paneHasPlotSeriesIndicators,
     paneHasOverlayIndicators,
+    paneNeedsLiveOverlayRefresh,
     resyncStudyPaneScales,
     resyncStudyPaneHeights,
     refreshStudyPaneLegends,

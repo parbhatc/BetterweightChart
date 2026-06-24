@@ -4,6 +4,8 @@ import { chartConfig } from "../fakeBars.mjs";
 import { CHART_RESOLUTIONS, isSymbolResolutionSupported, resolutionSec } from "../resolutions.mjs";
 import { csvHistoryBars } from "../csv/history.mjs";
 
+const TRADINGVIEW_DATA_DELAY_MINUTES = 10;
+
 /** @type {Map<string, object>} */
 const symbolCache = new Map();
 
@@ -19,6 +21,7 @@ export function tradingViewDatafeedConfig() {
     supports_search: true,
     supports_group_request: false,
     supports_quotes: true,
+    data_delay_minutes: TRADINGVIEW_DATA_DELAY_MINUTES,
     themes,
   };
 }

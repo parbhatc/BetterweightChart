@@ -607,8 +607,6 @@ export function createPointerHandlers(api) {
     if (api.shouldSyncDrawCrosshair?.() && api.useMobileDragPlacement?.()) {
       crosshairScrollAnchor = null;
       requestAnimationFrame(() => api.syncDrawCrosshairAtMediaAnchor?.());
-    } else if (api.useMobileDragPlacement?.() && api.isCursorTool()) {
-      api.clearDrawCrosshair?.();
     }
   }
 

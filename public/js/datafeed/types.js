@@ -42,6 +42,7 @@
  *   supported_resolutions?: string[],
  *   currency_code?: string,
  *   data_status?: string,
+ *   delay_minutes?: number,
  *   volume_precision?: number,
  * }} SymbolInfo
  */

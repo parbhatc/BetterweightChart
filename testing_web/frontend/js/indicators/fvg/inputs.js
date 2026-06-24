@@ -114,9 +114,10 @@ export function buildInputs() {
     ),
     createBool("deleteOnFill", "Delete Boxes after fill", true, { section: "Box Settings" }),
     createInt("boxLength", "Length of Boxes", 20, { section: "Box Settings" }),
+    createBool("extendBoxes", "Extend all", false, { section: "Extend Boxes", showInStatusLine: false }),
     createField("fvgExtendBoxes", "fvgExtendByTf", {}, {
-      title: "Extend boxes by timeframe",
       section: "Extend Boxes",
+      showInStatusLine: false,
     }),
     inlinePair(
       "Box Settings",

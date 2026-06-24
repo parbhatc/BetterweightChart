@@ -2,6 +2,7 @@
 @import "./loading.css";
 @import "./toolbar.css";
 @import "./header/toolbar.css";
+@import "./header/layouts-dialog.css";
 @import "./symbol/search.css";
 @import "./timeframe.css";
 @import "./drawings/placement.css";

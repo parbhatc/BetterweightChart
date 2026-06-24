@@ -100,7 +100,7 @@ export function mountStatusLineContextMenu(opts) {
   }
 
   statusEl.addEventListener("contextmenu", (ev) => {
-    if (ev.target.closest(".mkt-icon, [data-mkt-popup]")) {
+    if (ev.target.closest(".mkt-pill, [data-mkt-popup]")) {
       ev.preventDefault();
       return;
     }

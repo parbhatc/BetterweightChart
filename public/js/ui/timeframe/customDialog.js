@@ -82,24 +82,32 @@ export function openCustomIntervalDialog(opts) {
     if (!(dialog instanceof HTMLElement)) return;
     const pad = 8;
     const dialogW = 280;
-    let left = window.innerWidth / 2 - dialogW / 2;
-    let top = window.innerHeight / 2 - 120;
-
-    if (anchorEl) {
-      const rect = anchorEl.getBoundingClientRect();
-      left = rect.left;
-      top = rect.bottom + 6;
-      if (left + dialogW > window.innerWidth - pad) {
-        left = window.innerWidth - dialogW - pad;
-      }
-      if (top + 220 > window.innerHeight - pad) {
-        top = Math.max(pad, rect.top - 220);
-      }
-    }
-
     dialog.style.position = "fixed";
     dialog.style.margin = "0";
     dialog.style.width = `${dialogW}px`;
+    dialog.style.transform = "";
+
+    const useCentered = !anchorEl || window.matchMedia("(max-width: 768px)").matches;
+    if (useCentered) {
+      dialog.style.left = "50%";
+      dialog.style.top = "50%";
+      dialog.style.transform = "translate(-50%, -50%)";
+      return;
+    }
+
+    let left = window.innerWidth / 2 - dialogW / 2;
+    let top = window.innerHeight / 2 - 120;
+
+    const rect = anchorEl.getBoundingClientRect();
+    left = rect.left;
+    top = rect.bottom + 6;
+    if (left + dialogW > window.innerWidth - pad) {
+      left = window.innerWidth - dialogW - pad;
+    }
+    if (top + 220 > window.innerHeight - pad) {
+      top = Math.max(pad, rect.top - 220);
+    }
+
     dialog.style.left = `${Math.max(pad, left)}px`;
     dialog.style.top = `${Math.max(pad, top)}px`;
   }
@@ -236,6 +244,16 @@ export function openCustomIntervalDialog(opts) {
       setUnit(/** @type {IntervalType["id"]} */ (el.dataset.unit));
     });
   });
+
+  overlay.addEventListener(
+    "wheel",
+    (ev) => {
+      if (ev.target instanceof Node && overlay.contains(ev.target)) {
+        ev.stopPropagation();
+      }
+    },
+    { capture: true },
+  );
 
   overlay.addEventListener("click", (ev) => {
     if (ev.target === overlay) close();

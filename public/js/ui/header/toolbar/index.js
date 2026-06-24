@@ -12,8 +12,9 @@ import { mountFullscreenMode } from "../fullscreen/mode.js";
 import { createChartSnapshot } from "../snapshot/chart.js";
 import { getLayoutDef, getLayoutGroupsForViewport } from "../layout/definitions.js";
 import { getLayoutIcon } from "../layout/icons.js";
-import { loadSavedLayouts, removeLayoutFromLibrary } from "../layout/manager.js";
-import { showLayoutConfirmDialog, showLayoutNameDialog } from "../layout/dialogs.js";
+import { loadSavedLayouts, removeLayoutFromLibrary, touchLayoutLastUsed } from "../layout/manager.js";
+import { showLayoutNameDialog } from "../layout/dialogs.js";
+import { showOpenLayoutsDialog } from "../layout/openDialog.js";
 
 /**
  * @param {object} opts
@@ -282,11 +283,30 @@ export function mountHeaderToolbar(opts) {
     positionMenu(layoutBtn, menu);
   }
 
+  function openLayoutsDialog() {
+    closeMenu();
+    showOpenLayoutsDialog({
+      getLayouts: loadSavedLayouts,
+      getCurrentName: () => layoutManager.getLayoutName(),
+      onLoad: (item) => {
+        touchLayoutLastUsed(item.name);
+        layoutManager.setLayout(item.layoutId);
+        layoutManager.setSync(item.sync);
+        layoutManager.setLayoutName(item.name);
+        onLoadLayout?.(item);
+        layoutManager.markSaved();
+        updateSaveState();
+      },
+      onDelete: (name) => {
+        onDeleteLayout?.(name);
+        updateSaveState();
+      },
+    });
+  }
+
   function openSaveMenu() {
     closeMenu();
     if (!(saveMenuBtn instanceof HTMLElement)) return;
-    const saved = loadSavedLayouts();
-    const currentName = layoutManager.getLayoutName();
     const menu = document.createElement("div");
     menu.className = "tv-header-menu tv-header-menu--save";
     menu.innerHTML = `
@@ -297,23 +317,8 @@ export function mountHeaderToolbar(opts) {
       <div class="tv-header-menu__sep"></div>
       <button type="button" class="tv-header-menu__item" data-save-action="create">Create new layout…</button>
       <button type="button" class="tv-header-menu__item" data-save-action="duplicate">Make a copy…</button>
-      <button type="button" class="tv-header-menu__item" data-save-action="save">Save layout</button>
       <button type="button" class="tv-header-menu__item" data-save-action="rename">Rename layout…</button>
-      <div class="tv-header-menu__sep"></div>
-      <div class="tv-header-menu__title">Saved layouts</div>
-      ${
-        saved.length
-          ? saved
-              .map(
-                (item) =>
-                  `<div class="tv-header-menu__row">
-                    <button type="button" class="tv-header-menu__item tv-header-menu__item--grow${item.name === currentName ? " is-active" : ""}" data-save-action="load" data-save-name="${escapeAttr(item.name)}">${escapeHtml(item.name)}</button>
-                    <button type="button" class="tv-header-menu__item tv-header-menu__item--icon" data-save-action="delete-layout" data-save-name="${escapeAttr(item.name)}" aria-label="Delete layout ${escapeAttr(item.name)}" title="Delete">×</button>
-                  </div>`,
-              )
-              .join("")
-          : `<div class="tv-header-menu__empty">No saved layouts</div>`
-      }
+      <button type="button" class="tv-header-menu__item" data-save-action="open-layouts">Open layouts…</button>
     `;
     menu.addEventListener("click", (ev) => {
       const btn = ev.target.closest("[data-save-action]");
@@ -332,9 +337,8 @@ export function mountHeaderToolbar(opts) {
         updateSaveState();
         return;
       }
-      if (action === "save") {
-        performSave();
-        closeMenu();
+      if (action === "open-layouts") {
+        openLayoutsDialog();
         return;
       }
       if (action === "rename") {
@@ -349,42 +353,6 @@ export function mountHeaderToolbar(opts) {
           layoutManager.setLayoutName(name);
           updateSaveState();
           onLayoutChange?.();
-        })();
-        return;
-      }
-      if (action === "load" && btn.dataset.saveName) {
-        const item = saved.find((s) => s.name === btn.dataset.saveName);
-        if (item) {
-          layoutManager.setLayout(item.layoutId);
-          layoutManager.setSync(item.sync);
-          layoutManager.setLayoutName(item.name);
-          onLoadLayout?.(item);
-          layoutManager.markSaved();
-          updateSaveState();
-        }
-        closeMenu();
-        return;
-      }
-      if (action === "delete-layout" && btn.dataset.saveName) {
-        const name = btn.dataset.saveName;
-        closeMenu();
-        void (async () => {
-          const confirmed = await showLayoutConfirmDialog({
-            title: "Delete layout",
-            message:
-              name === currentName
-                ? `Delete "${name}" and reset to a new unsaved workspace?`
-                : `Delete saved layout "${name}"?`,
-            confirmLabel: "Delete",
-            destructive: true,
-          });
-          if (!confirmed) {
-            openSaveMenu();
-            return;
-          }
-          onDeleteLayout?.(name);
-          updateSaveState();
-          openSaveMenu();
         })();
       }
     });
@@ -455,14 +423,4 @@ function syncRow(key, label, tip, checked, disabled) {
     <span class="tv-header-sync__label">${label}</span>
     <span class="tv-header-switch"><input type="checkbox" role="switch" data-sync-key="${key}"${checked ? " checked" : ""}${disabled ? " disabled" : ""} /></span>
   </label>`;
-}
-
-/** @param {string} value */
-function escapeHtml(value) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** @param {string} value */
-function escapeAttr(value) {
-  return escapeHtml(value).replace(/"/g, "&quot;");
 }

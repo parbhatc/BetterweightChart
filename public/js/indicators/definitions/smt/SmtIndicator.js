@@ -76,6 +76,12 @@ class SmtIndicator extends BarScriptIndicator {
     return [symbolTicker(compare), String(left), String(right)];
   }
 
+  /** @param {import("../../types.js").IndicatorInstance} instance */
+  needsLiveOverlayRefresh(instance) {
+    const waitClose = instance.inputs?.waitClose;
+    return waitClose === false;
+  }
+
   /** @param {object} instance @param {object} ctx */
   overlayRecomputeExtra(instance, ctx) {
     const compareKey = compareBarsRecomputeKey(ctx, instance.inputs);

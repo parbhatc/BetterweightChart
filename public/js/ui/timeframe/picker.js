@@ -51,7 +51,14 @@ const BUILTIN_IDS = new Set(CHART_RESOLUTION_IDS);
 const STAR_OUTLINE = `<svg viewBox="0 0 18 18" width="16" height="16" fill="none" aria-hidden="true"><path stroke="currentColor" d="M9 2.13l1.903 3.855.116.236.26.038 4.255.618-3.079 3.001-.188.184.044.259.727 4.237-3.805-2L9 12.434l-.233.122-3.805 2.001.727-4.237.044-.26-.188-.183-3.079-3.001 4.255-.618.26-.038.116-.236L9 2.13z"/></svg>`;
 const STAR_FILLED = `<svg viewBox="0 0 18 18" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M9 2.13l1.903 3.855.116.236.26.038 4.255.618-3.079 3.001-.188.184.044.259.727 4.237-3.805-2L9 12.434l-.233.122-3.805 2.001.727-4.237.044-.26-.188-.183-3.079-3.001 4.255-.618.26-.038.116-.236L9 2.13z"/></svg>`;
 const CHEVRON = `<svg viewBox="0 0 16 8" width="14" height="8" aria-hidden="true"><path fill="currentColor" d="M0 1.475l7.396 6.04.596.485.593-.49L16 1.39 14.807 0 7.393 6.122 8.58 6.12 1.186.08z"/></svg>`;
+const CLOSE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><path stroke="currentColor" stroke-width="1.2" d="m1.5 1.5 15 15m0-15-15 15"/></svg>`;
 const PLUS = `<svg viewBox="0 0 28 28" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M13.9 14.1V22h1.2v-7.9H23v-1.2h-7.9V5h-1.2v7.9H6v1.2h7.9Z"/></svg>`;
+
+const MOBILE_PANEL_MQ = window.matchMedia("(max-width: 768px)");
+
+function isMobilePanel() {
+  return MOBILE_PANEL_MQ.matches;
+}
 
 /**
  * @param {object} opts
@@ -90,6 +97,7 @@ export function mountTimeframePicker(opts) {
   const barEl = root.querySelector(".tv-tf__bar");
   const favEl = root.querySelector(".tv-tf__favorites");
   const overflowEl = root.querySelector(".tv-tf__overflow");
+  const menuWrap = root.querySelector(".tv-tf__menu-wrap");
   const menuBtn = root.querySelector(".tv-tf__menu-btn");
 
   const panel = document.createElement("div");
@@ -134,7 +142,18 @@ export function mountTimeframePicker(opts) {
     <div class="tv-tf__group-divider" role="separator"></div>`;
   }
 
+  function restoreElementScroll(el, pos) {
+    if (!(el instanceof HTMLElement)) return;
+    el.scrollTop = pos;
+    requestAnimationFrame(() => {
+      el.scrollTop = pos;
+    });
+  }
+
   function renderPanel() {
+    const scrollEl = panel.querySelector(".tv-tf__panel-scroll");
+    const scrollTop = scrollEl instanceof HTMLElement ? scrollEl.scrollTop : 0;
+
     const parts = GROUPS.map((group) => {
       const items = resolutions.filter((r) => group.match(r.id));
       if (!items.length) return "";
@@ -150,32 +169,32 @@ export function mountTimeframePicker(opts) {
       </div>`;
     }).filter(Boolean);
 
-    panel.innerHTML = `<div class="tv-tf__panel-scroll">${addCustomRowHtml()}${parts.join('<div class="tv-tf__group-divider" role="separator"></div>')}</div>`;
+    panel.innerHTML = `<div class="tv-tf__panel-backdrop" data-tf-backdrop aria-hidden="true"></div>
+<div class="tv-tf__panel-dialog">
+  <div class="tv-tf__panel-header">
+    <h2 class="tv-tf__panel-title">Intervals</h2>
+    <button type="button" class="tv-tf__panel-close" data-tf-close aria-label="Close">${CLOSE}</button>
+  </div>
+  <div class="tv-tf__panel-scroll">${addCustomRowHtml()}${parts.join('<div class="tv-tf__group-divider" role="separator"></div>')}</div>
+</div>`;
+    restoreElementScroll(panel.querySelector(".tv-tf__panel-scroll"), scrollTop);
   }
 
-  /** @type {(() => void) | null} */
-  let closeCustomDialog = null;
-
-  function renderFavorites() {
-    if (!favorites.length) {
-      favEl.innerHTML = tfBtn(active, true);
-      overflowEl.hidden = true;
-      overflowEl.innerHTML = "";
-      return;
-    }
-
-    favEl.innerHTML = favorites.map((id) => tfBtn(id, id === active)).join("");
-
-    if (!favorites.includes(active)) {
-      overflowEl.hidden = false;
-      overflowEl.innerHTML = tfBtn(active, true);
-    } else {
-      overflowEl.hidden = true;
-      overflowEl.innerHTML = "";
-    }
+  function clearPanelPosition() {
+    panel.style.left = "";
+    panel.style.top = "";
+    panel.style.height = "";
+    panel.style.maxHeight = "";
+    const scroll = panel.querySelector(".tv-tf__panel-scroll");
+    if (scroll instanceof HTMLElement) scroll.style.maxHeight = "";
   }
 
   function positionPanel() {
+    if (isMobilePanel()) {
+      clearPanelPosition();
+      return;
+    }
+
     const rect = root.getBoundingClientRect();
     const pad = 8;
     const gap = 4;
@@ -210,14 +229,83 @@ export function mountTimeframePicker(opts) {
     }
   }
 
+  /** @type {(() => void) | null} */
+  let closeCustomDialog = null;
+
+  function isSoloPicker() {
+    if (!favorites.length) return true;
+    return favorites.length === 1 && favorites[0] === active;
+  }
+
+  function updatePickerChrome() {
+    const solo = isSoloPicker();
+    root.classList.toggle("tv-tf--solo", solo);
+    if (menuWrap instanceof HTMLElement) menuWrap.hidden = solo;
+
+    favEl.querySelectorAll(".tv-tf__btn").forEach((btn) => {
+      if (!(btn instanceof HTMLButtonElement)) return;
+      if (solo) {
+        btn.setAttribute("aria-haspopup", "tree");
+        btn.setAttribute("aria-controls", "tf-interval-panel");
+        btn.setAttribute("aria-expanded", panelOpen ? "true" : "false");
+        if (btn.classList.contains("is-active")) btn.title = "All intervals";
+      } else {
+        btn.removeAttribute("aria-haspopup");
+        btn.removeAttribute("aria-controls");
+        btn.removeAttribute("aria-expanded");
+        btn.title = titleOf(btn.dataset.resolution ?? active);
+      }
+    });
+
+    const overflowBtn = overflowEl.querySelector(".tv-tf__btn");
+    if (overflowBtn instanceof HTMLButtonElement && !solo) {
+      overflowBtn.removeAttribute("aria-haspopup");
+      overflowBtn.removeAttribute("aria-controls");
+      overflowBtn.removeAttribute("aria-expanded");
+      overflowBtn.title = titleOf(overflowBtn.dataset.resolution ?? active);
+    }
+  }
+
+  function renderFavorites() {
+    const barScrollLeft = barEl.scrollLeft;
+    const pageScrollY = window.scrollY;
+
+    if (!favorites.length) {
+      favEl.innerHTML = tfBtn(active, true);
+      overflowEl.hidden = true;
+      overflowEl.innerHTML = "";
+      barEl.scrollLeft = barScrollLeft;
+      updatePickerChrome();
+      if (pageScrollY) window.scrollTo(0, pageScrollY);
+      return;
+    }
+
+    favEl.innerHTML = favorites.map((id) => tfBtn(id, id === active)).join("");
+
+    if (!favorites.includes(active)) {
+      overflowEl.hidden = false;
+      overflowEl.innerHTML = tfBtn(active, true);
+    } else {
+      overflowEl.hidden = true;
+      overflowEl.innerHTML = "";
+    }
+    barEl.scrollLeft = barScrollLeft;
+    updatePickerChrome();
+    if (pageScrollY) window.scrollTo(0, pageScrollY);
+  }
+
   function closePanel() {
     panelOpen = false;
     panel.hidden = true;
+    panel.classList.remove("tv-tf__panel--modal");
+    document.body.classList.remove("tv-tf-panel-open");
+    clearPanelPosition();
     closeCustomDialog?.();
     closeCustomDialog = null;
     menuBtn.setAttribute("aria-expanded", "false");
     barEl.classList.remove("tv-tf__bar--open");
     root.classList.remove("tv-tf--open");
+    updatePickerChrome();
   }
 
   function openPanel() {
@@ -225,15 +313,37 @@ export function mountTimeframePicker(opts) {
     renderPanel();
     panel.hidden = false;
     panelOpen = true;
+    if (isMobilePanel()) {
+      panel.classList.add("tv-tf__panel--modal");
+      document.body.classList.add("tv-tf-panel-open");
+      clearPanelPosition();
+    } else {
+      panel.classList.remove("tv-tf__panel--modal");
+      document.body.classList.remove("tv-tf-panel-open");
+      positionPanel();
+    }
     menuBtn.setAttribute("aria-expanded", "true");
     barEl.classList.add("tv-tf__bar--open");
     root.classList.add("tv-tf--open");
-    positionPanel();
+    updatePickerChrome();
   }
 
-  function setActive(resolution) {
+  function syncActiveResolution(resolution) {
+    if (resolution === active) return;
+    active = resolution;
+    renderFavorites();
+    if (panelOpen) renderPanel();
+    closePanel();
+  }
+
+  function setActive(resolution, { toggleIfSame = false } = {}) {
     if (resolution === active) {
-      closePanel();
+      if (toggleIfSame && isSoloPicker()) {
+        if (panelOpen) closePanel();
+        else openPanel();
+      } else {
+        closePanel();
+      }
       return;
     }
     active = resolution;
@@ -254,7 +364,7 @@ export function mountTimeframePicker(opts) {
   function openCustomDialog() {
     closeCustomDialog?.();
     closeCustomDialog = openCustomIntervalDialog({
-      anchorEl: panel,
+      anchorEl: isMobilePanel() ? undefined : panel,
       existingIds: resolutions.map((r) => r.id),
       onAdd: ({ id }) => {
         if (resolutions.some((r) => r.id === id)) {
@@ -267,7 +377,7 @@ export function mountTimeframePicker(opts) {
         syncResolutions();
         favorites = loadFavorites(resolutions);
         renderPanel();
-        positionPanel();
+        if (!isMobilePanel()) positionPanel();
         setActive(id);
       },
       onClose: () => {
@@ -288,6 +398,15 @@ export function mountTimeframePicker(opts) {
 
   renderFavorites();
 
+  panel.addEventListener(
+    "wheel",
+    (ev) => {
+      if (!panelOpen || panel.hidden) return;
+      ev.stopPropagation();
+    },
+    { capture: true },
+  );
+
   root.addEventListener("click", (ev) => {
     if (ev.target.closest(".tv-tf__menu-btn")) {
       if (panelOpen) closePanel();
@@ -296,16 +415,21 @@ export function mountTimeframePicker(opts) {
     }
     const favBtn = ev.target.closest("[data-fav-toggle]");
     if (favBtn) {
+      ev.preventDefault();
       ev.stopPropagation();
       toggleFavoriteId(favBtn.dataset.resolution);
       return;
     }
     const btn = ev.target.closest("[data-resolution]");
     if (!btn || btn.closest(".tv-tf__panel")) return;
-    setActive(btn.dataset.resolution);
+    setActive(btn.dataset.resolution, { toggleIfSame: true });
   });
 
   panel.addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-tf-backdrop]") || ev.target.closest("[data-tf-close]")) {
+      closePanel();
+      return;
+    }
     if (ev.target.closest("[data-open-custom]")) {
       openCustomDialog();
       return;
@@ -325,6 +449,7 @@ export function mountTimeframePicker(opts) {
     }
     const favBtn = ev.target.closest("[data-fav-toggle]");
     if (favBtn) {
+      ev.preventDefault();
       ev.stopPropagation();
       toggleFavoriteId(favBtn.dataset.resolution);
       return;
@@ -335,7 +460,16 @@ export function mountTimeframePicker(opts) {
   });
 
   window.addEventListener("resize", () => {
-    if (panelOpen) positionPanel();
+    if (!panelOpen) return;
+    if (isMobilePanel()) {
+      panel.classList.add("tv-tf__panel--modal");
+      document.body.classList.add("tv-tf-panel-open");
+      clearPanelPosition();
+    } else {
+      panel.classList.remove("tv-tf__panel--modal");
+      document.body.classList.remove("tv-tf-panel-open");
+      positionPanel();
+    }
   });
 
   document.addEventListener("keydown", (ev) => {
@@ -358,7 +492,7 @@ export function mountTimeframePicker(opts) {
     getResolutions: () => [...resolutions],
     openPanel,
     setResolution(resolution) {
-      setActive(resolution);
+      syncActiveResolution(resolution);
     },
     getLabel: () => labelOf(active),
   };

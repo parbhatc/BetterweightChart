@@ -5,7 +5,7 @@ const STORAGE_KEY = "tv-chart-layout-state";
 
 /** @typedef {{ symbol: boolean, interval: boolean, crosshair: boolean, time: boolean, dateRange: boolean, drawings: boolean }} SyncSettings */
 
-/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, indicators?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>>, drawingTemplates?: import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates, viewports?: Record<string, { scaleMargins?: { top: number, bottom: number }, logicalRange?: { from: number, to: number }, barSpacing?: number }> }} SavedLayout */
+/** @typedef {{ name: string, layoutId: string, sync: SyncSettings, drawings?: Record<string, object[]>, indicators?: Record<string, object[]>, chartSettings?: object, toolDefaults?: Record<string, Record<string, unknown>>, drawingTemplates?: import("../../../drawings/toolbars/defaults/layoutTemplates.js").LayoutDrawingTemplates, viewports?: Record<string, { scaleMargins?: { top: number, bottom: number }, logicalRange?: { from: number, to: number }, barSpacing?: number }>, createdAt?: number, updatedAt?: number, lastUsedAt?: number }} SavedLayout */
 
 /** @typedef {{ chart: import("lightweight-charts").IChartApi, series: import("lightweight-charts").ISeriesApi, wrapEl: HTMLElement, chartEl: HTMLElement, destroy: () => void, symbol: string, resolution: string, symbolInfo: object | null, bars: object[] }} SecondaryPane */
 
@@ -325,9 +325,32 @@ export function createLayoutManager(opts) {
 /** @param {SavedLayout} entry */
 export function upsertLayoutLibraryEntry(entry) {
   const saved = loadSavedLayouts();
+  const now = Date.now();
   const idx = saved.findIndex((s) => s.name === entry.name);
-  if (idx >= 0) saved[idx] = entry;
-  else saved.push(entry);
+  if (idx >= 0) {
+    const prev = saved[idx];
+    saved[idx] = {
+      ...entry,
+      createdAt: prev.createdAt ?? now,
+      updatedAt: now,
+      lastUsedAt: prev.lastUsedAt,
+    };
+  } else {
+    saved.push({
+      ...entry,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  saveLayoutLibrary(saved);
+}
+
+/** @param {string} name */
+export function touchLayoutLastUsed(name) {
+  const saved = loadSavedLayouts();
+  const idx = saved.findIndex((s) => s.name === name);
+  if (idx < 0) return;
+  saved[idx] = { ...saved[idx], lastUsedAt: Date.now() };
   saveLayoutLibrary(saved);
 }
 

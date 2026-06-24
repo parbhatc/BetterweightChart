@@ -123,10 +123,16 @@ export function createOverlaySync(deps) {
       recomputeKey = `${recomputeKey}|${Indicator.overlayRecomputeExtra(instance, overlayCtx)}`;
     }
 
-    const overlayPending =
-      typeof Indicator.overlayPending === "function" && Indicator.overlayPending(instance, overlayCtx);
+    const hookPending =
+      typeof Indicator.overlayPending === "function"
+        ? Indicator.overlayPending(instance, overlayCtx)
+        : undefined;
     const prevPending = instance._initPending === true;
-    instance._initPending = overlayPending === true;
+    if (hookPending === true) {
+      instance._initPending = true;
+    } else if (hookPending === false) {
+      instance._initPending = false;
+    }
 
     if (instance._initPending && instance._loadStartAt == null) {
       instance._loadStartAt = performance.now();
@@ -142,15 +148,17 @@ export function createOverlaySync(deps) {
       cacheHit &&
       typeof Indicator.shouldRefreshOverlayOnCacheHit === "function" &&
       Indicator.shouldRefreshOverlayOnCacheHit(instance, overlayCtx);
-    if (instance._initPending) {
+    if (hookPending === true) {
       overlayData = [];
     } else if (cacheHit && !refreshLiveOnCacheHit) {
       overlayData = instance._overlayBoxCache;
     } else {
       overlayData = Indicator.computeOverlay?.(utcBars, chartBars, instance, overlayCtx) ?? [];
-      instance._overlayRecomputeKey = recomputeKey;
-      instance._overlayBoxCache = overlayData;
-      instance._overlayGeomKey = overlayGeometryKey(overlayData);
+      if (!instance._initPending) {
+        instance._overlayRecomputeKey = recomputeKey;
+        instance._overlayBoxCache = overlayData;
+        instance._overlayGeomKey = overlayGeometryKey(overlayData);
+      }
     }
 
     if (prevPending && !instance._initPending) {
@@ -298,7 +306,6 @@ export function createOverlaySync(deps) {
         continue;
       }
       flushPendingOverlayApply(instance, Indicator, pane);
-      instance._overlayLastSyncToken = undefined;
       syncOverlayPrimitive(instance, Indicator);
     }
   }

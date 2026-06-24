@@ -57,6 +57,8 @@ export class OrderLineManager {
     this._rangeUnsub = null;
     /** @type {ResizeObserver | null} */
     this._resizeObs = null;
+    /** @type {boolean} */
+    this._scrollLocked = false;
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
     this._onPointerUp = this._onPointerUp.bind(this);
@@ -147,7 +149,51 @@ export class OrderLineManager {
     this._overlayPane = null;
   }
 
+  /** Block chart pan / kinetic scroll while dragging an order line (matches drawing tools). */
+  _lockChartScroll() {
+    if (this._scrollLocked) return;
+    const pane = this._paneRef ?? this._getActivePane();
+    if (!pane?.chart) return;
+    this._scrollLocked = true;
+    pane.chart.applyOptions({
+      handleScroll: {
+        mouseWheel: false,
+        pressedMouseMove: false,
+        horzTouchDrag: false,
+        vertTouchDrag: false,
+      },
+      kineticScroll: { mouse: false, touch: false },
+      handleScale: {
+        axisPressedMouseMove: { time: false, price: true },
+      },
+    });
+    const stage = pane.el?.closest(".tv-chart-wrap__stage");
+    if (stage instanceof HTMLElement) stage.style.touchAction = "none";
+  }
+
+  _unlockChartScroll() {
+    if (!this._scrollLocked) return;
+    this._scrollLocked = false;
+    const pane = this._paneRef ?? this._getActivePane();
+    if (!pane?.chart) return;
+    pane.chart.applyOptions({
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: true,
+      },
+      kineticScroll: { mouse: true, touch: true },
+      handleScale: {
+        axisPressedMouseMove: { time: true, price: true },
+      },
+    });
+    const stage = pane.el?.closest(".tv-chart-wrap__stage");
+    if (stage instanceof HTMLElement) stage.style.touchAction = "";
+  }
+
   _detachPrimitive() {
+    this._unlockChartScroll();
     this._rangeUnsub?.();
     this._rangeUnsub = null;
     this._resizeObs?.disconnect();
@@ -300,6 +346,7 @@ export class OrderLineManager {
 
     ev.preventDefault();
     ev.stopPropagation();
+    this._lockChartScroll();
     this._pendingModify = {
       adapter,
       startX: ev.clientX,
@@ -329,6 +376,9 @@ export class OrderLineManager {
     }
 
     if (hit.kind === "pill") {
+      ev.preventDefault();
+      ev.stopPropagation();
+      this._lockChartScroll();
       this._pendingModify = {
         adapter: hit.adapter,
         startX: ev.clientX,
@@ -348,6 +398,7 @@ export class OrderLineManager {
   /** @param {object} adapter @param {PointerEvent} ev */
   _startDrag(adapter, ev) {
     this._pendingModify = null;
+    this._lockChartScroll();
     this._drag = { adapter, startY: ev.clientY, startPrice: adapter.getPrice() };
     adapter.isMoving = true;
     adapter._state.isMoving = true;
@@ -377,6 +428,7 @@ export class OrderLineManager {
       const price = pane.series.coordinateToPrice(y);
       if (price == null || !Number.isFinite(price)) return;
       ev.preventDefault();
+      ev.stopPropagation();
       this._drag.adapter.setPrice(price);
       this._drag.adapter._handlers.moving?.();
       return;
@@ -396,6 +448,7 @@ export class OrderLineManager {
         else adapter._handlers.modify?.();
       }
       this._pendingModify = null;
+      this._unlockChartScroll();
     }
 
     if (!this._drag) return;
@@ -403,6 +456,7 @@ export class OrderLineManager {
     adapter.isMoving = false;
     adapter._state.isMoving = false;
     this._drag = null;
+    this._unlockChartScroll();
     this._scheduleOverlaySync();
     adapter._handlers.move?.();
   }

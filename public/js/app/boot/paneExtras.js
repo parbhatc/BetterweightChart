@@ -16,6 +16,7 @@ import {
 } from "../symbol/lineStyle.js";
 import { chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
 import { resolvePaneBackgroundColor } from "../../chart/canvas/settings.js";
+import { syncStatusLineLayout, wireStatusLineLayout } from "../../chart/status/layout.js";
 import { isNearHistoryLeftEdge } from "../bar/loader.js";
 import {
   buildChartSeriesForPane,
@@ -56,6 +57,20 @@ export function createPaneExtras(deps) {
     return pane.timeAdapter?.index.utcBarByUtcTime(utcTime) ?? barsForPane(pane).find((b) => b.time === utcTime);
   }
 
+  /** Prefer live `pane.bars` so forming-candle OHLC stays current on ticks. */
+  function liveBarAtTime(pane, utcTime) {
+    if (utcTime == null) return undefined;
+    return pane.bars.find((b) => b.time === utcTime) ?? statusBarAtTime(pane, utcTime);
+  }
+
+  /** @param {object} pane */
+  function latestStatusBar(pane) {
+    const visible = barsForPane(pane);
+    const tailTime = visible.at(-1)?.time ?? pane.bars.at(-1)?.time;
+    if (tailTime == null) return visible.at(-1) ?? pane.bars.at(-1);
+    return liveBarAtTime(pane, tailTime) ?? visible.at(-1) ?? pane.bars.at(-1);
+  }
+
   /** @param {object} pane @param {object | undefined} bar @param {number} idx */
   function setPaneHoverBar(pane, bar, idx, isActive) {
     if (!bar) {
@@ -84,6 +99,42 @@ export function createPaneExtras(deps) {
     return barChanged;
   }
 
+  /** @param {object} pane @param {import("lightweight-charts").MouseEventParams | null | undefined} param */
+  function isCrosshairOverFuture(pane, param) {
+    if (!param?.time || !param?.point) return false;
+    const chartBars = pane._chartView?.chartBars ?? [];
+    if (!chartBars.length) return false;
+    const lastRealChartTime = chartBars[chartBars.length - 1].time;
+    return param.time > lastRealChartTime;
+  }
+
+  /** Touch devices: only while finger is down; mouse/hover devices: active crosshair position. */
+  function statusPointerSelectsHover(pane) {
+    if (!pane.crosshairOverChart || pane.crosshairOverFuture) return false;
+    const pt = pane._statusPointerType;
+    const touchLike =
+      pt === "touch" || (pt !== "mouse" && window.matchMedia?.("(hover: none)")?.matches);
+    if (touchLike) return Boolean(pane.crosshairPointerActive);
+    return true;
+  }
+
+  /** @param {object} pane @returns {object | null | undefined} */
+  function statusHoverBarForPane(pane) {
+    const activeIdx = getLayoutManager()?.getActivePaneIndex() ?? 0;
+    const isActive = pane.index === activeIdx;
+    if (isActive && ui.lockCursorByTime && ui.lockedCrosshairTime != null) {
+      return liveBarAtTime(pane, ui.lockedCrosshairTime) ?? pane.hoverBar ?? null;
+    }
+    const ctrl = getDrawingHub?.()?.getController?.(pane.index);
+    if (ctrl?.isValuesTooltipPinned?.()) {
+      return pane.hoverBar ? liveBarAtTime(pane, pane.hoverBar.time) ?? pane.hoverBar : null;
+    }
+    if (statusPointerSelectsHover(pane) && pane.hoverBar) {
+      return liveBarAtTime(pane, pane.hoverBar.time) ?? pane.hoverBar;
+    }
+    return null;
+  }
+
   /** @param {object} pane */
   function refreshPaneStatusLine(pane) {
     if (!pane.statusEl) return;
@@ -94,14 +145,21 @@ export function createPaneExtras(deps) {
       return;
     }
     const visible = barsForPane(pane);
-    const rawBar = pane.hoverBar ?? visible.at(-1);
-    const bar = rawBar?.time != null ? (statusBarAtTime(pane, rawBar.time) ?? rawBar) : rawBar;
-    const prev =
-      pane.hoverBar != null
-        ? pane.hoverPrev
-        : visible.length > 1
-          ? visible.at(-2)
-          : undefined;
+    const hoverBar = statusHoverBarForPane(pane);
+    const useHover = hoverBar != null;
+    const rawBar = hoverBar ?? latestStatusBar(pane);
+    const bar = rawBar?.time != null ? (liveBarAtTime(pane, rawBar.time) ?? rawBar) : rawBar;
+    const prev = useHover
+      ? pane.hoverPrev ??
+        (hoverBar?.time != null
+          ? (() => {
+              const idx = nearestBarIndex(visible, hoverBar.time);
+              return idx > 0 ? visible[idx - 1] : undefined;
+            })()
+          : undefined)
+      : visible.length > 1
+        ? visible.at(-2)
+        : undefined;
     renderStatusLine(pane.statusEl, {
       symbol: pane.symbol,
       symbolInfo: pane.symbolInfo,
@@ -113,7 +171,10 @@ export function createPaneExtras(deps) {
   }
 
   function refreshStatusLine() {
-    for (const pane of getAllChartPanes()) refreshPaneStatusLine(pane);
+    for (const pane of getAllChartPanes()) {
+      syncStatusLineLayout(pane, () => settingsStore.get());
+      refreshPaneStatusLine(pane);
+    }
   }
 
   const flushPendingStatusLines = () => {
@@ -213,15 +274,26 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane @param {import("lightweight-charts").MouseEventParams} param @param {boolean} isActive @returns {boolean} */
   function applyCrosshairBar(pane, param, isActive) {
-    if (!param?.time) {
+    pane.crosshairOverFuture = isCrosshairOverFuture(pane, param);
+
+    if (!param?.time || !param?.point) {
       pane.lastCrosshairChartTime = undefined;
       if (isActive) applySymbolLineStyleLocal();
       return setPaneHoverBar(pane, undefined, -1, isActive);
     }
 
     pane.lastCrosshairChartTime = param.time;
+
+    if (pane.crosshairOverFuture) {
+      if (isActive) applySymbolLineStyleLocal();
+      return setPaneHoverBar(pane, undefined, -1, isActive);
+    }
+
     const { bar: nextBar, idx } = barFromCrosshairParam(pane, param);
-    if (!nextBar) return false;
+    if (!nextBar) {
+      if (isActive) applySymbolLineStyleLocal();
+      return setPaneHoverBar(pane, undefined, -1, isActive);
+    }
     return setPaneHoverBar(pane, nextBar, idx, isActive);
   }
 
@@ -232,10 +304,33 @@ export function createPaneExtras(deps) {
   }
 
   /** @param {object} pane */
+  function wirePaneStatusCrosshairPointer(pane) {
+    if (pane._statusCrosshairPointerWired) return;
+    pane._statusCrosshairPointerWired = true;
+
+    const onDown = (ev) => {
+      if (ev.button != null && ev.button !== 0) return;
+      pane._statusPointerType = ev.pointerType;
+      pane.crosshairPointerActive = true;
+    };
+
+    const onUp = () => {
+      if (!pane.crosshairPointerActive) return;
+      pane.crosshairPointerActive = false;
+      scheduleStatusLine(pane);
+    };
+
+    pane.el.addEventListener("pointerdown", onDown, { capture: true });
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
+  /** @param {object} pane */
   function wirePaneCrosshair(pane) {
     pane.chart.subscribeCrosshairMove((param) => {
       const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
 
+      pane.crosshairOverChart = Boolean(param?.point);
       applyCrosshairBar(pane, param, isActive);
 
       if (ui.chartPanning) {
@@ -471,11 +566,13 @@ export function createPaneExtras(deps) {
   /** @param {object} pane @param {HTMLElement} [statusLineEl] */
   function setupPaneExtras(pane, statusLineEl) {
     if (statusLineEl) pane.statusEl = statusLineEl;
+    wireStatusLineLayout(pane, () => settingsStore.get());
     attachSessionBackground(pane);
     attachPriceLineLabel(pane);
     attachBidAskLines(pane);
     wirePanePanPerf(pane);
     wirePaneCrosshair(pane);
+    wirePaneStatusCrosshairPointer(pane);
     wirePaneViewportHandlers(pane);
   }
 

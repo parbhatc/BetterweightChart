@@ -52,6 +52,8 @@ export function resolveSymbol(symbol) {
   const { minmov, pricescale } = tickToMinmovPricescale(tick);
   const exchange = meta.exchange ?? "CME";
   const isCrypto = meta.type === "crypto";
+  const delay_minutes = Number(meta.delay_minutes) || 0;
+  const streaming = delay_minutes <= 0;
 
   return {
     name: sym,
@@ -72,7 +74,8 @@ export function resolveSymbol(symbol) {
     has_weekly_and_monthly: true,
     supported_resolutions: RESOLUTIONS.map((r) => r.id),
     volume_precision: 0,
-    data_status: isCrypto ? "streaming" : "delayed",
+    delay_minutes,
+    data_status: streaming ? "streaming" : "delayed",
     currency_code: "USD",
   };
 }

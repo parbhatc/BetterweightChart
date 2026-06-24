@@ -202,8 +202,15 @@ export function createChartWidgetApi(ctx) {
       else scrollToLatest(getBarsSnapshot().length);
     },
 
-    /** Reload history from datafeed (initial countBack). */
-    reload: () => loadBars(),
+    /** Reload history from datafeed (initial countBack). Pass `{ force: true }` to refetch even when bars exist. */
+    reload: (opts = {}) => {
+      const panes = getAllChartPanes();
+      const sync = layoutManager?.getSync();
+      const loadAll = sync?.symbol || sync?.interval || panes.length > 1;
+      return loadBarsForPanes(loadAll ? panes : [getActivePane()].filter(Boolean), {
+        force: Boolean(opts.force),
+      });
+    },
 
     /**
      * Replace all bars (static/simple feeds).
@@ -221,6 +228,13 @@ export function createChartWidgetApi(ctx) {
     /** Change symbol and reload. */
     async setSymbol(sym) {
       const sync = layoutManager?.getSync();
+      if (layoutManager && sync?.symbol) {
+        const panes = getAllChartPanes();
+        if (panes.length && ctx.symbol === sym && panes.every((p) => p.symbol === sym)) return;
+      } else {
+        const pane = getActivePane();
+        if (pane?.symbol === sym) return;
+      }
       if (layoutManager && sync?.symbol) {
         const panes = getAllChartPanes();
         for (const pane of panes) pane.symbol = sym;

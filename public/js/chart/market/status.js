@@ -1,3 +1,5 @@
+import { symbolDelayFromInfo } from "../../datafeed/symbolDelay.js";
+
 const EXCHANGES = {
   CME: { full: "Chicago Mercantile Exchange Globex", tz: "America/Chicago", city: "Chicago" },
   CBOT: { full: "Chicago Board of Trade", tz: "America/Chicago", city: "Chicago" },
@@ -76,8 +78,7 @@ export function getMarketStatusDetails(symbolInfo, nowMs = Date.now()) {
   const ex = EXCHANGES[exchange] ?? EXCHANGES.NASDAQ;
   const tz = ex.tz;
   const z = zonedParts(tz, nowMs);
-  const delayed = symbolInfo?.data_status === "delayed";
-  const delayMinutes = type === "futures" ? 10 : type === "stock" || type === "etf" ? 15 : 0;
+  const { delayed, delayMinutes } = symbolDelayFromInfo(symbolInfo);
 
   /** @type {{ type: "open"|"closed", left: number, width: number, label: string, time: string }[]} */
   let segments = [];
@@ -257,7 +258,7 @@ function renderDelayWidget(s) {
     <div class="mkt-widget__body">
       <div class="mkt-widget__title mkt-widget__title--delay">Data is delayed</div>
       <p class="mkt-widget__text">
-        <span class="mkt-widget__item">${s.symbol} data is delayed by ${s.delayMinutes} minutes because of exchange requirements.</span>
+        <span class="mkt-widget__item">${s.symbol} data is delayed${s.delayMinutes > 0 ? ` by ${s.delayMinutes} minutes` : ""} because of exchange requirements.</span>
         <span class="mkt-widget__item">To get real-time data for <b>${s.exchangeFull}</b>, please buy the real-time data package.</span>
       </p>
     </div>
@@ -276,17 +277,26 @@ export function renderMarketStatusPopup(s, kind = "all") {
 }
 
 /**
- * Status icons for the status line (dots + delayed badge).
+ * Status pill for the legend (TradingView-style open dot + delayed "D").
  * @param {ReturnType<typeof getMarketStatusDetails>} s
  */
 export function renderMarketStatusIcons(s) {
-  const marketCls = s.open ? "mkt-icon--open" : "mkt-icon--closed";
-  const delayBtn = s.delayed
-    ? `<button type="button" class="mkt-icon mkt-icon--delay" data-mkt-popup="delay" aria-label="Data is delayed" title="Data is delayed">${ICON_DELAYED}</button>`
+  const openCls = s.open ? "mkt-pill--open" : "mkt-pill--closed";
+  const dotCls = s.open ? "mkt-pill__dot--open" : "mkt-pill__dot--closed";
+  const delayBadge = s.delayed
+    ? `<span class="mkt-pill__status mkt-pill__status--delay" aria-hidden="true">D</span>`
     : "";
-  return `<span class="mkt-icons">
-    <button type="button" class="mkt-icon ${marketCls}" data-mkt-popup="market" aria-label="${s.title}" title="${s.title}">${s.open ? ICON_MARKET_OPEN : ICON_MARKET_CLOSED}</button>
-    ${delayBtn}
+  const popupKind = s.delayed ? "all" : "market";
+  const title = s.delayed
+    ? s.delayMinutes > 0
+      ? `${s.title} · ${s.delayMinutes} min delayed`
+      : `${s.title} · delayed`
+    : s.title;
+
+  return `<span class="mkt-pill-wrap">
+    <button type="button" class="mkt-pill ${openCls}" data-mkt-popup="${popupKind}" aria-label="${title}" title="${title}">
+      <span class="mkt-pill__status mkt-pill__status--market" aria-hidden="true"><span class="mkt-pill__dot ${dotCls}"></span></span>${delayBadge}
+    </button>
   </span>`;
 }
 
@@ -335,7 +345,7 @@ export function mountMarketStatusPopup(hostEl, getContext) {
     const btn = ev.target.closest("[data-mkt-popup]");
     if (!btn || !hostEl.contains(btn)) return;
     ev.stopPropagation();
-    const kind = btn.dataset.mktPopup === "delay" ? "delay" : "market";
+    const kind = /** @type {"market"|"delay"|"all"} */ (btn.dataset.mktPopup || "market");
     if (!popup.hidden && anchor === btn) {
       close();
       return;

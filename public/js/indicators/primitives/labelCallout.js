@@ -2,6 +2,15 @@ const LABEL_FONT_FAMILY =
   `-apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`;
 const FONT_SIZE = 12;
 
+/** @param {number} [paneW] */
+function calloutFontSize(paneW) {
+  if (!paneW || !Number.isFinite(paneW)) return 10;
+  if (paneW < 400) return 8;
+  if (paneW < 640) return 9;
+  if (paneW < 1024) return 10;
+  return 11;
+}
+
 /** @param {number} [size] */
 function labelFont(size = FONT_SIZE) {
   return `${size}px ${LABEL_FONT_FAMILY}`;
@@ -35,9 +44,9 @@ function drawCorner(ctx, x, y, c, r) {
   ctx.arcTo(x, y, x + r * c.nx, y + r * c.ny, r);
 }
 
-/** label down — box above anchor, pointer down. */
-function drawLabelDown(ctx, cx, tipY, shapeWidth, shapeHeight, arrowSize, bgColor, borderColor) {
-  const r = 2;
+/** label down — box above anchor, pointer down. @param {number} [cornerR] */
+function drawLabelDown(ctx, cx, tipY, shapeWidth, shapeHeight, arrowSize, bgColor, borderColor, cornerR = 2) {
+  const r = cornerR;
   const halfW = shapeWidth / 2;
   const leftX = cx - halfW;
   const rightX = cx + halfW;
@@ -74,9 +83,9 @@ function drawLabelDown(ctx, cx, tipY, shapeWidth, shapeHeight, arrowSize, bgColo
   ctx.stroke();
 }
 
-/** label up — box below anchor, pointer up. */
-function drawLabelUp(ctx, cx, tipY, shapeWidth, shapeHeight, arrowSize, bgColor, borderColor) {
-  const r = 2;
+/** label up — box below anchor, pointer up. @param {number} [cornerR] */
+function drawLabelUp(ctx, cx, tipY, shapeWidth, shapeHeight, arrowSize, bgColor, borderColor, cornerR = 2) {
+  const r = cornerR;
   const halfW = shapeWidth / 2;
   const leftX = cx - halfW;
   const rightX = cx + halfW;
@@ -121,8 +130,15 @@ function drawLabelUp(ctx, cx, tipY, shapeWidth, shapeHeight, arrowSize, bgColor,
  * @param {string} bgColor
  * @param {string} textColor
  * @param {"high"|"low"} kind
+ * @param {{ angle?: number, paneW?: number }} [opts]
  */
-export function drawLabelCallout(ctx, anchorX, anchorY, text, bgColor, textColor, kind) {
+export function drawLabelCallout(ctx, anchorX, anchorY, text, bgColor, textColor, kind, opts = {}) {
+  const angle = opts.angle;
+  if (angle != null && Number.isFinite(angle)) {
+    drawRotatedLabelCallout(ctx, anchorX, anchorY, text, bgColor, textColor, angle, kind, opts.paneW);
+    return;
+  }
+
   const { shapeWidth, shapeHeight, arrowSize } = measureLabelBox(ctx, text);
   const cx = Math.round(anchorX);
   const tipY = Math.round(anchorY);
@@ -144,4 +160,52 @@ export function drawLabelCallout(ctx, anchorX, anchorY, text, bgColor, textColor
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(text, cx, Math.floor(textY));
+}
+
+/** @param {number} angle */
+function uprightLabelAngle(angle) {
+  let a = angle;
+  if (a > Math.PI / 2) a -= Math.PI;
+  else if (a < -Math.PI / 2) a += Math.PI;
+  return a;
+}
+
+/**
+ * Label box + text rotated parallel to a chart line (SMT-style).
+ * @param {CanvasRenderingContext2D} ctx
+ * @param {number} anchorX
+ * @param {number} anchorY
+ * @param {string} text
+ * @param {string} bgColor
+ * @param {string} textColor
+ * @param {"high"|"low"} kind
+ * @param {number} angle
+ * @param {number} [paneW]
+ */
+function drawRotatedLabelCallout(ctx, anchorX, anchorY, text, bgColor, textColor, angle, kind, paneW) {
+  const fontSize = calloutFontSize(paneW);
+  const { shapeWidth, shapeHeight, arrowSize } = measureLabelBox(ctx, text, fontSize);
+  const a = uprightLabelAngle(angle);
+  const isHigh = kind === "high";
+  const cornerR = Math.max(2, Math.round(fontSize * 0.22));
+  const wing = Math.max(arrowSize, Math.round(fontSize * 0.42));
+
+  ctx.save();
+  ctx.translate(Math.round(anchorX), Math.round(anchorY));
+  ctx.rotate(a);
+
+  if (isHigh) {
+    drawLabelDown(ctx, 0, 0, shapeWidth, shapeHeight, wing, bgColor, bgColor, cornerR);
+  } else {
+    drawLabelUp(ctx, 0, 0, shapeWidth, shapeHeight, wing, bgColor, bgColor, cornerR);
+  }
+
+  const textY = isHigh ? -wing - shapeHeight / 2 : wing + shapeHeight / 2;
+
+  ctx.font = `600 ${fontSize}px ${LABEL_FONT_FAMILY}`;
+  ctx.fillStyle = textColor;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, 0, Math.floor(textY));
+  ctx.restore();
 }

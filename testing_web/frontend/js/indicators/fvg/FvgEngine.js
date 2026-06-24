@@ -388,6 +388,51 @@ export class FvgEngine {
     this.script.state.layerIfvg = cloneZoneMap(snapshot.layerIfvg);
   }
 
+  /** @returns {boolean} false when correlated compare bars are not ready */
+  refreshCompareSeriesForLive() {
+    const cfg = this.script.state.cfg;
+    if (!cfg?.requireCorrelatedFvg) return true;
+
+    const ctx = this.script.overlayCtx ?? {};
+    const inputs = this.script.inputs;
+    const minCovered = Math.min(this.script.bars.length, 3);
+    const cmp = ensureCompareAligned(
+      ctx,
+      inputs,
+      this.script.chartBars,
+      this.script.bars.length,
+      minCovered,
+    );
+    if (!cmp.ready) return false;
+
+    const chartSec = cfg.chartSec;
+    const maxBack = cfg.maxBack ?? 300;
+    /** @type {Map<string, { tfSec: number, tfId: string, label: string }>} */
+    const layersByLabel = new Map();
+    for (const entry of this.script.state.chartLayers ?? []) {
+      layersByLabel.set(entry.layer.label, entry.layer);
+    }
+    for (const entry of this.script.state.htfLayers ?? []) {
+      layersByLabel.set(entry.layer.label, entry.layer);
+    }
+
+    const compareSeriesByLayer = new Map();
+    for (const layer of layersByLabel.values()) {
+      const built = this.buildCompareLayerSeries(
+        cmp.aligned,
+        this.script.chartBars,
+        layer,
+        chartSec,
+        maxBack,
+        cmp.compare,
+      );
+      compareSeriesByLayer.set(layer.label, built.series);
+    }
+    this.script.state.compareSeriesByLayer = compareSeriesByLayer;
+    this.script.state.compareSymbol = cmp.compare;
+    return true;
+  }
+
   /**
    * Re-process only the forming bar (live tick) without a full historical rescan.
    * @param {object} snapshot
@@ -416,6 +461,10 @@ export class FvgEngine {
         startIdx: Math.max(2, series.length - maxBack),
       };
     });
+
+    if (snapshot.cfg?.requireCorrelatedFvg && !this.refreshCompareSeriesForLive()) {
+      return null;
+    }
 
     for (const entry of this.script.state.chartLayers) {
       const lastIdx = entry.series.length - 1;
@@ -473,6 +522,10 @@ export class FvgEngine {
         startIdx: Math.max(2, series.length - maxBack),
       };
     });
+
+    if (snapshot.cfg?.requireCorrelatedFvg && !this.refreshCompareSeriesForLive()) {
+      return null;
+    }
 
     for (const entry of this.script.state.chartLayers) {
       const lastIdx = entry.series.length - 1;
@@ -600,6 +653,10 @@ export class FvgEngine {
         startIdx: Math.max(2, series.length - maxBack),
       };
     });
+
+    if (snapshot.cfg?.requireCorrelatedFvg && !this.refreshCompareSeriesForLive()) {
+      return null;
+    }
 
     if (this.script.overlayCtx?.isReplayLocked?.()) {
       this.refreshHtfLayersForReplay(snapshot, "tick");

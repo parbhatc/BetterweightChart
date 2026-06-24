@@ -69,7 +69,7 @@ export function mountIndicatorLegend(statusEl, opts) {
       <button type="button" class="study-legend__action" data-action="remove" data-id="${s.instanceId}" aria-label="Remove" title="Remove">${ICON_DELETE}</button>
     </span>`;
     const tail = values || actions ? `<span class="study-legend__tail">${values}${actions}</span>` : "";
-    return `<div class="study-legend__item${s.selected ? " is-selected" : ""}${itemExpanded(s) ? " is-expanded" : ""}${s.hidden ? " is-hidden" : ""}" data-id="${s.instanceId}" role="toolbar">
+    return `<div class="status-line__item study-legend__item${s.selected ? " is-selected" : ""}${itemExpanded(s) ? " is-expanded" : ""}${s.hidden ? " is-hidden" : ""}" data-id="${s.instanceId}" role="toolbar">
       <span class="study-legend__main">
         <span class="study-legend__title">${s.shortTitle}</span>
         ${loader}

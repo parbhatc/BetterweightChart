@@ -24,7 +24,7 @@
               type="button"
               class="tv-symbol__trigger"
               id="symbol-trigger"
-              aria-haspopup="listbox"
+              aria-haspopup="dialog"
               aria-expanded="false"
             >
               <img class="tv-symbol__logo" id="symbol-logo" alt="" hidden />
@@ -33,18 +33,6 @@
                 <path fill="currentColor" d="M1 1l4 4 4-4" />
               </svg>
             </button>
-            <div class="tv-symbol__dropdown" id="symbol-dropdown" hidden>
-              <input
-                type="text"
-                class="tv-symbol__search"
-                id="symbol-search"
-                role="searchbox"
-                placeholder="Search symbol (e.g. NQ, BTC, AAPL)…"
-                autocomplete="off"
-                spellcheck="false"
-              />
-              <ul class="tv-symbol__list" id="symbol-list" role="listbox"></ul>
-            </div>
           </div>
 
           <div class="tv-toolbar__sep" aria-hidden="true"></div>

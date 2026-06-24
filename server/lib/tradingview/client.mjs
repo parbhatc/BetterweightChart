@@ -37,6 +37,18 @@ function barFromTv(v) {
   };
 }
 
+/** Default delay for the free TradingView widget datafeed. */
+const TRADINGVIEW_DATA_DELAY_MINUTES = 10;
+
+/** @param {object} src */
+function delayMinutesFromTvMeta(src) {
+  for (const key of ["delay", "delay_minutes", "data_delay", "dataDelay"]) {
+    const n = Number(src[key]);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return TRADINGVIEW_DATA_DELAY_MINUTES;
+}
+
 /** @param {object} meta */
 function symbolInfoFromResolved(tvSymbol, meta) {
   const src = meta && typeof meta === "object" ? meta : {};
@@ -44,6 +56,7 @@ function symbolInfoFromResolved(tvSymbol, meta) {
   const minmov = src.minmov ?? 1;
   const tick = src.minTick ?? src.pipSize ?? minmov / pricescale;
   const logoid = src.logoid ?? src.logo?.logoid;
+  const delay_minutes = delayMinutesFromTvMeta(src);
 
   return {
     ...src,
@@ -78,7 +91,8 @@ function symbolInfoFromResolved(tvSymbol, meta) {
     session_holidays: src.session_holidays,
     corrections: src.corrections,
     volume_precision: src.volume_precision ?? 0,
-    data_status: "streaming",
+    data_status: delay_minutes > 0 ? "delayed" : "streaming",
+    delay_minutes,
     currency_code: src.currency_code,
     logoid,
     logoUrl: logoid ? `https://s3-symbol-logo.tradingview.com/${logoid}--big.svg` : undefined,

@@ -1,6 +1,5 @@
 import { listIndicators } from "../catalog.js";
-import { mountDialogDrag } from "../../drawings/settings/dialog/utils.js";
-import { ICON_CLOSE, ICON_SEARCH, ICON_STAR } from "./icons.js";
+import { ICON_CLEAR, ICON_CLOSE, ICON_SEARCH, ICON_STAR } from "./icons.js";
 
 const FAV_KEY = "bwc-indicator-favorites";
 
@@ -29,28 +28,33 @@ export function createIndicatorsLibraryDialog(opts) {
   const root = document.createElement("div");
   root.className = "tv-ind-lib";
   root.hidden = true;
-  root.innerHTML = `<div class="tv-ind-lib__dialog" role="dialog" aria-modal="true" aria-labelledby="tv-ind-lib-title" data-name="indicators-dialog">
-    <div class="tv-ind-lib__header" data-drag-handle>
-      <div class="tv-ind-lib__title" id="tv-ind-lib-title">Indicators</div>
-      <button type="button" class="tv-ind-lib__close" data-close aria-label="Close menu">${ICON_CLOSE}</button>
+  root.innerHTML = `<div class="tv-ind-lib__backdrop" data-backdrop></div>
+<div class="tv-ind-lib__dialog" role="dialog" aria-modal="true" aria-labelledby="tv-ind-lib-title" data-name="indicators-dialog">
+  <div class="tv-ind-lib__header">
+    <h2 class="tv-ind-lib__title" id="tv-ind-lib-title">Indicators</h2>
+    <button type="button" class="tv-ind-lib__close" data-close aria-label="Close menu">${ICON_CLOSE}</button>
+  </div>
+  <div class="tv-ind-lib__search-wrap">
+    <span class="tv-ind-lib__search-icon">${ICON_SEARCH}</span>
+    <input type="text" class="tv-ind-lib__search" role="searchbox" placeholder="Search indicators" autocomplete="off" data-search />
+    <div class="tv-ind-lib__search-actions">
+      <button type="button" class="tv-ind-lib__clear" data-clear aria-label="Clear" title="Clear" hidden>${ICON_CLEAR}</button>
     </div>
-    <div class="tv-ind-lib__search-wrap">
-      <input type="text" class="tv-ind-lib__search" role="searchbox" placeholder="Search" autocomplete="off" data-search />
-      <span class="tv-ind-lib__search-icon">${ICON_SEARCH}</span>
-    </div>
+  </div>
+  <div class="tv-ind-lib__body">
     <div class="tv-ind-lib__list" role="listbox" data-list></div>
-  </div>`;
+  </div>
+  <div class="tv-ind-lib__footer">Select an indicator to add it to your chart</div>
+</div>`;
   document.body.appendChild(root);
 
-  const dialog = root.querySelector(".tv-ind-lib__dialog");
   const searchInput = root.querySelector("[data-search]");
   const listEl = root.querySelector("[data-list]");
-  const dragHandle = root.querySelector("[data-drag-handle]");
+  const clearBtn = root.querySelector("[data-clear]");
 
-  if (!(dialog instanceof HTMLElement) || !(searchInput instanceof HTMLInputElement) || !(listEl instanceof HTMLElement)) {
+  if (!(searchInput instanceof HTMLInputElement) || !(listEl instanceof HTMLElement)) {
     throw new Error("Indicators library dialog mount failed");
   }
-  if (dragHandle instanceof HTMLElement) mountDialogDrag(dialog, dragHandle);
 
   let favorites = loadFavorites();
   let query = "";
@@ -66,19 +70,9 @@ export function createIndicatorsLibraryDialog(opts) {
     }
   }
 
-  function position(anchor) {
-    const pad = 8;
-    const w = 340;
-    let left = window.innerWidth / 2 - w / 2;
-    let top = 120;
-    if (anchor) {
-      const rect = anchor.getBoundingClientRect();
-      left = rect.left;
-      top = rect.bottom + 6;
-    }
-    dialog.style.width = `${w}px`;
-    dialog.style.left = `${Math.max(pad, Math.min(left, window.innerWidth - w - pad))}px`;
-    dialog.style.top = `${Math.max(pad, Math.min(top, window.innerHeight - 420))}px`;
+  function syncClearButton() {
+    if (!(clearBtn instanceof HTMLButtonElement)) return;
+    clearBtn.hidden = !searchInput.value.trim();
   }
 
   function renderList() {
@@ -114,8 +108,10 @@ export function createIndicatorsLibraryDialog(opts) {
     removeDocListener();
     openAnchor = null;
     root.hidden = true;
+    document.body.classList.remove("tv-ind-lib-open");
     searchInput.value = "";
     query = "";
+    syncClearButton();
   }
 
   /** @param {HTMLElement} [anchor] */
@@ -123,9 +119,12 @@ export function createIndicatorsLibraryDialog(opts) {
     favorites = loadFavorites();
     renderList();
     openAnchor = anchor ?? null;
-    position(anchor);
     root.hidden = false;
-    searchInput.focus();
+    document.body.classList.add("tv-ind-lib-open");
+    searchInput.value = "";
+    query = "";
+    syncClearButton();
+    requestAnimationFrame(() => searchInput.focus());
     removeDocListener();
     docClickHandler = (ev) => {
       if (root.hidden) return;
@@ -144,7 +143,7 @@ export function createIndicatorsLibraryDialog(opts) {
     const target = ev.target;
     if (!(target instanceof Element)) return;
 
-    if (target.closest("[data-close]")) {
+    if (target.closest("[data-close], [data-backdrop]")) {
       close();
       return;
     }
@@ -170,11 +169,33 @@ export function createIndicatorsLibraryDialog(opts) {
 
   searchInput.addEventListener("input", () => {
     query = searchInput.value;
+    syncClearButton();
     renderList();
   });
 
+  searchInput.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      close();
+      openAnchor?.focus?.();
+    }
+  });
+
+  if (clearBtn instanceof HTMLButtonElement) {
+    clearBtn.addEventListener("click", () => {
+      searchInput.value = "";
+      query = "";
+      syncClearButton();
+      searchInput.focus();
+      renderList();
+    });
+  }
+
   document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && !root.hidden) close();
+    if (ev.key === "Escape" && !root.hidden) {
+      close();
+      openAnchor?.focus?.();
+    }
   });
 
   return { open, close };

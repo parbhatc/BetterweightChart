@@ -10,6 +10,7 @@ export function fvgExtendTfKey(timeframe) {
 
 /** @param {object} inputs @returns {Record<string, boolean>} */
 export function resolveFvgExtendMap(inputs) {
+  if (inputs.extendBoxes !== true) return {};
   /** @type {Record<string, boolean>} */
   const map = {};
   const rows = resolveFvgTimeframeRows(inputs);
@@ -19,9 +20,9 @@ export function resolveFvgExtendMap(inputs) {
       map[key] = val === true;
     }
   }
-  if (inputs.extendBoxes === true && (!stored || !Object.keys(stored).length)) {
+  if (!stored || !Object.keys(stored).length) {
     for (const row of rows) {
-      if (row.enabled) map[fvgExtendTfKey(row.timeframe)] = true;
+      if (row.enabled !== false) map[fvgExtendTfKey(row.timeframe)] = true;
     }
   }
   return map;
@@ -49,9 +50,11 @@ function timeframeOptionLabel(tfId, options) {
  * @param {() => { id: string, label: string }[]} getTimeframeOptions
  */
 export function renderFvgExtendBoxesPanel(input, draftInputs, getTimeframeOptions) {
+  if (draftInputs.extendBoxes !== true) return "";
+
   const disabled = input.disabled?.(draftInputs) ?? false;
   const options = getTimeframeOptions();
-  const rows = resolveFvgTimeframeRows(draftInputs);
+  const rows = resolveFvgTimeframeRows(draftInputs).filter((row) => row.enabled !== false);
   const extendMap = resolveFvgExtendMap(draftInputs);
   const disabledClass = disabled ? " is-disabled" : "";
   const disabledAttr = disabled ? ' disabled aria-disabled="true" tabindex="-1"' : "";
@@ -62,8 +65,7 @@ export function renderFvgExtendBoxesPanel(input, draftInputs, getTimeframeOption
       const tfKey = fvgExtendTfKey(tf);
       const tfLabel = timeframeOptionLabel(tf === "chart" ? "chart" : normalizeResolutionId(tf), options);
       const on = extendMap[tfKey] === true;
-      const enabledHint = row.enabled !== false ? "" : ' title="Timeframe layer is disabled"';
-      return `<div class="tv-ind-settings__fvg-extend-row" data-fvg-extend-row data-tf-key="${escapeAttr(tfKey)}"${enabledHint}>
+      return `<div class="tv-ind-settings__fvg-extend-row" data-fvg-extend-row data-tf-key="${escapeAttr(tfKey)}">
       <span class="tv-ind-settings__fvg-extend-label">${escapeHtml(row.label || tfLabel)}</span>
       <span class="tv-ind-settings__fvg-extend-tf">${escapeHtml(tfLabel)}</span>
       <div class="tv-ind-settings__fvg-extend-toggle">
@@ -76,14 +78,11 @@ export function renderFvgExtendBoxesPanel(input, draftInputs, getTimeframeOption
     .join("");
 
   return `<div class="tv-ind-settings__fvg-extend${disabledClass}" data-fvg-extend-root data-fvg-extend-field="${input.id}">
-    <div class="tv-ind-settings__fvg-extend-head">
-      ${input.title ? `<span class="tv-set__field-label">${input.title}</span>` : "<span></span>"}
-    </div>
     <div class="tv-ind-settings__fvg-extend-cols" aria-hidden="true">
       <span>Label</span><span>Timeframe</span><span>Extend</span>
     </div>
     <div class="tv-ind-settings__fvg-extend-list" data-fvg-extend-list>
-      ${rowHtml || `<div class="tv-ind-settings__tf-rules-empty">Add timeframes in the Timeframes section first.</div>`}
+      ${rowHtml || `<div class="tv-ind-settings__tf-rules-empty">Enable timeframes in the Timeframes section first.</div>`}
     </div>
   </div>`;
 }
@@ -91,7 +90,7 @@ export function renderFvgExtendBoxesPanel(input, draftInputs, getTimeframeOption
 /** @param {HTMLElement} inputsPanel @param {string} fieldId */
 export function readFvgExtendBoxesFromPanel(inputsPanel, fieldId) {
   const root = inputsPanel.querySelector(`[data-fvg-extend-field="${fieldId}"]`);
-  if (!root) return null;
+  if (!root) return undefined;
   /** @type {Record<string, boolean>} */
   const map = {};
   root.querySelectorAll("[data-fvg-extend-row]").forEach((row) => {

@@ -19,6 +19,39 @@ const HTF_FETCH_IDLE_MS = 200;
 const PREPEND_GUARD = 8;
 const PREPEND_CHUNK = 200;
 
+/** @param {string} symbol @param {string} resolution */
+function htfStoreBarCount(symbol, resolution) {
+  return getHtfBars(symbol, resolution)?.utcBars?.length ?? 0;
+}
+
+/** @param {import("../../../indicators/security/indicatorDataNeeds.js").PaneDataNeeds} needs @param {object} pane */
+function snapshotPaneBarCounts(needs, pane) {
+  const htf = new Map();
+  for (const key of new Set([...needs.htf.keys(), ...needs.compareHtf.keys()])) {
+    const sep = key.indexOf("|");
+    htf.set(key, htfStoreBarCount(key.slice(0, sep), key.slice(sep + 1)));
+  }
+  const compare = new Map();
+  for (const symbol of needs.compareChart.keys()) {
+    compare.set(symbol, htfStoreBarCount(symbol, pane.resolution));
+  }
+  return { htf, compare };
+}
+
+/** @param {import("../../../indicators/security/indicatorDataNeeds.js").PaneDataNeeds} needs @param {object} pane @param {{ htf: Map<string, number>, compare: Map<string, number> }} before */
+function paneBarCountsChanged(needs, pane, before) {
+  for (const key of new Set([...needs.htf.keys(), ...needs.compareHtf.keys()])) {
+    const sep = key.indexOf("|");
+    const next = htfStoreBarCount(key.slice(0, sep), key.slice(sep + 1));
+    if (next > (before.htf.get(key) ?? 0)) return true;
+  }
+  for (const symbol of needs.compareChart.keys()) {
+    const next = htfStoreBarCount(symbol, pane.resolution);
+    if (next > (before.compare.get(symbol) ?? 0)) return true;
+  }
+  return false;
+}
+
 /**
  * @param {object} opts
  * @param {import("./state.js").BootContext} opts.ctx
@@ -215,9 +248,10 @@ export function createIndicatorDataLoader({ ctx, controller }) {
       await ensureGlobalNews(pane);
       if (!ctx.datafeed) {
         controller.invalidateOverlayCacheForPane(pane.index);
-        controller.refreshOverlaysImmediate(pane.index);
+        controller.refreshOverlaysSilent(pane.index);
         return;
       }
+      const barCountsBefore = snapshotPaneBarCounts(needs, pane);
       for (const [key, countBack] of needs.htf) {
         const sep = key.indexOf("|");
         const symbol = key.slice(0, sep);
@@ -233,11 +267,12 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         const resolution = key.slice(sep + 1);
         await fillHtfHistory(pane, symbol, resolution, countBack);
       }
+      if (!paneBarCountsChanged(needs, pane, barCountsBefore)) return;
       controller.invalidateOverlayCacheForPane(pane.index, {
         htfKeys: new Set([...needs.htf.keys(), ...needs.compareHtf.keys()]),
         compareSymbols: new Set(needs.compareChart.keys()),
       });
-      controller.refreshOverlaysImmediate(pane.index);
+      controller.refreshOverlaysSilent(pane.index);
     } finally {
       paneInFlight.delete(pane.index);
     }
@@ -273,6 +308,7 @@ export function createIndicatorDataLoader({ ctx, controller }) {
     if (hit && hit.utcBars.length >= want) return;
 
     compareFetchInFlight.add(key);
+    const beforeLen = htfStoreBarCount(symbol, resolution);
     void ctx.datafeed
       .resolveSymbol(symbol)
       .then((symbolInfo) =>
@@ -290,10 +326,11 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         }),
       )
       .then(() => {
+        if (htfStoreBarCount(symbol, resolution) <= beforeLen) return;
         controller.invalidateOverlayCacheForPane(pane.index, {
           compareSymbols: new Set([symbol]),
         });
-        controller.refreshOverlaysImmediate(pane.index);
+        controller.refreshOverlaysSilent(pane.index);
       })
       .finally(() => compareFetchInFlight.delete(key));
   }
@@ -305,12 +342,15 @@ export function createIndicatorDataLoader({ ctx, controller }) {
     const key = `${sym}|${resId}`;
     if (htfFetchInFlight.has(key)) return;
     htfFetchInFlight.add(key);
+    const beforeLen = htfStoreBarCount(sym, resId);
     void ensureHtfBars(htfEnsureOpts(pane, sym, resId, countBack))
-      .then(() => {
+      .then((entry) => {
+        const afterLen = entry?.utcBars?.length ?? htfStoreBarCount(sym, resId);
+        if (afterLen <= beforeLen) return;
         controller.invalidateOverlayCacheForPane(pane.index, {
           htfKeys: new Set([key]),
         });
-        controller.refreshOverlaysImmediate(pane.index);
+        controller.refreshOverlaysSilent(pane.index);
       })
       .finally(() => htfFetchInFlight.delete(key));
   }

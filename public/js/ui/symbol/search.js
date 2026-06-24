@@ -1,5 +1,5 @@
 /**
- * Symbol search dropdown.
+ * Symbol search — centered modal dialog (TradingView-style).
  * @param {object} opts
  * @param {HTMLElement} opts.root
  * @param {ReturnType<import("../../datafeed/client.js").createDatafeed>} opts.datafeed
@@ -7,8 +7,67 @@
  * @param {(symbol: string, meta: object) => void} opts.onSelect
  */
 
-/** Above embedded app chrome (e.g. Auren trade header z-110, mobile nav z-50). */
-const SYMBOL_DROPDOWN_Z_INDEX = 10050;
+const ICON_SEARCH = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="22" height="22" fill="none" aria-hidden="true"><path fill="currentColor" d="M12.182 4a8.18 8.18 0 0 1 6.29 13.412l5.526 5.525-1.06 1.06-5.527-5.525A8.182 8.182 0 1 1 12.181 4m0 1.5a6.681 6.681 0 1 0 0 13.363 6.681 6.681 0 0 0 0-13.363"/></svg>`;
+const ICON_CLOSE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><path stroke="currentColor" stroke-width="1.2" fill="none" d="m1.5 1.5 15 15m0-15-15 15"/></svg>`;
+const ICON_CLEAR = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16Zm0-9.04L6.04 5 5 6.04 7.96 9 5 11.96 6.04 13 9 10.04 11.96 13 13 11.96 10.04 9 13 6.04 11.96 5 9 7.96Z"/></svg>`;
+
+const TYPE_TABS = [
+  { id: "", label: "All" },
+  { id: "stock", label: "Stocks" },
+  { id: "etf", label: "Funds" },
+  { id: "futures", label: "Futures" },
+  { id: "forex", label: "Forex" },
+  { id: "crypto", label: "Crypto" },
+  { id: "index", label: "Indices" },
+];
+
+/** @param {string} [type] */
+function normalizeType(type) {
+  const t = String(type || "").toLowerCase();
+  if (t === "bitcoin" || t === "crypto") return "crypto";
+  if (t === "fund") return "etf";
+  return t;
+}
+
+/** @param {HTMLElement} root */
+function ensureSymbolModal(root) {
+  let modal = document.getElementById("symbol-modal");
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "symbol-modal";
+  modal.className = "tv-symbol-modal";
+  modal.hidden = true;
+  modal.innerHTML = `<div class="tv-symbol-modal__backdrop" data-backdrop></div>
+<div class="tv-symbol-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="symbol-modal-title" data-name="symbol-search-items-dialog">
+  <div class="tv-symbol-modal__header">
+    <h2 id="symbol-modal-title" class="tv-symbol-modal__title">Symbol search</h2>
+    <button type="button" class="tv-symbol-modal__close" data-close aria-label="Close menu">${ICON_CLOSE}</button>
+  </div>
+  <div class="tv-symbol-modal__search-wrap">
+    <span class="tv-symbol-modal__search-icon">${ICON_SEARCH}</span>
+    <input
+      type="text"
+      class="tv-symbol-modal__search"
+      id="symbol-search"
+      role="searchbox"
+      placeholder="Symbol, ISIN, or CUSIP"
+      autocomplete="off"
+      spellcheck="false"
+    />
+    <div class="tv-symbol-modal__search-actions">
+      <button type="button" class="tv-symbol-modal__clear" data-clear aria-label="Clear" title="Clear" hidden>${ICON_CLEAR}</button>
+    </div>
+  </div>
+  <div class="tv-symbol-modal__tabs" role="tablist" aria-label="Symbol type" data-tabs></div>
+  <div class="tv-symbol-modal__body">
+    <ul class="tv-symbol-modal__list" id="symbol-list" role="listbox"></ul>
+  </div>
+  <div class="tv-symbol-modal__footer">Search using symbol name or ticker</div>
+</div>`;
+  document.body.appendChild(modal);
+  return modal;
+}
 
 export function mountSymbolSearch(opts) {
   const { root, datafeed, initialSymbol, onSelect } = opts;
@@ -18,11 +77,14 @@ export function mountSymbolSearch(opts) {
   const tickerEl = root.querySelector("#symbol-ticker");
   const nameEl = root.querySelector("#symbol-name");
   const exchangeEl = root.querySelector("#symbol-exchange");
-  const dropdown = root.querySelector("#symbol-dropdown");
-  const searchInput = root.querySelector("#symbol-search");
-  const listEl = root.querySelector("#symbol-list");
 
-  if (!trigger || !dropdown || !searchInput || !listEl) {
+  const modal = ensureSymbolModal(root);
+  const searchInput = modal.querySelector("#symbol-search");
+  const listEl = modal.querySelector("#symbol-list");
+  const tabsEl = modal.querySelector("[data-tabs]");
+  const clearBtn = modal.querySelector("[data-clear]");
+
+  if (!trigger || !(searchInput instanceof HTMLInputElement) || !(listEl instanceof HTMLElement) || !(tabsEl instanceof HTMLElement)) {
     throw new Error("Symbol search markup missing");
   }
 
@@ -30,29 +92,14 @@ export function mountSymbolSearch(opts) {
   const metaBySymbol = new Map();
   let open = false;
   let activeSymbol = initialSymbol;
-  let portaled = false;
+  let activeTab = "";
+  let searchSeq = 0;
 
-  function portalDropdown() {
-    if (dropdown.parentElement === document.body) return;
-    document.body.appendChild(dropdown);
-    dropdown.classList.add("is-portaled");
-    dropdown.style.zIndex = String(SYMBOL_DROPDOWN_Z_INDEX);
-    portaled = true;
-  }
-
-  function restoreDropdown() {
-    if (!portaled) return;
-    if (dropdown.parentElement === document.body) {
-      root.appendChild(dropdown);
-    }
-    dropdown.classList.remove("is-portaled");
-    dropdown.style.zIndex = "";
-    portaled = false;
-  }
-
-  function isDropdownTarget(target) {
-    if (!(target instanceof Node)) return false;
-    return dropdown.contains(target);
+  function renderTabs() {
+    tabsEl.innerHTML = TYPE_TABS.map(
+      (tab) =>
+        `<button type="button" role="tab" class="tv-symbol-modal__tab${tab.id === activeTab ? " is-active" : ""}" data-tab="${tab.id}" aria-selected="${tab.id === activeTab}">${tab.label}</button>`,
+    ).join("");
   }
 
   function displayTicker(sym, meta) {
@@ -76,8 +123,8 @@ export function mountSymbolSearch(opts) {
   function matchesActiveSymbol(sym, meta, active) {
     if (!active) return false;
     if (sym === active || meta?.ticker === active || meta?.streamTicker === active) return true;
-    const root = active.includes(":") ? active.split(":").pop() : active;
-    return sym === root || meta?.symbol === root;
+    const rootSym = active.includes(":") ? active.split(":").pop() : active;
+    return sym === rootSym || meta?.symbol === rootSym;
   }
 
   function setLogo(el, url) {
@@ -110,77 +157,69 @@ export function mountSymbolSearch(opts) {
     trigger?.setAttribute("aria-label", `${ticker}${resultLabel(meta) ? ` — ${resultLabel(meta)}` : ""}`);
   }
 
-  function close() {
-    open = false;
-    dropdown.hidden = true;
-    trigger?.setAttribute("aria-expanded", "false");
-    dropdown.style.top = "";
-    dropdown.style.left = "";
-    dropdown.style.right = "";
-    dropdown.style.width = "";
-    restoreDropdown();
-    window.removeEventListener("resize", positionDropdown);
-    window.removeEventListener("scroll", positionDropdown, true);
+  function syncClearButton() {
+    if (!(clearBtn instanceof HTMLButtonElement)) return;
+    const hasValue = Boolean(searchInput.value.trim());
+    clearBtn.hidden = !hasValue;
   }
 
-  function positionDropdown() {
-    if (!open || !trigger) return;
-    const pad = 8;
-    const gap = 4;
-    const rect = trigger.getBoundingClientRect();
-    let top = rect.bottom + gap;
-    let left = Math.max(pad, rect.left);
-
-    dropdown.style.top = `${top}px`;
-    dropdown.style.left = `${left}px`;
-    dropdown.style.right = "auto";
-    dropdown.style.width = "";
-
-    const panelRect = dropdown.getBoundingClientRect();
-    if (panelRect.right > window.innerWidth - pad) {
-      left = Math.max(pad, window.innerWidth - panelRect.width - pad);
-      dropdown.style.left = `${left}px`;
-    }
-    if (panelRect.bottom > window.innerHeight - pad) {
-      const flipTop = rect.top - panelRect.height - gap;
-      if (flipTop >= pad) dropdown.style.top = `${flipTop}px`;
-    }
+  function close() {
+    open = false;
+    modal.hidden = true;
+    document.body.classList.remove("tv-symbol-modal-open");
+    trigger?.setAttribute("aria-expanded", "false");
+    searchInput.value = "";
+    syncClearButton();
   }
 
   function openDropdown() {
     open = true;
-    portalDropdown();
-    dropdown.hidden = false;
+    activeTab = "";
+    renderTabs();
+    modal.hidden = false;
+    document.body.classList.add("tv-symbol-modal-open");
     trigger?.setAttribute("aria-expanded", "true");
     searchInput.value = "";
-    positionDropdown();
-    window.addEventListener("resize", positionDropdown);
-    window.addEventListener("scroll", positionDropdown, true);
-    void renderList("").then(() => positionDropdown());
-    searchInput.focus();
+    syncClearButton();
+    void renderList("");
+    requestAnimationFrame(() => searchInput.focus());
+  }
+
+  /** @param {object[]} results */
+  function applyTabFilter(results) {
+    if (!activeTab) return results;
+    return results.filter((r) => normalizeType(r.type) === activeTab);
   }
 
   function renderList(query) {
-    return datafeed.searchSymbols(query).then((results) => {
+    const seq = ++searchSeq;
+    return datafeed.searchSymbols(query, "", activeTab, 50).then((results) => {
+      if (seq !== searchSeq) return;
       results.forEach((r) => metaBySymbol.set(r.symbol, r));
-      if (!results.length) {
-        listEl.innerHTML = `<li class="tv-symbol__empty">No symbols found</li>`;
+      const filtered = applyTabFilter(results);
+      if (!filtered.length) {
+        listEl.innerHTML = `<li class="tv-symbol-modal__empty">No symbols found</li>`;
         return;
       }
-      listEl.innerHTML = results
+      listEl.innerHTML = filtered
         .map((r) => {
-          const active = r.symbol === activeSymbol ? " is-active" : "";
+          const active = matchesActiveSymbol(r.symbol, r, activeSymbol) ? " is-active" : "";
           const ticker = listItemTicker(r.symbol, r);
           const logo = r.logoUrl
-            ? `<img class="tv-symbol__item-logo" src="${r.logoUrl}" alt="" loading="lazy" />`
-            : `<span class="tv-symbol__item-logo tv-symbol__item-logo--empty" aria-hidden="true"></span>`;
+            ? `<img class="tv-symbol-modal__item-logo" src="${r.logoUrl}" alt="" loading="lazy" />`
+            : `<span class="tv-symbol-modal__item-logo tv-symbol-modal__item-logo--letter" aria-hidden="true">${ticker.charAt(0) || "?"}</span>`;
           const label = resultLabel(r);
-          const sub = r.contractDescription ? ` · ${r.contractDescription}` : "";
-          return `<li role="option" class="tv-symbol__item${active}" data-symbol="${r.symbol}" aria-selected="${r.symbol === activeSymbol}">
-            ${logo}
-            <span class="tv-symbol__item-ticker">${ticker}</span>
-            <span class="tv-symbol__item-name">${label}${sub}</span>
-            <span class="tv-symbol__item-exchange">${r.exchange}</span>
+          const marketType = normalizeType(r.type) || "—";
+          return `<li role="option" class="tv-symbol-modal__item${active}" data-symbol="${r.symbol}" aria-selected="${matchesActiveSymbol(r.symbol, r, activeSymbol)}">
+            <div class="tv-symbol-modal__item-main">
+              <div class="tv-symbol-modal__item-logo-wrap">${logo}</div>
+              <div class="tv-symbol-modal__item-ticker">${ticker}</div>
+            </div>
+            <div class="tv-symbol-modal__item-desc">${label}</div>
+            <div class="tv-symbol-modal__item-meta">
+              <span class="tv-symbol-modal__item-type">${marketType}</span>
+              <span class="tv-symbol-modal__item-exchange">${r.exchange ?? ""}</span>
+            </div>
           </li>`;
         })
         .join("");
@@ -193,6 +232,7 @@ export function mountSymbolSearch(opts) {
   });
 
   searchInput.addEventListener("input", () => {
+    syncClearButton();
     void renderList(searchInput.value);
   });
 
@@ -204,26 +244,53 @@ export function mountSymbolSearch(opts) {
     }
   });
 
+  tabsEl.addEventListener("click", (ev) => {
+    const tab = ev.target instanceof Element ? ev.target.closest("[data-tab]") : null;
+    if (!(tab instanceof HTMLElement)) return;
+    const next = tab.dataset.tab ?? "";
+    if (next === activeTab) return;
+    activeTab = next;
+    renderTabs();
+    void renderList(searchInput.value);
+  });
+
+  if (clearBtn instanceof HTMLButtonElement) {
+    clearBtn.addEventListener("click", () => {
+      searchInput.value = "";
+      syncClearButton();
+      searchInput.focus();
+      void renderList("");
+    });
+  }
+
+  modal.addEventListener("click", (ev) => {
+    if (ev.target instanceof Element && ev.target.closest("[data-close], [data-backdrop]")) {
+      close();
+      trigger?.focus();
+    }
+  });
+
   listEl.addEventListener("click", (ev) => {
-    const item = ev.target.closest("[data-symbol]");
-    if (!item) return;
+    const item = ev.target instanceof Element ? ev.target.closest("[data-symbol]") : null;
+    if (!(item instanceof HTMLElement)) return;
     const sym = item.dataset.symbol;
+    if (!sym) return;
     const meta = metaBySymbol.get(sym) ?? { symbol: sym };
-    setDisplay(sym, meta);
     close();
+    trigger?.focus();
+    if (matchesActiveSymbol(sym, meta, activeSymbol)) return;
+    setDisplay(sym, meta);
     onSelect(sym, meta);
   });
 
-  document.addEventListener("click", (ev) => {
-    if (!open) return;
-    const target = ev.target;
-    if (target instanceof Node && (root.contains(target) || isDropdownTarget(target))) return;
-    close();
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && open) {
+      close();
+      trigger?.focus();
+    }
   });
 
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && open) close();
-  });
+  renderTabs();
 
   return {
     async init() {
@@ -238,15 +305,15 @@ export function mountSymbolSearch(opts) {
       if (meta) setDisplay(activeSymbol, meta);
       else {
         const info = await datafeed.resolveSymbol(activeSymbol);
-        const root = activeSymbol.includes(":") ? activeSymbol.split(":").pop() : activeSymbol;
+        const rootSym = activeSymbol.includes(":") ? activeSymbol.split(":").pop() : activeSymbol;
         const exchange = info.listed_exchange || info.exchange?.replace(/\s*\(Delayed\)$/i, "") || "CME";
         setDisplay(activeSymbol, {
           name: info.description,
           exchange,
-          symbol: root,
+          symbol: rootSym,
           ticker: info.ticker?.includes("-Delayed:")
             ? info.ticker.replace(/-Delayed:/i, ":")
-            : info.ticker || `${exchange}:${root}`,
+            : info.ticker || `${exchange}:${rootSym}`,
           logoUrl: info.logoUrl,
         });
       }

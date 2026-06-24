@@ -163,7 +163,10 @@ function defaultSymbolInfo(sym, meta, resolutions) {
     has_weekly_and_monthly: meta.has_weekly_and_monthly ?? true,
     supported_resolutions: meta.supported_resolutions ?? resolutions.map((r) => r.id),
     volume_precision: meta.volume_precision ?? 0,
-    data_status: meta.data_status ?? "endofday",
+    delay_minutes: Number(meta.delay_minutes) || 0,
+    data_status:
+      meta.data_status ??
+      (Number(meta.delay_minutes) > 0 ? "delayed" : "streaming"),
     currency_code: meta.currency_code,
   };
 }

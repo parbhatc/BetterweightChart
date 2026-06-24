@@ -369,7 +369,8 @@ class CustomPriceLinePriceAxisPaneView {
   }
 
   zOrder() {
-    return "top";
+    // "normal" keeps chips on the price axis; LWC crosshair price label still draws above on overlap.
+    return "normal";
   }
 
   renderer() {

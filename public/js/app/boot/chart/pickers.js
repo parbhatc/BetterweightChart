@@ -211,6 +211,13 @@ export async function wireSymbolAndTimeframePickers(ctx) {
       initialSymbol: ctx.symbol,
       onSelect: async (sym) => {
         const sync = ctx.layoutManager?.getSync();
+        const panes = ctx.getAllChartPanes();
+        const activePane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
+        if (ctx.layoutManager && sync?.symbol) {
+          if (ctx.symbol === sym && panes.every((p) => p.symbol === sym)) return;
+        } else if (activePane?.symbol === sym) {
+          return;
+        }
         if (ctx.layoutManager && sync?.symbol) {
           const from = ctx.symbol;
           const panes = ctx.getAllChartPanes();

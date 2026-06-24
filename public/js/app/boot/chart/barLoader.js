@@ -75,13 +75,16 @@ export function attachBarLoader(ctx) {
     },
     onPaneBarUpdate: (pane, meta = {}) => {
       pane.priceLineLabel?.requestRefresh();
+      if (pane.index === (ctx.layoutManager?.getActivePaneIndex() ?? 0)) {
+        ctx.scheduleStatusLine?.(pane);
+      }
       if (meta.isNewBar) {
         if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
           ctx.refreshIndicatorsImmediate?.(pane.index);
         } else {
           ctx.refreshOverlaysImmediate?.(pane.index);
         }
-      } else if (ctx.indicatorController?.paneHasOverlayIndicators?.(pane.index)) {
+      } else if (ctx.indicatorController?.paneNeedsLiveOverlayRefresh?.(pane.index)) {
         ctx.indicatorController.refreshOverlaysForPane?.(pane.index);
       }
     },

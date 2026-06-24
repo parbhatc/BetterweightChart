@@ -1,51 +1,77 @@
-.mkt-icons {
+.mkt-pill-wrap {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-1);
+  flex-shrink: 0;
   line-height: 1;
 }
 
-.mkt-icon {
+.mkt-pill {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: var(--control-size-sm);
-  height: var(--control-size-sm);
+  align-items: stretch;
+  gap: 0;
   padding: 0;
   border: none;
   border-radius: var(--radius-sm);
-  background: transparent;
+  background: color-mix(in srgb, var(--tv-bg) 80%, transparent);
   cursor: pointer;
-  color: var(--tv-muted);
+  line-height: 1;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
 @media (hover: hover) {
-  .mkt-icon {
-    transition: var(--transition-colors);
+  .mkt-pill {
+    transition: filter 0.12s ease;
   }
 
-  .mkt-icon:hover {
-    background: var(--tv-surface-hover);
-    color: var(--tv-text);
+  .mkt-pill:hover {
+    filter: brightness(1.08);
   }
 }
 
-.mkt-icon svg {
-  width: 1rem;
-  height: 1rem;
+.mkt-pill__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mkt-pill__status--market {
+  padding: 3px 5px;
+  background: color-mix(in srgb, var(--tv-up) 16%, transparent);
+}
+
+.mkt-pill--closed .mkt-pill__status--market {
+  background: color-mix(in srgb, var(--tv-muted) 14%, transparent);
+}
+
+.mkt-pill__dot {
   display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
 }
 
-.mkt-icon--open {
-  color: var(--tv-up);
+.mkt-pill__dot--open {
+  background: var(--tv-up);
 }
 
-.mkt-icon--closed {
-  color: var(--tv-muted);
+.mkt-pill__dot--closed {
+  background: transparent;
+  border: 1.5px solid color-mix(in srgb, var(--tv-muted) 70%, transparent);
+  box-sizing: border-box;
 }
 
-.mkt-icon--delay {
-  color: var(--tv-warning);
+.mkt-pill__status--delay {
+  min-width: 1.125rem;
+  padding: 3px 4px;
+  background: #ff9800;
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: var(--weight-bold);
+  line-height: 1;
+  letter-spacing: 0.01em;
 }
 
 .mkt-popup {
@@ -117,7 +143,7 @@
 }
 
 .mkt-widget__icon--delay {
-  color: var(--tv-warning);
+  color: #ff9800;
 }
 
 .mkt-widget__body {
@@ -141,7 +167,7 @@
 }
 
 .mkt-widget__title--delay {
-  color: var(--tv-warning);
+  color: #ff9800;
 }
 
 .mkt-widget__text {

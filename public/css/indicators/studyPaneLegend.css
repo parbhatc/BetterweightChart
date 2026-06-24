@@ -55,6 +55,7 @@
   padding: 0;
   border-radius: 0;
   background: transparent;
+  align-items: center;
 }
 
 .study-pane-legends__status .study-legend__item.is-hidden {
@@ -67,7 +68,7 @@
 .study-pane-legends__status .study-legend__item.is-expanded:hover {
   background: color-mix(in srgb, var(--tv-surface-hover) 70%, transparent);
   border-radius: var(--radius-sm);
-  padding: 1px var(--space-2) 1px var(--space-1);
+  padding: 0 var(--space-1);
   max-width: none;
   width: max-content;
   overflow: visible;
@@ -75,7 +76,6 @@
 
 .study-pane-legends__status .study-legend__actions {
   gap: 1px;
-  margin-left: 2px;
 }
 
 .study-pane-legends__status .study-legend__item:not(.is-expanded):not(.is-selected):not(:focus-within) {

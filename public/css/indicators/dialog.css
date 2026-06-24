@@ -1,19 +1,34 @@
+body.tv-ind-lib-open {
+  overflow: hidden;
+}
+
 .tv-ind-lib {
   position: fixed;
   inset: 0;
-  z-index: 150;
-  pointer-events: none;
+  z-index: 10050;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: clamp(3rem, 10vh, 6rem) var(--space-4) var(--space-4);
 }
 
 .tv-ind-lib[hidden] {
   display: none !important;
 }
 
+.tv-ind-lib__backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--tv-bg) 52%, transparent);
+  backdrop-filter: blur(3px);
+}
+
 .tv-ind-lib__dialog {
-  position: fixed;
+  position: relative;
   display: flex;
   flex-direction: column;
-  max-height: min(70vh, 28rem);
+  width: min(42rem, 96vw);
+  max-height: min(82vh, 40rem);
   border-radius: var(--radius-xl);
   background: var(--tv-surface);
   border: 1px solid var(--tv-border);
@@ -28,19 +43,15 @@
   justify-content: space-between;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  cursor: grab;
-  user-select: none;
-  border-bottom: 1px solid var(--tv-border);
-}
-
-.tv-ind-lib__header:active {
-  cursor: grabbing;
+  border-bottom: 1px solid var(--tv-border-subtle);
 }
 
 .tv-ind-lib__title {
+  margin: 0;
   font-size: var(--text-md);
   font-weight: var(--weight-semibold);
   color: var(--tv-text);
+  line-height: var(--leading-tight);
 }
 
 .tv-ind-lib__close {
@@ -55,6 +66,7 @@
   background: transparent;
   color: var(--tv-muted);
   cursor: pointer;
+  flex-shrink: 0;
 }
 
 .tv-ind-lib__close:hover {
@@ -64,44 +76,102 @@
 
 .tv-ind-lib__search-wrap {
   position: relative;
-  padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--tv-border);
-}
-
-.tv-ind-lib__search {
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  padding-right: 2.25rem;
-  border: 1px solid var(--tv-border);
-  border-radius: var(--radius-md);
-  background: var(--tv-bg);
-  color: var(--tv-text);
-  font-size: var(--text-sm);
-}
-
-.tv-ind-lib__search:focus {
-  outline: none;
-  border-color: var(--tv-accent);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--tv-border-subtle);
 }
 
 .tv-ind-lib__search-icon {
   position: absolute;
-  right: calc(var(--space-4) + var(--space-2));
+  left: calc(var(--space-4) + var(--space-3));
   top: 50%;
   transform: translateY(-50%);
   color: var(--tv-muted);
-  pointer-events: none;
   display: flex;
+  pointer-events: none;
 }
 
-.tv-ind-lib__search-icon svg {
-  width: 1.1rem;
-  height: 1.1rem;
+.tv-ind-lib__search {
+  width: 100%;
+  box-sizing: border-box;
+  height: 3rem;
+  padding: 0 3rem 0 2.75rem;
+  border: 1px solid var(--tv-border);
+  border-radius: var(--radius-lg);
+  background: var(--tv-bg-elevated);
+  color: var(--tv-text);
+  font-size: clamp(1rem, 2.4vw, 1.125rem);
+  font-weight: var(--weight-medium);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.tv-ind-lib__search:focus {
+  border-color: var(--tv-accent);
+  background: var(--tv-surface);
+}
+
+.tv-ind-lib__search::placeholder {
+  color: var(--tv-muted);
+  font-weight: var(--weight-normal);
+}
+
+.tv-ind-lib__search-actions {
+  position: absolute;
+  right: calc(var(--space-4) + var(--space-2));
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+}
+
+.tv-ind-lib__clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+}
+
+.tv-ind-lib__clear:hover {
+  color: var(--tv-text);
+  background: var(--tv-surface-hover);
+}
+
+.tv-ind-lib__body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tv-ind-lib__list {
   overflow: auto;
   padding: var(--space-1) 0;
+  max-height: min(52vh, 24rem);
+  scrollbar-width: thin;
+  scrollbar-color: var(--tv-border) transparent;
+}
+
+.tv-ind-lib__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tv-ind-lib__list::-webkit-scrollbar-thumb {
+  background: var(--tv-border);
+  border-radius: var(--radius-full);
+}
+
+.tv-ind-lib__footer {
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  border-top: 1px solid var(--tv-border-subtle);
+  font-size: var(--text-xs);
+  color: var(--tv-muted);
+  text-align: center;
 }
 
 .tv-ind-lib__section-title {
@@ -202,6 +272,39 @@
   color: var(--tv-muted);
   opacity: 0.75;
   line-height: var(--leading-normal);
+}
+
+@media (max-width: 640px) {
+  .tv-ind-lib {
+    padding: max(var(--safe-top), var(--space-2)) var(--space-2) var(--space-2);
+    align-items: stretch;
+  }
+
+  .tv-ind-lib__dialog {
+    width: 100%;
+    max-height: min(88dvh, 40rem);
+  }
+
+  .tv-ind-lib__search-wrap {
+    padding: var(--space-3);
+  }
+
+  .tv-ind-lib__search-icon {
+    left: calc(var(--space-3) + var(--space-2));
+  }
+
+  .tv-ind-lib__search-actions {
+    right: calc(var(--space-3) + var(--space-1));
+  }
+
+  .tv-ind-lib__list {
+    max-height: none;
+  }
+
+  .tv-ind-lib__item {
+    min-height: var(--touch-min);
+    padding: var(--space-3) var(--space-4);
+  }
 }
 
 /* Settings dialog — reuses drawing settings shell; indicator-specific tweaks only */

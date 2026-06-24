@@ -3,26 +3,26 @@
 import { CHART_RESOLUTIONS, resolutionSec } from "./resolutions.mjs";
 
 const SYMBOL_PROFILES = {
-  NQ: { name: "Nasdaq 100", exchange: "CME", type: "futures", base: 21050, tick: 0.25, volatility: 0.0014, drift: 0.00002 },
-  ES: { name: "S&P 500", exchange: "CME", type: "futures", base: 5525, tick: 0.25, volatility: 0.001, drift: 0.000015 },
-  YM: { name: "Dow Jones", exchange: "CBOT", type: "futures", base: 39500, tick: 1, volatility: 0.0008, drift: 0.00001 },
-  RTY: { name: "Russell 2000", exchange: "CME", type: "futures", base: 2100, tick: 0.1, volatility: 0.0012, drift: 0.00001 },
-  CL: { name: "Crude Oil", exchange: "NYMEX", type: "futures", base: 72.5, tick: 0.01, volatility: 0.0018, drift: 0 },
-  GC: { name: "Gold", exchange: "COMEX", type: "futures", base: 2350, tick: 0.1, volatility: 0.0009, drift: 0.00001 },
-  BTC: { name: "Bitcoin", exchange: "CRYPTO", type: "crypto", base: 68500, tick: 1, volatility: 0.0025, drift: 0.00003 },
-  ETH: { name: "Ethereum", exchange: "CRYPTO", type: "crypto", base: 3450, tick: 0.01, volatility: 0.0028, drift: 0.00002 },
-  SOL: { name: "Solana", exchange: "CRYPTO", type: "crypto", base: 168, tick: 0.01, volatility: 0.0032, drift: 0.00001 },
-  AAPL: { name: "Apple Inc.", exchange: "NASDAQ", type: "stock", base: 228, tick: 0.01, volatility: 0.0012, drift: 0.00001 },
-  TSLA: { name: "Tesla Inc.", exchange: "NASDAQ", type: "stock", base: 245, tick: 0.01, volatility: 0.0022, drift: 0 },
-  NVDA: { name: "NVIDIA Corp.", exchange: "NASDAQ", type: "stock", base: 132, tick: 0.01, volatility: 0.0018, drift: 0.00002 },
-  MSFT: { name: "Microsoft", exchange: "NASDAQ", type: "stock", base: 420, tick: 0.01, volatility: 0.001, drift: 0.00001 },
-  AMZN: { name: "Amazon.com", exchange: "NASDAQ", type: "stock", base: 198, tick: 0.01, volatility: 0.0014, drift: 0.00001 },
-  META: { name: "Meta Platforms", exchange: "NASDAQ", type: "stock", base: 585, tick: 0.01, volatility: 0.0015, drift: 0.00001 },
-  EURUSD: { name: "Euro / US Dollar", exchange: "FOREX", type: "forex", base: 1.085, tick: 0.00001, volatility: 0.0004, drift: 0 },
-  GBPUSD: { name: "British Pound / USD", exchange: "FOREX", type: "forex", base: 1.265, tick: 0.00001, volatility: 0.0005, drift: 0 },
-  USDJPY: { name: "US Dollar / Yen", exchange: "FOREX", type: "forex", base: 157.2, tick: 0.001, volatility: 0.0004, drift: 0 },
-  SPY: { name: "SPDR S&P 500 ETF", exchange: "ARCA", type: "etf", base: 552, tick: 0.01, volatility: 0.0009, drift: 0.00001 },
-  QQQ: { name: "Invesco QQQ Trust", exchange: "NASDAQ", type: "etf", base: 478, tick: 0.01, volatility: 0.0011, drift: 0.00001 },
+  NQ: { name: "Nasdaq 100", exchange: "CME", type: "futures", base: 21050, tick: 0.25, volatility: 0.0014, drift: 0.00002, delay_minutes: 10 },
+  ES: { name: "S&P 500", exchange: "CME", type: "futures", base: 5525, tick: 0.25, volatility: 0.001, drift: 0.000015, delay_minutes: 10 },
+  YM: { name: "Dow Jones", exchange: "CBOT", type: "futures", base: 39500, tick: 1, volatility: 0.0008, drift: 0.00001, delay_minutes: 10 },
+  RTY: { name: "Russell 2000", exchange: "CME", type: "futures", base: 2100, tick: 0.1, volatility: 0.0012, drift: 0.00001, delay_minutes: 10 },
+  CL: { name: "Crude Oil", exchange: "NYMEX", type: "futures", base: 72.5, tick: 0.01, volatility: 0.0018, drift: 0, delay_minutes: 10 },
+  GC: { name: "Gold", exchange: "COMEX", type: "futures", base: 2350, tick: 0.1, volatility: 0.0009, drift: 0.00001, delay_minutes: 10 },
+  BTC: { name: "Bitcoin", exchange: "CRYPTO", type: "crypto", base: 68500, tick: 1, volatility: 0.0025, drift: 0.00003, delay_minutes: 0 },
+  ETH: { name: "Ethereum", exchange: "CRYPTO", type: "crypto", base: 3450, tick: 0.01, volatility: 0.0028, drift: 0.00002, delay_minutes: 0 },
+  SOL: { name: "Solana", exchange: "CRYPTO", type: "crypto", base: 168, tick: 0.01, volatility: 0.0032, drift: 0.00001, delay_minutes: 0 },
+  AAPL: { name: "Apple Inc.", exchange: "NASDAQ", type: "stock", base: 228, tick: 0.01, volatility: 0.0012, drift: 0.00001, delay_minutes: 15 },
+  TSLA: { name: "Tesla Inc.", exchange: "NASDAQ", type: "stock", base: 245, tick: 0.01, volatility: 0.0022, drift: 0, delay_minutes: 15 },
+  NVDA: { name: "NVIDIA Corp.", exchange: "NASDAQ", type: "stock", base: 132, tick: 0.01, volatility: 0.0018, drift: 0.00002, delay_minutes: 15 },
+  MSFT: { name: "Microsoft", exchange: "NASDAQ", type: "stock", base: 420, tick: 0.01, volatility: 0.001, drift: 0.00001, delay_minutes: 15 },
+  AMZN: { name: "Amazon.com", exchange: "NASDAQ", type: "stock", base: 198, tick: 0.01, volatility: 0.0014, drift: 0.00001, delay_minutes: 15 },
+  META: { name: "Meta Platforms", exchange: "NASDAQ", type: "stock", base: 585, tick: 0.01, volatility: 0.0015, drift: 0.00001, delay_minutes: 15 },
+  EURUSD: { name: "Euro / US Dollar", exchange: "FOREX", type: "forex", base: 1.085, tick: 0.00001, volatility: 0.0004, drift: 0, delay_minutes: 0 },
+  GBPUSD: { name: "British Pound / USD", exchange: "FOREX", type: "forex", base: 1.265, tick: 0.00001, volatility: 0.0005, drift: 0, delay_minutes: 0 },
+  USDJPY: { name: "US Dollar / Yen", exchange: "FOREX", type: "forex", base: 157.2, tick: 0.001, volatility: 0.0004, drift: 0, delay_minutes: 0 },
+  SPY: { name: "SPDR S&P 500 ETF", exchange: "ARCA", type: "etf", base: 552, tick: 0.01, volatility: 0.0009, drift: 0.00001, delay_minutes: 15 },
+  QQQ: { name: "Invesco QQQ Trust", exchange: "NASDAQ", type: "etf", base: 478, tick: 0.01, volatility: 0.0011, drift: 0.00001, delay_minutes: 15 },
 };
 
 /** Seeded PRNG (mulberry32). */
@@ -146,7 +146,7 @@ export function chartConfig() {
     symbols: Object.fromEntries(
       Object.entries(SYMBOL_PROFILES).map(([sym, p]) => [
         sym,
-        { name: p.name, exchange: p.exchange, type: p.type, tick: p.tick, base: p.base },
+        { name: p.name, exchange: p.exchange, type: p.type, tick: p.tick, base: p.base, delay_minutes: p.delay_minutes ?? 0 },
       ]),
     ),
   };

@@ -171,8 +171,7 @@ class FvgIndicator extends BarScriptIndicator {
     if (
       rt?.snapshot &&
       rt.chartKey === chartKey &&
-      rt.htfKey !== htfKey &&
-      instance.inputs.requireCorrelatedFvg !== true
+      rt.htfKey !== htfKey
     ) {
       const patched = FvgIndicator.patchHtfOverlay(utcBars, chartBars, instance, ctx, rt.snapshot, rt.boxes);
       if (patched) {
@@ -191,8 +190,7 @@ class FvgIndicator extends BarScriptIndicator {
 
     if (
       rt?.snapshot &&
-      isAppendOneBar(chartBars, rt) &&
-      instance.inputs.requireCorrelatedFvg !== true
+      isAppendOneBar(chartBars, rt)
     ) {
       const patched = FvgIndicator.patchAppendOverlay(utcBars, chartBars, instance, ctx, rt.snapshot, rt.boxes);
       if (patched) {
@@ -212,8 +210,7 @@ class FvgIndicator extends BarScriptIndicator {
     if (
       rt?.chartKey === chartKey &&
       rt.snapshot &&
-      rt.liveKey !== liveKey &&
-      instance.inputs.requireCorrelatedFvg !== true
+      rt.liveKey !== liveKey
     ) {
       const patched = FvgIndicator.patchLiveOverlay(utcBars, chartBars, instance, ctx, rt.snapshot, rt.boxes);
       if (patched) {
@@ -296,6 +293,17 @@ class FvgIndicator extends BarScriptIndicator {
     const rt = instance._fvgRuntime;
     if (!rt?.snapshot) return false;
     return rt.liveKey !== liveKey;
+  }
+
+  /** @param {import("../../types.js").IndicatorInstance} instance */
+  needsLiveOverlayRefresh(instance) {
+    const inputs = instance.inputs;
+    const style = instance.style ?? {};
+    if (style.graphicBoxes === false) return false;
+    const liveForming = inputs.showLiveForming !== false && inputs.showFvg !== false;
+    const liveFill = inputs.deleteOnFill !== false || inputs.showPartial === true;
+    if (liveForming || liveFill) return true;
+    return inputs.requireCorrelatedFvg === true;
   }
 
   init() {

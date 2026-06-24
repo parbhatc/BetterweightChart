@@ -377,6 +377,17 @@ export class BaseIndicator {
     return keys.every((k) => instance.style[k] !== false);
   }
 
+  /**
+   * Whether forming-bar live ticks should refresh this overlay (default false).
+   * @param {IndicatorInstance} instance
+   */
+  static needsLiveOverlayRefresh(instance) {
+    if (this._hasInstanceHook("needsLiveOverlayRefresh")) {
+      return this._definitionInstance.needsLiveOverlayRefresh(instance);
+    }
+    return true;
+  }
+
   /** @param {object} style */
   static mergeGraphicObjectDefaults(style) {
     for (const obj of this.graphicObjects) {

@@ -39,6 +39,25 @@
   font-weight: var(--weight-semibold);
 }
 
+.tv-tf--solo .tv-tf__btn.is-active:hover,
+.tv-tf--solo .tv-tf__btn.is-active[aria-expanded="true"] {
+  background: var(--tv-surface-hover);
+  border-color: var(--tv-border-subtle);
+  color: var(--tv-accent);
+}
+
+.tv-tf--solo .tv-tf__menu-wrap {
+  display: none !important;
+  width: 0;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tv-tf--solo .tv-tf__btn.is-active {
+  cursor: pointer;
+}
+
 .tv-tf__menu-wrap {
   position: relative;
   display: flex;
@@ -54,10 +73,10 @@
 }
 
 .tv-tf:hover .tv-tf__menu-wrap,
-.tv-tf--open .tv-tf__menu-wrap,
+.tv-tf--open .tv-tf__menu-wrap:not([hidden]),
 .tv-tf__bar:hover .tv-tf__menu-wrap,
-.tv-tf__bar--open .tv-tf__menu-wrap,
-.tv-tf__bar:focus-within .tv-tf__menu-wrap {
+.tv-tf__bar--open .tv-tf__menu-wrap:not([hidden]),
+.tv-tf__bar:focus-within .tv-tf__menu-wrap:not([hidden]) {
   width: 1.125rem;
   margin-left: var(--space-1);
   opacity: 1;
@@ -110,6 +129,18 @@
   overflow: hidden;
 }
 
+.tv-tf__panel-backdrop,
+.tv-tf__panel-header {
+  display: none;
+}
+
+.tv-tf__panel-dialog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+}
+
 .tv-tf__panel[hidden] {
   display: none !important;
 }
@@ -117,15 +148,20 @@
 .tv-tf__panel-scroll {
   overflow-y: auto;
   overflow-x: hidden;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tv-border) transparent;
   padding: var(--space-1) 0 var(--space-2);
 }
 
 .tv-tf__panel-scroll::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+  width: 6px;
+}
+
+.tv-tf__panel-scroll::-webkit-scrollbar-thumb {
+  background: var(--tv-border);
+  border-radius: var(--radius-full);
 }
 
 .tv-tf__group-divider {
@@ -468,6 +504,18 @@
   max-height: 14rem;
   overflow-y: auto;
   overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tv-border) transparent;
+}
+
+.tv-tf-dialog__type-menu::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tv-tf-dialog__type-menu::-webkit-scrollbar-thumb {
+  background: var(--tv-border);
+  border-radius: var(--radius-full);
 }
 
 .tv-tf-dialog__type-menu[hidden] {

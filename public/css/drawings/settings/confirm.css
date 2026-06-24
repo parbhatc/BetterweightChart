@@ -8,6 +8,10 @@
   background: rgb(0 0 0 / 0.45);
 }
 
+.tv-confirm-overlay--elevated {
+  z-index: 10100;
+}
+
 .tv-confirm-dialog {
   position: relative;
   width: min(420px, calc(100vw - var(--space-8)));

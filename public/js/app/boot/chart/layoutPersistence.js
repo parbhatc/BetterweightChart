@@ -71,6 +71,11 @@ export function attachLayoutPersistence(ctx) {
 
   function resetToUnsavedWorkspace() {
     if (!ctx.layoutManager) return;
+    if (ctx.layoutAutosaveTimer) {
+      clearTimeout(ctx.layoutAutosaveTimer);
+      ctx.layoutAutosaveTimer = null;
+    }
+    ctx.layoutManager.setAutoSave(false);
     const defaults = {
       symbol: false,
       interval: false,
@@ -86,6 +91,7 @@ export function attachLayoutPersistence(ctx) {
     ctx.indicatorController?.clearAll?.();
     ctx.layoutManager.setDrawingsSnapshot(null);
     ctx.layoutManager.setIndicatorsSnapshot(null);
+    ctx.layoutManager.setChartSettingsSnapshot(null);
     setLayoutToolDefaults({});
     ctx.layoutManager.setToolDefaultsSnapshot(null);
     setLayoutDrawingTemplates(null);

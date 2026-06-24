@@ -1,6 +1,7 @@
 import {
   createLayoutManager,
   removeLayoutFromLibrary,
+  touchLayoutLastUsed,
   upsertLayoutLibraryEntry,
 } from "../../../ui/header/layout/manager.js";
 import {
@@ -116,6 +117,7 @@ export function wireLayoutChrome(ctx) {
         if (!unique) return;
         const entry = { ...ctx.buildLayoutEntry(), name: unique };
         upsertLayoutLibraryEntry(entry);
+        touchLayoutLastUsed(unique);
         ctx.layoutManager.setLayoutName(unique);
         ctx.layoutManager.markDirty();
         ctx.headerToolbarUi?.updateSaveState();

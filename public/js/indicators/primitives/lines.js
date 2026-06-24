@@ -75,15 +75,18 @@ function drawLine(ctx, line, timeToX, priceToY, paneW) {
     return;
   }
 
-  const lx = labelXOnVisibleSegment(x1, x2, paneW);
-  const midY = (y1 + y2) / 2;
-  let ly =
-    line.labelPrice != null && Number.isFinite(line.labelPrice)
-      ? priceToY(line.labelPrice)
-      : midY;
-  if (ly == null) ly = midY;
-
   const isSmt = line.kind === "high" || line.kind === "low";
+  const lx = isSmt ? (x1 + x2) / 2 : labelXOnVisibleSegment(x1, x2, paneW);
+  let ly;
+  if (isSmt) {
+    ly = (y1 + y2) / 2;
+  } else if (line.labelPrice != null && Number.isFinite(line.labelPrice)) {
+    ly = priceToY(line.labelPrice);
+    if (ly == null) ly = (y1 + y2) / 2;
+  } else {
+    ly = (y1 + y2) / 2;
+  }
+
   if (!Number.isFinite(lx) || !Number.isFinite(ly)) {
     if (isSmt) {
       chartDebug("smt", "label coord miss", {
@@ -101,6 +104,7 @@ function drawLine(ctx, line, timeToX, priceToY, paneW) {
   }
 
   ctx.save();
+  const labelAngle = isSmt ? Math.atan2(y2 - y1, x2 - x1) : undefined;
   drawLabelCallout(
     ctx,
     lx,
@@ -109,6 +113,7 @@ function drawLine(ctx, line, timeToX, priceToY, paneW) {
     line.labelBg ?? "#3d1f1f",
     line.labelTextColor ?? line.color ?? "#ff1100",
     line.labelStyle === "up" ? "low" : "high",
+    labelAngle != null ? { angle: labelAngle, paneW } : undefined,
   );
   ctx.restore();
 }

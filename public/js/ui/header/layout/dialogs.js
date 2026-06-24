@@ -22,7 +22,7 @@ export function showLayoutNameDialog(opts) {
 
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
-    overlay.className = "tv-confirm-overlay";
+    overlay.className = "tv-confirm-overlay tv-confirm-overlay--elevated";
     overlay.innerHTML = `
       <div class="tv-confirm-dialog tv-layout-dialog" role="dialog" aria-modal="true" aria-labelledby="tv-layout-dialog-title">
         <div class="tv-confirm-dialog__main">
@@ -104,7 +104,7 @@ export function showLayoutConfirmDialog(opts) {
 
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
-    overlay.className = "tv-confirm-overlay";
+    overlay.className = "tv-confirm-overlay tv-confirm-overlay--elevated";
     overlay.innerHTML = `
       <div class="tv-confirm-dialog tv-layout-dialog" role="dialog" aria-modal="true" aria-labelledby="tv-layout-confirm-title">
         <div class="tv-confirm-dialog__main">
