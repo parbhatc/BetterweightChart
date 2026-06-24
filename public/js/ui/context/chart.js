@@ -4,6 +4,8 @@ import { DRAWING_UI_SELECTOR } from "../../drawings/constants.js";
 import { runContextMenuAction } from "../../debug/chart/contextMenu.js";
 import { getTradeContextActions, hasTradeContextActions } from "../../chart/hostHooks.js";
 
+const TRADE_QTY_PRESETS = [1, 2, 3, 5, 10, 15];
+
 const ICONS = {
   reset: `<svg viewBox="0 0 28 28" width="28" height="28" aria-hidden="true"><g fill="none" fill-rule="evenodd" stroke="currentColor"><path d="M6.5 15A8.5 8.5 0 1 0 15 6.5H8.5"></path><path d="M12 10 8.5 6.5 12 3"></path></g></svg>`,
   settings: `<svg viewBox="0 0 28 28" width="18" height="18" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M18 14a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm-1 0a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"></path><path fill-rule="evenodd" d="M8.5 5h11l5 9-5 9h-11l-5-9 5-9Zm-3.86 9L9.1 6h9.82l4.45 8-4.45 8H9.1l-4.45-8Z"></path></svg>`,
@@ -109,14 +111,17 @@ export function mountChartContextMenu(opts) {
     const trade = getTradeContextActions();
     const tradeRows = [];
     if (hasTradeContextActions() && trade) {
-      tradeRows.push(rowItem({ id: "trade", label: "Trade", hasSubmenu: true }));
-      tradeRows.push(rowDivider());
+      if (trade.onMarketBuy) {
+        tradeRows.push(rowItem({ id: "trade-market-buy", label: "Market Buy", hasSubmenu: true }));
+      }
+      if (trade.onMarketSell) {
+        tradeRows.push(rowItem({ id: "trade-market-sell", label: "Market Sell", hasSubmenu: true }));
+      }
     }
 
     root.innerHTML = `<div class="ctx-menu__scroll"><table class="ctx-menu__table"><tbody>
-      ${tradeRows.join("")}
       ${rowItem({ id: "reset", label: "Reset chart view", shortcut: "Alt + R", icon: ICONS.reset })}
-      ${rowDivider()}
+      ${tradeRows.length ? `${rowDivider()}${tradeRows.join("")}${rowDivider()}` : `${rowDivider()}`}
       ${rowItem({ id: "copy-price", label: copyLabel })}
       ${s.hasSelectedDrawing ? rowItem({ id: "copy-drawing", label: "Copy drawing", shortcut: "Ctrl + C" }) : ""}
       ${rowItem({ id: "paste", label: "Paste", shortcut: "Ctrl + V", disabled: !s.canPaste })}
@@ -153,51 +158,36 @@ export function mountChartContextMenu(opts) {
     const trade = getTradeContextActions();
     const price = s.price ?? 0;
     const time = s.crosshairTime ?? undefined;
-    const qty = 1;
 
-    runContextMenuAction("chart", id, close, () => {
-      switch (id) {
-        case "trade-market-buy":
+    const match = id.match(/^trade-market-(buy|sell)-(\d+)$/);
+    if (match) {
+      const side = match[1];
+      const qty = Number(match[2]);
+      if (!Number.isFinite(qty) || qty <= 0) return;
+
+      runContextMenuAction("chart", id, close, () => {
+        if (side === "buy") {
           trade?.onMarketBuy?.(qty, price, time);
-          break;
-        case "trade-market-sell":
+        } else {
           trade?.onMarketSell?.(qty, price, time);
-          break;
-        case "trade-limit-buy":
-          trade?.onLimitBuy?.(qty, price, price, time);
-          break;
-        case "trade-stop-sell":
-          trade?.onStopSell?.(qty, price, price, time);
-          break;
-        default:
-          break;
-      }
-    });
+        }
+      });
+    }
   }
 
-  /** @param {HTMLElement} anchorRow */
-  function openTradeSubmenu(anchorRow) {
+  /** @param {"buy" | "sell"} side @param {HTMLElement} anchorRow */
+  function openMarketSubmenu(side, anchorRow) {
     closeSubmenu();
-    const s = getState();
     const trade = getTradeContextActions();
-    if (!trade) return;
+    const handler = side === "buy" ? trade?.onMarketBuy : trade?.onMarketSell;
+    if (!handler) return;
 
-    const priceSuffix = s.price != null ? ` @ ${s.priceText}` : "";
-    /** @type {Array<{ id: string; label: string; shortcut?: string }>} */
-    const items = [];
-    if (trade.onMarketBuy) {
-      items.push({ id: "trade-market-buy", label: `Market Buy 1${priceSuffix}`, shortcut: "Ctrl + B" });
-    }
-    if (trade.onMarketSell) {
-      items.push({ id: "trade-market-sell", label: `Market Sell 1${priceSuffix}`, shortcut: "Ctrl + S" });
-    }
-    if (trade.onLimitBuy) {
-      items.push({ id: "trade-limit-buy", label: `Limit Buy 1${priceSuffix}` });
-    }
-    if (trade.onStopSell) {
-      items.push({ id: "trade-stop-sell", label: `Stop Sell 1${priceSuffix}` });
-    }
-    if (!items.length) return;
+    const sideLabel = side === "buy" ? "Buy" : "Sell";
+    const items = TRADE_QTY_PRESETS.map((qty) => ({
+      id: `trade-market-${side}-${qty}`,
+      label: `Market ${sideLabel} ${qty}`,
+      shortcut: qty === 1 ? (side === "buy" ? "Ctrl + B" : "Ctrl + S") : undefined,
+    }));
 
     const rows = items.map((item) => rowItem(item)).join("");
     submenuEl = document.createElement("div");
@@ -230,11 +220,14 @@ export function mountChartContextMenu(opts) {
   }
 
   function runAction(id, row) {
-    if (id === "trade") {
-      openTradeSubmenu(row);
+    if (id === "trade-market-buy") {
+      openMarketSubmenu("buy", row);
       return;
     }
-
+    if (id === "trade-market-sell") {
+      openMarketSubmenu("sell", row);
+      return;
+    }
     const detail =
       id === "remove-drawings"
         ? { drawingCount: getState().drawingCount }

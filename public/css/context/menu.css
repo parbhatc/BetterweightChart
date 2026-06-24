@@ -84,7 +84,8 @@
 .ctx-menu--status .ctx-menu__row:hover:not(.ctx-menu__row--disabled) .ctx-menu__content-cell,
 .ctx-menu--chart .ctx-menu__row:hover:not(.ctx-menu__row--disabled) .ctx-menu__content-cell,
 .ctx-menu--price-scale .ctx-menu__row:hover:not(.ctx-menu__row--disabled) .ctx-menu__content-cell,
-.ctx-menu--time-scale .ctx-menu__row:hover:not(.ctx-menu__row--disabled) .ctx-menu__content-cell {
+.ctx-menu--time-scale .ctx-menu__row:hover:not(.ctx-menu__row--disabled) .ctx-menu__content-cell,
+.ctx-menu--sub .ctx-menu__row:hover:not(.ctx-menu__row--disabled) .ctx-menu__content-cell {
   background: var(--tv-accent-muted);
   color: var(--tv-accent);
 }
