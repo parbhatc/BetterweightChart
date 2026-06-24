@@ -56,8 +56,17 @@ function paneBarCountsChanged(needs, pane, before) {
  * @param {object} opts
  * @param {import("./state.js").BootContext} opts.ctx
  * @param {import("../../../indicators/controller.js").IndicatorController} opts.controller
+ * @param {() => boolean} [opts.isChartPanning]
+ * @param {(paneIndex: number) => void} [opts.requestOverlayRefresh]
+ * @param {() => void} [opts.deferHeavyWork]
  */
-export function createIndicatorDataLoader({ ctx, controller }) {
+export function createIndicatorDataLoader({
+  ctx,
+  controller,
+  isChartPanning = () => false,
+  requestOverlayRefresh = (paneIndex) => controller.refreshOverlaysSilent(paneIndex),
+  deferHeavyWork = () => {},
+}) {
   /** @type {ReturnType<typeof setTimeout> | null} */
   let loadTimer = null;
   /** @type {Set<number>} */
@@ -228,6 +237,10 @@ export function createIndicatorDataLoader({ ctx, controller }) {
   /** @param {object} pane */
   async function ensurePaneData(pane) {
     if (!pane?.symbol) return;
+    if (isChartPanning()) {
+      deferHeavyWork();
+      return;
+    }
     if (paneInFlight.has(pane.index)) return;
 
     const view = getPaneChartView(
@@ -248,20 +261,32 @@ export function createIndicatorDataLoader({ ctx, controller }) {
       await ensureGlobalNews(pane);
       if (!ctx.datafeed) {
         controller.invalidateOverlayCacheForPane(pane.index);
-        controller.refreshOverlaysSilent(pane.index);
+        requestOverlayRefresh(pane.index);
         return;
       }
       const barCountsBefore = snapshotPaneBarCounts(needs, pane);
       for (const [key, countBack] of needs.htf) {
+        if (isChartPanning()) {
+          deferHeavyWork();
+          return;
+        }
         const sep = key.indexOf("|");
         const symbol = key.slice(0, sep);
         const resolution = key.slice(sep + 1);
         await fillHtfHistory(pane, symbol, resolution, countBack);
       }
       for (const [symbol, countBack] of needs.compareChart) {
+        if (isChartPanning()) {
+          deferHeavyWork();
+          return;
+        }
         await fillCompareChart(pane, symbol, countBack);
       }
       for (const [key, countBack] of needs.compareHtf) {
+        if (isChartPanning()) {
+          deferHeavyWork();
+          return;
+        }
         const sep = key.indexOf("|");
         const symbol = key.slice(0, sep);
         const resolution = key.slice(sep + 1);
@@ -272,7 +297,7 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         htfKeys: new Set([...needs.htf.keys(), ...needs.compareHtf.keys()]),
         compareSymbols: new Set(needs.compareChart.keys()),
       });
-      controller.refreshOverlaysSilent(pane.index);
+      requestOverlayRefresh(pane.index);
     } finally {
       paneInFlight.delete(pane.index);
     }
@@ -283,6 +308,10 @@ export function createIndicatorDataLoader({ ctx, controller }) {
     if (loadTimer != null) clearTimeout(loadTimer);
     loadTimer = setTimeout(() => {
       loadTimer = null;
+      if (isChartPanning()) {
+        deferHeavyWork();
+        return;
+      }
       for (const pane of ctx.getAllChartPanes()) {
         void ensurePaneData(pane);
       }
@@ -292,6 +321,10 @@ export function createIndicatorDataLoader({ ctx, controller }) {
   /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack */
   function scheduleCompareBarsFetch(pane, symbol, resolution, countBack) {
     if (!pane || !ctx.datafeed || !symbol || !resolution) return;
+    if (isChartPanning()) {
+      deferHeavyWork();
+      return;
+    }
     const want = Math.max(50, Number(countBack) || 300);
     const key = `${symbol}|${resolution}`;
     if (compareFetchInFlight.has(key)) return;
@@ -330,7 +363,7 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         controller.invalidateOverlayCacheForPane(pane.index, {
           compareSymbols: new Set([symbol]),
         });
-        controller.refreshOverlaysSilent(pane.index);
+        requestOverlayRefresh(pane.index);
       })
       .finally(() => compareFetchInFlight.delete(key));
   }
@@ -339,6 +372,10 @@ export function createIndicatorDataLoader({ ctx, controller }) {
   function scheduleHtfBarsFetch(pane, symbol, resId, countBack) {
     const sym = symbol ?? pane?.symbol;
     if (!sym || !pane || !ctx.datafeed) return;
+    if (isChartPanning()) {
+      deferHeavyWork();
+      return;
+    }
     const key = `${sym}|${resId}`;
     if (htfFetchInFlight.has(key)) return;
     htfFetchInFlight.add(key);
@@ -350,7 +387,7 @@ export function createIndicatorDataLoader({ ctx, controller }) {
         controller.invalidateOverlayCacheForPane(pane.index, {
           htfKeys: new Set([key]),
         });
-        controller.refreshOverlaysSilent(pane.index);
+        requestOverlayRefresh(pane.index);
       })
       .finally(() => htfFetchInFlight.delete(key));
   }

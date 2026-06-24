@@ -374,14 +374,55 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane */
   function wirePanePanPerf(pane) {
+    /** @type {ReturnType<typeof setTimeout> | null} */
+    let historyPrefetchTimer = null;
+    const HISTORY_PREFETCH_IDLE_MS = 150;
+
+    const cancelHistoryPrefetch = () => {
+      if (historyPrefetchTimer == null) return;
+      clearTimeout(historyPrefetchTimer);
+      historyPrefetchTimer = null;
+    };
+
+    const scheduleHistoryPrefetch = () => {
+      const r = pane.chart.timeScale().getVisibleLogicalRange();
+      if (
+        !r ||
+        !isNearHistoryLeftEdge(r) ||
+        pane._suppressHistoryPrefetch ||
+        !viewportDeps?.ensureHistoryNearEdge ||
+        pane._loadingHistory ||
+        pane._historyRestorePending
+      ) {
+        return;
+      }
+      cancelHistoryPrefetch();
+      historyPrefetchTimer = setTimeout(() => {
+        historyPrefetchTimer = null;
+        if (
+          ui.chartPanning ||
+          pane._suppressHistoryPrefetch ||
+          pane._loadingHistory ||
+          pane._historyRestorePending
+        ) {
+          return;
+        }
+        void viewportDeps.ensureHistoryNearEdge(pane);
+      }, HISTORY_PREFETCH_IDLE_MS);
+    };
+
     trackChartPanning(pane.el, {
       onStart: () => {
         ui.chartPanning = true;
+        cancelHistoryPrefetch();
+        viewportDeps?.onChartPanStart?.();
         panFps.start();
       },
       onEnd: () => {
         ui.chartPanning = false;
         panFps.stop();
+        viewportDeps?.onChartPanEnd?.();
+        if (pane.index === 0) viewportDeps?.maintainLockedRatio?.();
         const active = getActivePane();
         const activeIdx = active?.index ?? 0;
         for (const p of getAllChartPanes()) {
@@ -396,17 +437,7 @@ export function createPaneExtras(deps) {
           deferWhitespacePane = null;
           ensurePaneFutureWhitespace(p);
         }
-        const r = pane.chart.timeScale().getVisibleLogicalRange();
-        if (
-          r &&
-          isNearHistoryLeftEdge(r) &&
-          !pane._suppressHistoryPrefetch &&
-          viewportDeps?.ensureHistoryNearEdge &&
-          !pane._loadingHistory &&
-          !pane._historyRestorePending
-        ) {
-          void viewportDeps.ensureHistoryNearEdge(pane);
-        }
+        scheduleHistoryPrefetch();
       },
     });
   }
@@ -474,14 +505,16 @@ export function createPaneExtras(deps) {
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
       if (ui.barsLoading || pane._loadingHistory || pane._historyRestorePending || pane._suppressHistoryPrefetch) return;
-      if (pane.lastCrosshairChartTime != null) {
+      if (!ui.chartPanning && pane.lastCrosshairChartTime != null) {
         const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
         refreshHoverBarFromChartTime(pane, pane.lastCrosshairChartTime, isActive);
         scheduleStatusLine(pane);
+      } else if (ui.chartPanning) {
+        chartDebugCount("perf", "visibleRangeSkippedPan");
       }
       chartDebugCount("perf", "visibleRange");
       chartDebugTime("perf", `visibleRangeHandler pane ${pane.index}`, () => {
-        if (pane.index === 0 && !pane._suppressHistoryPrefetch) {
+        if (pane.index === 0 && !pane._suppressHistoryPrefetch && !ui.chartPanning) {
           viewportDeps?.maintainLockedRatio?.();
         }
 

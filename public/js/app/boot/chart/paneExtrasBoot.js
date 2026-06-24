@@ -27,6 +27,8 @@ export function attachPaneExtrasBoot(ctx) {
     getLayoutManager: () => ctx.layoutManager,
     prependHistory: null,
     ensureHistoryNearEdge: null,
+    onChartPanStart: null,
+    onChartPanEnd: null,
     setPrimaryFutureWhitespace: (n) => {
       ctx.futureWhitespaceBars = n;
     },

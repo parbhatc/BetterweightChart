@@ -4,18 +4,31 @@ import { chartDebug, chartDebugCount } from "../../debug/chart/index.js";
 const RTH_OPEN = 9 * 60 + 30;
 const RTH_CLOSE = 16 * 60;
 
+/** @type {Map<string, Intl.DateTimeFormat>} */
+const dateTimeFormatByTz = new Map();
+
+/** @param {string} timeZone */
+function dateTimeFormatForTz(timeZone) {
+  let fmt = dateTimeFormatByTz.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    });
+    dateTimeFormatByTz.set(timeZone, fmt);
+  }
+  return fmt;
+}
+
 /**
  * @param {number} unixSec
  * @param {string} timeZone
  */
 function localMinutes(unixSec, timeZone) {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-  }).formatToParts(new Date(unixSec * 1000));
+  const parts = dateTimeFormatForTz(timeZone).formatToParts(new Date(unixSec * 1000));
   const weekday = parts.find((p) => p.type === "weekday")?.value ?? "";
   const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
   const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);

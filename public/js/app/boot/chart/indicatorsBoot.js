@@ -31,6 +31,17 @@ export function attachIndicatorsBoot(ctx) {
   /** @type {ReturnType<typeof createIndicatorDataLoader>} */
   let indicatorData;
 
+  function chartIsPanning() {
+    return Boolean(ctx.ui?.chartPanning);
+  }
+
+  /** @type {{ isChartPanning: () => boolean, requestOverlayRefresh: (paneIndex: number) => void, deferHeavyWork: () => void }} */
+  const indicatorLoaderPerf = {
+    isChartPanning: () => chartIsPanning(),
+    requestOverlayRefresh: (paneIndex) => controller.refreshOverlaysSilent(paneIndex),
+    deferHeavyWork: () => {},
+  };
+
   const controller = createIndicatorController({
     getAllChartPanes: ctx.getAllChartPanes,
     getPaneBars: (pane) => {
@@ -68,7 +79,7 @@ export function attachIndicatorsBoot(ctx) {
     },
   });
 
-  indicatorData = createIndicatorDataLoader({ ctx, controller });
+  indicatorData = createIndicatorDataLoader({ ctx, controller, ...indicatorLoaderPerf });
   ctx.indicatorController = controller;
 
   const library = createIndicatorsLibraryDialog({
@@ -238,17 +249,119 @@ export function attachIndicatorsBoot(ctx) {
     refreshIndicatorUi(paneIndex);
   };
 
-  ctx.refreshIndicatorsImmediate = (paneIndex) => {
+  const PAN_REFRESH_IDLE_MS = 120;
+  /** @type {Map<number, "full" | "overlay">} */
+  const deferredRefreshByPane = new Map();
+  let deferredRefreshAll = false;
+  let deferredEnsureData = false;
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let deferredFlushTimer = null;
+
+  /** @param {number | undefined} paneIndex @param {"full" | "overlay"} kind */
+  function markDeferredRefresh(paneIndex, kind) {
+    if (paneIndex == null) {
+      deferredRefreshAll = true;
+      return;
+    }
+    const prev = deferredRefreshByPane.get(paneIndex);
+    deferredRefreshByPane.set(paneIndex, prev === "full" || kind === "full" ? "full" : "overlay");
+  }
+
+  function runIndicatorsImmediate(paneIndex) {
     controller.refreshPaneData(paneIndex);
     refreshIndicatorUi(paneIndex);
-  };
+  }
 
-  ctx.refreshOverlaysImmediate = (paneIndex) => {
+  function runOverlaysImmediate(paneIndex) {
     controller.refreshOverlaysImmediate(paneIndex);
     if (paneIndex != null) {
       ensureLegend(ctx.getAllChartPanes().find((p) => p.index === paneIndex))?.render();
     } else {
       refreshAllLegends();
+    }
+  }
+
+  function cancelDeferredIndicatorFlush() {
+    if (deferredFlushTimer == null) return;
+    clearTimeout(deferredFlushTimer);
+    deferredFlushTimer = null;
+  }
+
+  function scheduleDeferredIndicatorFlush() {
+    cancelDeferredIndicatorFlush();
+    deferredFlushTimer = setTimeout(() => {
+      deferredFlushTimer = null;
+      flushDeferredIndicatorRefresh();
+    }, PAN_REFRESH_IDLE_MS);
+  }
+
+  function flushDeferredIndicatorRefresh() {
+    if (chartIsPanning()) {
+      scheduleDeferredIndicatorFlush();
+      return;
+    }
+    const refreshAll = deferredRefreshAll;
+    const pending = new Map(deferredRefreshByPane);
+    const needData = deferredEnsureData;
+    deferredRefreshAll = false;
+    deferredRefreshByPane.clear();
+    deferredEnsureData = false;
+    if (!refreshAll && !pending.size && !needData) return;
+
+    if (needData) indicatorData.ensureNow();
+
+    if (refreshAll) {
+      runIndicatorsImmediate(undefined);
+      return;
+    }
+
+    for (const [paneIndex, kind] of pending) {
+      if (kind === "full") runIndicatorsImmediate(paneIndex);
+      else runOverlaysImmediate(paneIndex);
+    }
+  }
+
+  /** @param {number | undefined} paneIndex @param {"full" | "overlay"} kind @param {() => void} run */
+  function refreshNowOrDeferAfterPan(paneIndex, kind, run) {
+    if (!chartIsPanning()) {
+      run();
+      return;
+    }
+    markDeferredRefresh(paneIndex, kind);
+    scheduleDeferredIndicatorFlush();
+  }
+
+  ctx.refreshIndicatorsImmediate = (paneIndex) => {
+    refreshNowOrDeferAfterPan(paneIndex, "full", () => runIndicatorsImmediate(paneIndex));
+  };
+
+  ctx.refreshOverlaysImmediate = (paneIndex) => {
+    refreshNowOrDeferAfterPan(paneIndex, "overlay", () => runOverlaysImmediate(paneIndex));
+  };
+
+  ctx.flushDeferredIndicatorRefresh = flushDeferredIndicatorRefresh;
+
+  indicatorLoaderPerf.requestOverlayRefresh = (paneIndex) => {
+    refreshNowOrDeferAfterPan(paneIndex, "overlay", () => {
+      controller.refreshOverlaysSilent(paneIndex);
+    });
+  };
+  indicatorLoaderPerf.deferHeavyWork = () => {
+    deferredEnsureData = true;
+    scheduleDeferredIndicatorFlush();
+  };
+
+  const prevOnChartPanStart = ctx.viewportDeps.onChartPanStart;
+  ctx.viewportDeps.onChartPanStart = () => {
+    prevOnChartPanStart?.();
+    cancelDeferredIndicatorFlush();
+  };
+
+  const prevOnChartPanEnd = ctx.viewportDeps.onChartPanEnd;
+  ctx.viewportDeps.onChartPanEnd = () => {
+    prevOnChartPanEnd?.();
+    if (deferredRefreshAll || deferredRefreshByPane.size || deferredEnsureData) {
+      scheduleDeferredIndicatorFlush();
     }
   };
 
@@ -377,7 +490,14 @@ export function attachIndicatorsBoot(ctx) {
     ctx.syncChartTables?.();
   };
 
-  ctx.ensureIndicatorData = () => indicatorData.ensureNow();
+  ctx.ensureIndicatorData = () => {
+    if (chartIsPanning()) {
+      deferredEnsureData = true;
+      scheduleDeferredIndicatorFlush();
+      return;
+    }
+    indicatorData.ensureNow();
+  };
 
   const origApplyChartSettings = ctx.applyChartSettings;
   ctx.applyChartSettings = () => {
