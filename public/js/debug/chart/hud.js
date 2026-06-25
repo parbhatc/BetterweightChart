@@ -6,8 +6,12 @@ function defaultPingWsUrl() {
   return `${proto}//${location.host}/ws/ping`;
 }
 
+function debugApi() {
+  return typeof window !== "undefined" ? window.__BWC_DEBUG__ : null;
+}
+
 /**
- * Fixed top overlay: live FPS + WebSocket ping (debug mode only).
+ * Fixed top overlay: live FPS + WebSocket ping + debug toggles (debug mode only).
  * @param {{ pingWsUrl?: string }} [opts]
  */
 export function mountDebugHud(opts = {}) {
@@ -17,6 +21,23 @@ export function mountDebugHud(opts = {}) {
   root.className = "bwc-debug-hud";
   root.setAttribute("aria-live", "polite");
   root.setAttribute("aria-label", "Debug performance");
+
+  const statsEl = document.createElement("span");
+  statsEl.className = "bwc-debug-hud__stats";
+
+  const sep = document.createElement("span");
+  sep.className = "bwc-debug-hud__sep";
+  sep.textContent = "·";
+
+  const formingBtn = document.createElement("button");
+  formingBtn.type = "button";
+  formingBtn.className = "bwc-debug-hud__toggle";
+
+  const debugBtn = document.createElement("button");
+  debugBtn.type = "button";
+  debugBtn.className = "bwc-debug-hud__toggle";
+
+  root.append(statsEl, sep, formingBtn, debugBtn);
   document.body.appendChild(root);
 
   let frameCount = 0;
@@ -37,16 +58,47 @@ export function mountDebugHud(opts = {}) {
   /** @type {number | null} */
   let pingSentAt = null;
 
-  function render() {
+  function syncToggleLabels() {
+    const api = debugApi();
+    const forming = api?.stats?.().formingLogs ?? false;
+    formingBtn.textContent = `forming ${forming ? "on" : "off"}`;
+    formingBtn.setAttribute("aria-pressed", forming ? "true" : "false");
+    formingBtn.title = "Toggle [BWC:data] update forming logs (saved in localStorage)";
+    debugBtn.textContent = "debug off";
+    debugBtn.title = "Disable all BWC debug logs until re-enabled (saved in localStorage)";
+  }
+
+  function renderStats() {
     const ping = pingMs == null ? "…" : `${pingMs}ms`;
     if (panning || zooming) {
       const label = viewportModes.length ? viewportModes.join("+") : panning ? "pan" : "zoom";
       const interactionFps = panFps == null ? "—" : String(panFps);
-      root.textContent = `${label} ${interactionFps} fps · Render ${liveFps} · Ping ${ping}`;
+      statsEl.textContent = `${label} ${interactionFps} fps · Render ${liveFps} · Ping ${ping}`;
       return;
     }
-    root.textContent = `FPS ${liveFps} · Ping ${ping}`;
+    statsEl.textContent = `FPS ${liveFps} · Ping ${ping}`;
   }
+
+  function render() {
+    renderStats();
+    syncToggleLabels();
+  }
+
+  formingBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    const api = debugApi();
+    if (!api) return;
+    const next = !api.stats().formingLogs;
+    api.setFormingLogs(next);
+    render();
+  });
+
+  debugBtn.addEventListener("click", (ev) => {
+    ev.preventDefault();
+    ev.stopPropagation();
+    debugApi()?.disable();
+  });
 
   function tick() {
     frameCount += 1;
@@ -55,7 +107,7 @@ export function mountDebugHud(opts = {}) {
       liveFps = frameCount;
       frameCount = 0;
       windowStart = now;
-      render();
+      renderStats();
     }
     rafId = requestAnimationFrame(tick);
   }
@@ -73,7 +125,7 @@ export function mountDebugHud(opts = {}) {
       ws = new WebSocket(pingWsUrl);
     } catch {
       pingMs = null;
-      render();
+      renderStats();
       return;
     }
 
@@ -85,7 +137,7 @@ export function mountDebugHud(opts = {}) {
       if (ev.data !== "pong" || pingSentAt == null) return;
       pingMs = Math.round(performance.now() - pingSentAt);
       pingSentAt = null;
-      render();
+      renderStats();
     });
 
     ws.addEventListener("close", () => {
@@ -96,7 +148,7 @@ export function mountDebugHud(opts = {}) {
     ws.addEventListener("error", () => {
       pingMs = null;
       pingSentAt = null;
-      render();
+      renderStats();
     });
   }
 
@@ -117,7 +169,7 @@ export function mountDebugHud(opts = {}) {
       if (stats.panning != null) panning = Boolean(stats.panning);
       if (stats.zooming != null) zooming = Boolean(stats.zooming);
       if (stats.fps != null) panFps = stats.fps;
-      render();
+      renderStats();
     },
     destroy() {
       if (rafId) cancelAnimationFrame(rafId);

@@ -17,11 +17,13 @@
  * pos.onOpen((snapshot) => {});
  */
 
-const DEFAULT_PILL_OFFSET = 140;
-const DEFAULT_BRACKET_PILL_OFFSET = 200;
+import { plotPaneWidth, resolveOrderLinePillOffset, resolveBracketPillOffset } from "./rowLayout.js";
+
+const DEFAULT_PILL_OFFSET = 10;
+const DEFAULT_BRACKET_PILL_OFFSET = 96;
 const BRACKET_LINE_LENGTH = 21;
-const POSITION_TEXT_COLOR = "#000000";
-const BRACKET_TEXT_COLOR = "#000000";
+const POSITION_TEXT_COLOR = "#ffffff";
+const BRACKET_TEXT_COLOR = "#ffffff";
 const BUY_COLOR = "#089981";
 const SELL_COLOR = "#f23645";
 const DEFAULT_QTY = 1;
@@ -235,6 +237,30 @@ export function createPositionOverlay(widget) {
     return resolveTickMeta(widget.getSymbolInfo?.());
   }
 
+  function currentPlotWidth() {
+    const chart = widget.lcChart;
+    if (!chart) return 0;
+    const el = typeof chart.chartElement === "function" ? chart.chartElement() : null;
+    return plotPaneWidth(chart, el);
+  }
+
+  function syncLayoutOffsets() {
+    const plotW = currentPlotWidth();
+    const nextPos = resolveOrderLinePillOffset(plotW, DEFAULT_PILL_OFFSET);
+    const nextBracket = resolveBracketPillOffset(plotW, DEFAULT_BRACKET_PILL_OFFSET);
+    if (nextPos !== pillOffset) {
+      pillOffset = nextPos;
+      if (position?.line) position.line.setPillOffset(pillOffset);
+      for (const row of pending) row.line.setPillOffset(pillOffset);
+    }
+    if (nextBracket !== bracketPillOffset) {
+      bracketPillOffset = nextBracket;
+      if (position?.stopLoss?.line) position.stopLoss.line.setPillOffset(bracketPillOffset);
+      if (position?.takeProfit?.line) position.takeProfit.line.setPillOffset(bracketPillOffset);
+    }
+    widget.orderLines?.requestRefresh?.();
+  }
+
   function ensureLiveHook() {
     if (offLiveBar || typeof widget.onLiveBar !== "function") return;
     offLiveBar = widget.onLiveBar((bar) => {
@@ -250,14 +276,67 @@ export function createPositionOverlay(widget) {
     latestBar = null;
   }
 
+  function positionSideColor(qty) {
+    return qty > 0 ? BUY_COLOR : SELL_COLOR;
+  }
+
+  function refreshBracketSizes() {
+    if (!position) return;
+    if (position.stopLoss?.line) {
+      position.stopLoss.line.setQuantity(String(-position.qty));
+      applyBracketLineVisual(position.stopLoss, position.stopLoss.price);
+    }
+    if (position.takeProfit?.line) {
+      position.takeProfit.line.setQuantity(String(-position.qty));
+      applyBracketLineVisual(position.takeProfit, position.takeProfit.price);
+    }
+  }
+
+  /**
+   * Update entry/qty in place — keeps brackets and does not fire onClose/onOpen.
+   * @param {number} entry
+   * @param {number} qty signed contracts
+   */
+  async function modifyPositionAt(entry, qty) {
+    if (!position?.line) return openPositionAt(entry, qty);
+    const sameSign =
+      (position.qty > 0 && qty > 0) || (position.qty < 0 && qty < 0);
+    if (!sameSign || !Number.isFinite(entry) || !Number.isFinite(qty) || qty === 0) {
+      return openPositionAt(entry, qty);
+    }
+
+    position.entry = entry;
+    position.qty = qty;
+    stylePositionLine(position.line, qty);
+    position.line.setPrice(entry);
+    refreshBracketSizes();
+
+    const mark = markPrice();
+    if (mark != null) refreshPositionPnl(mark);
+    else {
+      position.lastText = "";
+      position.lastProfit = true;
+      refreshPositionPnl(entry);
+    }
+
+    return position.line;
+  }
+
+  function canScaleIn(signedQty) {
+    if (!position?.line || !signedQty) return false;
+    return (
+      (position.qty > 0 && signedQty > 0) || (position.qty < 0 && signedQty < 0)
+    );
+  }
+
   /**
    * @param {object} line
    * @param {number} qty signed
    */
   function stylePositionLine(line, qty) {
-    const long = qty > 0;
-    const color = long ? BUY_COLOR : SELL_COLOR;
+    const color = positionSideColor(qty);
     line
+      .setText("")
       .setQuantity(String(Math.abs(qty)))
       .setLineColor(color)
       .setBodyBackgroundColor(color)
@@ -267,8 +346,14 @@ export function createPositionOverlay(widget) {
       .setLineStyle(2)
       .setLineLength(8)
       .setPillSide("right")
-      .setPillOffset(pillOffset)
-      .setCancelTooltip("Close position");
+      .setPillOffset(pillOffset);
+    if (typeof line.setQuantityBorderColor === "function") {
+      line.setQuantityBorderColor("transparent");
+    }
+    if (typeof line.setBodyBorderColor === "function") {
+      line.setBodyBorderColor("transparent");
+    }
+    line.setCancelTooltip("Close position");
     return line;
   }
 
@@ -358,8 +443,11 @@ export function createPositionOverlay(widget) {
       .setPillSide("right")
       .setPillOffset(bracketPillOffset)
       .setBodyTextColor(BRACKET_TEXT_COLOR)
-      .setQuantityTextColor(BRACKET_TEXT_COLOR)
-      .setCancelTooltip("Cancel order");
+      .setQuantityTextColor(BRACKET_TEXT_COLOR);
+    if (typeof line.setQuantityBorderColor === "function") {
+      line.setQuantityBorderColor("transparent");
+    }
+    line.setCancelTooltip("Cancel order");
     return line;
   }
 
@@ -524,6 +612,7 @@ export function createPositionOverlay(widget) {
     const profit = pnl >= 0;
     const text = formatPnl(pnl);
     const colors = lineColors(profit);
+    const sideColor = positionSideColor(position.qty);
     const textChanged = text !== position.lastText;
     const profitChanged = profit !== position.lastProfit;
     if (!textChanged && !profitChanged) return;
@@ -533,8 +622,9 @@ export function createPositionOverlay(widget) {
 
     const patch = {
       text,
-      profit,
+      quantityText: String(Math.abs(position.qty)),
       fill: colors.fill,
+      quantityFill: sideColor,
       textColor: POSITION_TEXT_COLOR,
     };
 
@@ -543,11 +633,12 @@ export function createPositionOverlay(widget) {
         position.line.applyAppearance(patch);
       }
       position.line.setText(text);
+      position.line.setQuantity(String(Math.abs(position.qty)));
       position.line
-        .setLineColor(colors.fill)
+        .setLineColor(sideColor)
         .setBodyBackgroundColor(colors.fill)
-        .setQuantityBackgroundColor(colors.fill)
         .setBodyTextColor(POSITION_TEXT_COLOR)
+        .setQuantityBackgroundColor(sideColor)
         .setQuantityTextColor(POSITION_TEXT_COLOR);
     } catch {
       closePosition();
@@ -587,6 +678,7 @@ export function createPositionOverlay(widget) {
   async function openPositionAt(entry, qty) {
     closePosition();
     clearPending();
+    syncLayoutOffsets();
 
     const line = await widget.chart().createOrderLine();
     if (!line) return null;
@@ -604,6 +696,7 @@ export function createPositionOverlay(widget) {
 
     const mark = markPrice();
     const refMark = mark != null ? mark : entry;
+    const sideColor = positionSideColor(qty);
 
     position = {
       line,
@@ -621,14 +714,19 @@ export function createPositionOverlay(widget) {
     if (typeof line.applyAppearance === "function") {
       line.applyAppearance({
         text,
-        profit,
+        quantityText: String(Math.abs(qty)),
         fill: colors.fill,
+        quantityFill: sideColor,
         textColor: POSITION_TEXT_COLOR,
       });
     }
     line.setText(text);
+    line.setQuantity(String(Math.abs(qty)));
     line
+      .setLineColor(sideColor)
+      .setBodyBackgroundColor(colors.fill)
       .setBodyTextColor(POSITION_TEXT_COLOR)
+      .setQuantityBackgroundColor(sideColor)
       .setQuantityTextColor(POSITION_TEXT_COLOR);
 
     ensureLiveHook();
@@ -705,6 +803,15 @@ export function createPositionOverlay(widget) {
       return null;
     }
 
+    if (canScaleIn(signedQty)) {
+      const addAbs = Math.abs(signedQty);
+      const oldAbs = Math.abs(position.qty);
+      const totalAbs = oldAbs + addAbs;
+      const newEntry = (position.entry * oldAbs + fill * addAbs) / totalAbs;
+      const newSigned = side === "buy" ? totalAbs : -totalAbs;
+      return modifyPositionAt(newEntry, newSigned);
+    }
+
     return openPositionAt(fill, signedQty);
   }
 
@@ -754,6 +861,13 @@ export function createPositionOverlay(widget) {
       for (const row of pending) row.line.setPillOffset(pillOffset);
       return pillOffset;
     },
+    /** Recompute pill offsets after viewport / chart resize (mobile). */
+    refreshLayout() {
+      syncLayoutOffsets();
+      const mark = markPrice();
+      if (position?.line && mark != null) refreshPositionPnl(mark);
+      return pillOffset;
+    },
     setBracketPillOffset(offset) {
       bracketPillOffset = Math.max(0, Number(offset) || 0);
       if (position?.stopLoss?.line) position.stopLoss.line.setPillOffset(bracketPillOffset);
@@ -762,6 +876,16 @@ export function createPositionOverlay(widget) {
     },
     getPosition() {
       return positionSnapshot();
+    },
+    /**
+     * Scale or resize open position in place (avg entry + qty). Keeps brackets.
+     * @param {{ entry: number, qty: number }} opts signed qty
+     */
+    modifyPosition(opts) {
+      const entry = Number(opts?.entry);
+      const qty = Number(opts?.qty);
+      if (!Number.isFinite(entry) || !Number.isFinite(qty)) return null;
+      return modifyPositionAt(entry, qty);
     },
     /**
      * @param {(oldPrice: number | null, newPrice: number | null) => void} cb

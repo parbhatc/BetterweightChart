@@ -10,6 +10,7 @@
  * window.__BWC_DEBUG__.stats()   // counters + slow ops
  * window.__BWC_DEBUG__.clear()
  * window.__BWC_DEBUG__.setFormingLogs(false)  // persisted as bwc-debug-forming in localStorage
+ * window.__BWC_DEBUG__.disable()              // persisted as bwc-debug-off (stays off after refresh)
  */
 
 import { destroyDebugHud, ensureDebugHud } from "./hud.js";
@@ -26,14 +27,34 @@ import {
 
 const LS_KEY = "bwc-debug";
 const LS_FORMING_KEY = "bwc-debug-forming";
+const LS_OFF_KEY = "bwc-debug-off";
 
 /** @type {Set<string>} */
 let tags = new Set();
 let enabled = false;
 let slowMs = 8;
 let verbose = false;
-/** Live tick / forming-bar patch logs (very noisy when `data` debug is on). */
-let formingLogs = true;
+/** Live tick / forming-bar patch logs (off by default; opt in via HUD or setFormingLogs). */
+let formingLogs = false;
+
+function readDebugOff() {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(LS_OFF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDebugOff(off) {
+  if (typeof window === "undefined") return;
+  try {
+    if (off) localStorage.setItem(LS_OFF_KEY, "1");
+    else localStorage.removeItem(LS_OFF_KEY);
+  } catch {
+    //
+  }
+}
 
 function readStoredFormingLogs() {
   if (typeof window === "undefined") return;
@@ -41,8 +62,9 @@ function readStoredFormingLogs() {
     const stored = localStorage.getItem(LS_FORMING_KEY);
     if (stored === "0" || stored === "false") formingLogs = false;
     else if (stored === "1" || stored === "true") formingLogs = true;
+    else formingLogs = false;
   } catch {
-    //
+    formingLogs = false;
   }
 }
 
@@ -92,6 +114,7 @@ export function configureChartDebug(opts = {}) {
 
   if (opts.force != null) {
     enabled = Boolean(opts.force);
+    if (enabled) writeDebugOff(false);
     return enabled;
   }
 
@@ -99,6 +122,23 @@ export function configureChartDebug(opts = {}) {
     if (window.__BWC_DEBUG_FORCE__ === true) {
       enabled = true;
       return true;
+    }
+    const sp = new URLSearchParams(window.location.search);
+    const q = sp.get("debug");
+    if (q != null && q !== "0" && q !== "false") {
+      enabled = true;
+      tags = parseTags(q);
+      writeDebugOff(false);
+      try {
+        localStorage.setItem(LS_KEY, q === "1" ? "1" : q);
+      } catch {
+        //
+      }
+      return true;
+    }
+    if (readDebugOff()) {
+      enabled = false;
+      return false;
     }
     try {
       const stored = localStorage.getItem(LS_KEY);
@@ -109,18 +149,6 @@ export function configureChartDebug(opts = {}) {
       }
     } catch {
       //
-    }
-    const sp = new URLSearchParams(window.location.search);
-    const q = sp.get("debug");
-    if (q != null && q !== "0" && q !== "false") {
-      enabled = true;
-      tags = parseTags(q);
-      try {
-        localStorage.setItem(LS_KEY, q === "1" ? "1" : q);
-      } catch {
-        //
-      }
-      return true;
     }
   }
 
@@ -136,10 +164,11 @@ export function setChartDebugVerbose(on = true) {
   verbose = on;
 }
 
-/** Toggle `[BWC:data] update forming` logs (on by default when data debug is enabled). Persists in localStorage. */
+/** Toggle `[BWC:data] update forming` logs. Persists in localStorage (`bwc-debug-forming`). */
 export function setChartDebugFormingLogs(on = true) {
   formingLogs = Boolean(on);
   writeStoredFormingLogs(formingLogs);
+  console.info(`[BWC] forming logs ${formingLogs ? "on" : "off"} (saved)`);
 }
 
 export function chartDebugFormingEnabled() {
@@ -393,6 +422,7 @@ export function clearChartDebugStats() {
 }
 
 export function enableChartDebug(tagList = "1") {
+  writeDebugOff(false);
   try {
     localStorage.setItem(LS_KEY, tagList);
   } catch {
@@ -400,18 +430,19 @@ export function enableChartDebug(tagList = "1") {
   }
   configureChartDebug({ force: true, tags: tagList });
   ensureDebugHud();
-  chartDebug("boot", "debug enabled", { tags: [...tags], slowMs });
+  chartDebug("boot", "debug enabled", { tags: [...tags], slowMs, formingLogs });
 }
 
 export function disableChartDebug() {
   enabled = false;
   destroyDebugHud();
+  writeDebugOff(true);
   try {
     localStorage.removeItem(LS_KEY);
   } catch {
     //
   }
-  console.info("[BWC] debug disabled (reload to fully detach)");
+  console.info("[BWC] debug disabled (saved — reload to fully detach)");
 }
 
 export { destroyDebugHud, ensureDebugHud, mountDebugHud } from "./hud.js";

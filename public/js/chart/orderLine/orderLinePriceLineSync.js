@@ -4,6 +4,7 @@ import {
   resolveOrderLineFontFamily,
   resolveOrderLineFontSize,
   resolveOrderLineFontWeight,
+  DEFAULT_ORDER_LINE_PILL_OFFSET,
 } from "./rowLayout.js";
 
 /** @param {number} lineStyle */
@@ -32,7 +33,7 @@ export function stateToOrderLineOptions(state) {
     pills: {
       visible: true,
       side: state.pillSide === "left" ? "left" : "right",
-      offset: Math.max(0, Number(state.pillOffset) || 20),
+      offset: Math.max(4, Number(state.pillOffset) || DEFAULT_ORDER_LINE_PILL_OFFSET),
       moving: Boolean(state.isMoving),
       body: {
         text: state.text ?? "",
@@ -49,7 +50,7 @@ export function stateToOrderLineOptions(state) {
         text: qtyText,
         backgroundColor: state.quantityBackgroundColor || color,
         textColor: state.quantityTextColor || "#ffffff",
-        borderColor: state.quantityBorderColor || "#000000",
+        borderColor: state.quantityBorderColor || "transparent",
         tooltip: state.quantityTooltip ?? "",
         fontSize: resolveOrderLineFontSize(state.quantityFontSize),
         fontWeight: resolveOrderLineFontWeight(state.quantityFontWeight),
@@ -59,8 +60,8 @@ export function stateToOrderLineOptions(state) {
       cancel: {
         visible: true,
         backgroundColor: state.cancelButtonBackgroundColor ?? "rgba(255, 255, 255, 0.96)",
-        borderColor: state.cancelButtonBorderColor ?? "#000000",
-        iconColor: state.cancelButtonIconColor ?? "#000000",
+        borderColor: state.cancelButtonBorderColor ?? "rgba(0, 0, 0, 0.1)",
+        iconColor: state.cancelButtonIconColor ?? "rgba(0, 0, 0, 0.55)",
         tooltip: state.cancelTooltip ?? "",
       },
     },

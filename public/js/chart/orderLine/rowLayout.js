@@ -17,6 +17,8 @@ export const ORDER_LINE_FONT_SIZE = 12;
 export const ORDER_LINE_MIN_BODY_W = 36;
 export const ORDER_LINE_MIN_QTY_W = 24;
 export const ORDER_LINE_PILL_INSET = 4;
+export const DEFAULT_ORDER_LINE_PILL_OFFSET = 10;
+export const DEFAULT_BRACKET_PILL_OFFSET = 96;
 export const DEFAULT_ORDER_LINE_FONT_WEIGHT = 600;
 export const DEFAULT_ORDER_LINE_FONT_SIZE = 12;
 export const DEFAULT_ORDER_LINE_FONT_FAMILY = ORDER_LINE_FONT;
@@ -131,6 +133,43 @@ export function plotPaneWidth(chart, el) {
   const scaleW = chart?.priceScale?.("right")?.width?.() ?? 0;
   const rectW = el?.getBoundingClientRect?.().width ?? 0;
   return Math.max(0, rectW - scaleW);
+}
+
+/**
+ * Gap between order-line pills and the plot's right edge (price scale).
+ * @param {number} plotW plot width excluding price scale
+ * @param {number} [preferred]
+ * @param {number} [totalW] measured pill row width
+ */
+export function resolveOrderLinePillOffset(
+  plotW,
+  preferred = DEFAULT_ORDER_LINE_PILL_OFFSET,
+  totalW = 0,
+) {
+  const base = Math.max(4, Math.min(20, Number(preferred) || DEFAULT_ORDER_LINE_PILL_OFFSET));
+  if (!Number.isFinite(plotW) || plotW <= 0) return base;
+  if (totalW > 0 && totalW + base + 4 > plotW) {
+    return Math.max(4, plotW - totalW - 4);
+  }
+  return base;
+}
+
+/**
+ * SL/TP pills sit further left than the entry pill (larger offset from right edge).
+ * @param {number} plotW
+ * @param {number} [preferred]
+ * @param {number} [totalW]
+ */
+export function resolveBracketPillOffset(
+  plotW,
+  preferred = DEFAULT_BRACKET_PILL_OFFSET,
+  totalW = 0,
+) {
+  const base = Math.max(48, Number(preferred) || DEFAULT_BRACKET_PILL_OFFSET);
+  if (!Number.isFinite(plotW) || plotW <= 0) return base;
+  const entryReserve = DEFAULT_ORDER_LINE_PILL_OFFSET + 88;
+  const maxOffset = Math.max(48, plotW - (totalW > 0 ? totalW : 120) - entryReserve);
+  return Math.min(base, maxOffset);
 }
 
 /** @param {number} price */

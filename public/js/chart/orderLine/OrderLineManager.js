@@ -48,6 +48,8 @@ export class OrderLineManager {
     this._scrollLocked = false;
     /** @type {number} */
     this._refreshRaf = 0;
+    /** @type {ResizeObserver | null} */
+    this._resizeObs = null;
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
     this._onPointerUp = this._onPointerUp.bind(this);
@@ -75,9 +77,23 @@ export class OrderLineManager {
     this._teardown();
     this._paneRef = pane;
     this._ensureListeners(pane);
+    this._observePaneResize(pane);
+  }
+
+  /** @param {object} pane */
+  _observePaneResize(pane) {
+    this._resizeObs?.disconnect();
+    this._resizeObs = null;
+    if (typeof ResizeObserver === "undefined") return;
+    const mount = pane.el?.closest(".tv-chart-wrap__stage") ?? pane.el;
+    if (!(mount instanceof HTMLElement)) return;
+    this._resizeObs = new ResizeObserver(() => this.requestRefresh());
+    this._resizeObs.observe(mount);
   }
 
   _teardown() {
+    this._resizeObs?.disconnect();
+    this._resizeObs = null;
     this._unlockChartScroll();
     this._removeListeners();
     this._paneRef = null;
@@ -233,9 +249,6 @@ export class OrderLineManager {
     };
 
     if (px < row.left || px > row.left + row.width || py < row.top - ROW_HIT_PAD || py > row.top + row.height + ROW_HIT_PAD) {
-      if (Math.abs(py - centerY) <= ROW_HIT_PAD && px >= 0 && px <= plotW) {
-        return { kind: "line", adapter: this._adapters.get(state.id) };
-      }
       return null;
     }
 
@@ -276,12 +289,6 @@ export class OrderLineManager {
       };
       return;
     }
-
-    const pane = this._paneRef ?? this._getActivePane();
-    if (!pane) return;
-    ev.preventDefault();
-    ev.stopPropagation();
-    this._startDrag(hit.adapter, ev);
   }
 
   /** @param {object} adapter @param {PointerEvent} ev */
@@ -369,8 +376,7 @@ export class OrderLineManager {
       mount.style.cursor = "";
       return;
     }
-    if (hit.kind === "line") mount.style.cursor = "ns-resize";
-    else mount.style.cursor = "default";
+    mount.style.cursor = hit.kind === "pill" ? "ns-resize" : "default";
   }
 
   /** @param {MouseEvent} ev */

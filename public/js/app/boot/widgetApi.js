@@ -442,5 +442,37 @@ export function createChartWidgetApi(ctx) {
 
   widget.positionOverlay = createPositionOverlay(widget);
 
+  const scheduleOrderLineLayout = () => {
+    widget.orderLines?.requestRefresh?.();
+    widget.positionOverlay?.refreshLayout?.();
+  };
+  const layoutMount = ctx.el?.closest?.(".tv-chart-wrap__stage") ?? ctx.el;
+  /** @type {ResizeObserver | null} */
+  let layoutResizeObs = null;
+  if (layoutMount instanceof HTMLElement && typeof ResizeObserver !== "undefined") {
+    layoutResizeObs = new ResizeObserver(() => scheduleOrderLineLayout());
+    layoutResizeObs.observe(layoutMount);
+  }
+  const onViewportResize = () => scheduleOrderLineLayout();
+  if (typeof window !== "undefined") {
+    window.visualViewport?.addEventListener("resize", onViewportResize);
+  }
+
+  const baseDestroy = widget.destroy.bind(widget);
+  widget.destroy = () => {
+    layoutResizeObs?.disconnect();
+    layoutResizeObs = null;
+    if (typeof window !== "undefined") {
+      window.visualViewport?.removeEventListener("resize", onViewportResize);
+    }
+    baseDestroy();
+  };
+
+  const baseNotifyReady = widget._notifyChartReady?.bind(widget);
+  widget._notifyChartReady = () => {
+    baseNotifyReady?.();
+    requestAnimationFrame(scheduleOrderLineLayout);
+  };
+
   return widget;
 }
