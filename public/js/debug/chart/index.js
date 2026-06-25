@@ -186,7 +186,7 @@ export function chartDebugForming(message, detail) {
 }
 
 /**
- * @param {string} category perf | pan | zoom | viewport | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt | replay
+ * @param {string} category perf | pan | zoom | viewport | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt | replay | prepend
  * @param {string} message
  * @param {unknown} [detail]
  */

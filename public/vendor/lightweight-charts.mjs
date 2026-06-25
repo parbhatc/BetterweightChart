@@ -1,6 +1,6 @@
 /*!
  * @license
- * TradingView Lightweight Charts™ v5.2.0-dev+202606252058
+ * TradingView Lightweight Charts™ v5.2.0-dev+202606251734
  * Copyright (c) 2026 TradingView, Inc.
  * Licensed under Apache License 2.0 https://www.apache.org/licenses/LICENSE-2.0
  */
@@ -2007,15 +2007,6 @@ class SeriesHorizontalLinePaneView {
     _internal_update() {
         this._private__invalidated = true;
     }
-    _internal_updateCoordinate(y) {
-        if (this._private__invalidated || !this._internal__lineRendererData._internal_visible) {
-            return;
-        }
-        if (this._internal__lineRendererData._internal_y === y) {
-            return;
-        }
-        this._internal__lineRendererData._internal_y = y;
-    }
     _internal_renderer() {
         if (!this._internal__series._internal_visible()) {
             return null;
@@ -2553,58 +2544,10 @@ function roundRect(ctx, x, y, w, h, rtl, rtr, rbr, rbl) {
     ctx.closePath();
 }
 function fillBoldText(ctx, text, x, y) {
+    ctx.lineWidth = 0.35;
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.strokeText(text, x, y);
     ctx.fillText(text, x, y);
-}
-function drawRowContents(ctx, row, data, localTop) {
-    const pills = data._internal_pills;
-    const body = pills.body;
-    const quantity = pills.quantity;
-    const cancel = pills.cancel;
-    const x = 0;
-    const accent = data._internal_accentColor;
-    const bodyBg = body.backgroundColor || accent;
-    const qtyBg = quantity.backgroundColor || accent;
-    const cancelLeft = x + row._internal_totalW - CANCEL_W;
-    const shellBorder = hasShellBorder(body.borderColor);
-    const qtyDiv = dividerColor(quantity.borderColor) || dividerColor(body.borderColor);
-    roundRect(ctx, x, localTop, row._internal_totalW, ROW_H, 2, 2, 2, 2);
-    ctx.fillStyle = bodyBg;
-    ctx.fill();
-    if (shellBorder) {
-        ctx.strokeStyle = body.borderColor;
-        ctx.lineWidth = 1;
-        ctx.stroke();
-    }
-    if (row._internal_bodyW > 0) {
-        ctx.fillStyle = body.textColor || '#ffffff';
-        ctx.font = `${resolveFontWeight(body.fontWeight)} ${resolveFontSize(body.fontSize)}px ${resolveFontFamily(body.fontFamily)}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        fillBoldText(ctx, row._internal_bodyText, x + row._internal_bodyW / 2, localTop + ROW_H / 2);
-    }
-    if (row._internal_qtyW > 0) {
-        ctx.fillStyle = qtyBg;
-        const qtyLeft = x + row._internal_bodyW + (row._internal_bodyW ? GAP : 0);
-        ctx.fillRect(qtyLeft, localTop, row._internal_qtyW, ROW_H);
-        if (qtyDiv) {
-            ctx.fillStyle = qtyDiv;
-            ctx.fillRect(qtyLeft, localTop, 1, ROW_H);
-        }
-        ctx.fillStyle = quantity.textColor || '#ffffff';
-        ctx.font = `${resolveFontWeight(quantity.fontWeight)} ${resolveFontSize(quantity.fontSize)}px ${resolveFontFamily(quantity.fontFamily)}`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        fillBoldText(ctx, row._internal_qtyText, qtyLeft + row._internal_qtyW / 2, localTop + ROW_H / 2);
-    }
-    if (cancel.visible) {
-        ctx.fillStyle = cancel.backgroundColor;
-        ctx.fillRect(cancelLeft, localTop, CANCEL_W, ROW_H);
-        if (shellBorder) {
-            ctx.fillStyle = body.borderColor;
-            ctx.fillRect(cancelLeft, localTop, 1, ROW_H);
-        }
-        drawCancelIcon(ctx, cancelLeft + CANCEL_W / 2, localTop + ROW_H / 2, cancel.iconColor || '#000000');
-    }
 }
 function layoutRow(ctx, data) {
     const pills = data._internal_pills;
@@ -2655,15 +2598,11 @@ class OrderPillsRenderer {
         this._private__data = null;
         this._private__cachedLayout = null;
         this._private__layoutCacheKey = '';
-        this._private__bitmap = null;
-        this._private__bitmapKey = '';
     }
     _internal_setData(data) {
         this._private__data = data;
         this._private__cachedLayout = null;
         this._private__layoutCacheKey = '';
-        this._private__bitmap = null;
-        this._private__bitmapKey = '';
     }
     /** Update vertical position only (pan/zoom) without invalidating text layout. */
     _internal_updateY(y) {
@@ -2702,75 +2641,78 @@ class OrderPillsRenderer {
         this._private__cachedLayout = row;
         return row;
     }
-    _private__ensureBitmap(row, data, horizontalPixelRatio) {
-        const ratio = Math.max(1, horizontalPixelRatio || 1);
-        const mediaW = row._internal_totalW;
-        const mediaH = ROW_H;
-        const bmpW = Math.max(1, Math.ceil(mediaW * ratio));
-        const bmpH = Math.max(1, Math.ceil(mediaH * ratio));
-        const key = this._private__layoutCacheKeyFor(data) + '\0' + mediaW + '\0' + ratio;
-        if (this._private__bitmap !== null &&
-            key === this._private__bitmapKey &&
-            this._private__bitmap.width === bmpW &&
-            this._private__bitmap.height === bmpH) {
-            return this._private__bitmap;
-        }
-        let canvas = this._private__bitmap;
-        if (canvas === null || canvas.width !== bmpW || canvas.height !== bmpH) {
-            canvas = document.createElement('canvas');
-            this._private__bitmap = canvas;
-        }
-        canvas.width = bmpW;
-        canvas.height = bmpH;
-        const bctx = canvas.getContext('2d');
-        if (bctx !== null) {
-            bctx.setTransform(1, 0, 0, 1, 0, 0);
-            bctx.clearRect(0, 0, bmpW, bmpH);
-            bctx.scale(ratio, ratio);
-            if ('imageSmoothingEnabled' in bctx) {
-                bctx.imageSmoothingEnabled = true;
-            }
-            drawRowContents(bctx, row, data, 0);
-        }
-        this._private__bitmapKey = key;
-        return canvas;
-    }
     _internal_draw(target, isHovered, hitTestData) {
         if (this._private__data === null || !this._private__data._internal_visible) {
             return;
         }
-        target.useMediaCoordinateSpace((scope) => {
+        const layout = target.useMediaCoordinateSpace((scope) => {
             const ctx = scope.context;
-            const data = this._private__data;
-            const y = Math.round(data._internal_y);
-            const ratio = typeof globalThis !== 'undefined' && Number(globalThis.devicePixelRatio) > 0
-                ? globalThis.devicePixelRatio
-                : 1;
-            if (data._internal_lineVisible !== false && data._internal_paneWidth > 0) {
-                ctx.save();
-                ctx.strokeStyle = data._internal_accentColor;
-                ctx.lineWidth = data._internal_lineWidth ?? 1;
-                setLineStyle(ctx, data._internal_lineStyle ?? 0 /* LineStyle.Solid */);
-                ctx.beginPath();
-                ctx.moveTo(0, y);
-                ctx.lineTo(data._internal_paneWidth, y);
-                ctx.stroke();
-                ctx.restore();
-            }
-            const row = this._private__resolveLayout(ctx, data);
+            const row = this._private__resolveLayout(ctx, this._private__data);
             if (row === null) {
-                return;
+                return null;
             }
-            const top = Math.round(data._internal_y - ROW_H / 2);
+            const data = this._private__data;
+            const pills = data._internal_pills;
+            const body = pills.body;
+            const quantity = pills.quantity;
+            const cancel = pills.cancel;
+            const y = data._internal_y;
+            const top = Math.round(y - ROW_H / 2);
             const x = Math.round(row._internal_rowLeft);
-            const bitmap = this._private__ensureBitmap(row, data, ratio);
+            const accent = data._internal_accentColor;
+            const bodyBg = body.backgroundColor || accent;
+            const qtyBg = quantity.backgroundColor || accent;
+            const cancelLeft = x + row._internal_totalW - CANCEL_W;
+            const shellBorder = hasShellBorder(body.borderColor);
+            const qtyDiv = dividerColor(quantity.borderColor) || dividerColor(body.borderColor);
             ctx.save();
             if (data._internal_pills.moving) {
                 ctx.globalAlpha = 0.92;
             }
-            ctx.drawImage(bitmap, x, top, row._internal_totalW, ROW_H);
+            roundRect(ctx, x, top, row._internal_totalW, ROW_H, 2, 2, 2, 2);
+            ctx.fillStyle = bodyBg;
+            ctx.fill();
+            if (shellBorder) {
+                ctx.strokeStyle = body.borderColor;
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            if (row._internal_bodyW > 0) {
+                ctx.fillStyle = body.textColor || '#ffffff';
+                ctx.font = `${resolveFontWeight(body.fontWeight)} ${resolveFontSize(body.fontSize)}px ${resolveFontFamily(body.fontFamily)}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                fillBoldText(ctx, row._internal_bodyText, x + row._internal_bodyW / 2, top + ROW_H / 2);
+            }
+            if (row._internal_qtyW > 0) {
+                ctx.fillStyle = qtyBg;
+                const qtyLeft = x + row._internal_bodyW + (row._internal_bodyW ? GAP : 0);
+                ctx.fillRect(qtyLeft, top, row._internal_qtyW, ROW_H);
+                if (qtyDiv) {
+                    ctx.fillStyle = qtyDiv;
+                    ctx.fillRect(qtyLeft, top, 1, ROW_H);
+                }
+                ctx.fillStyle = quantity.textColor || '#ffffff';
+                ctx.font = `${resolveFontWeight(quantity.fontWeight)} ${resolveFontSize(quantity.fontSize)}px ${resolveFontFamily(quantity.fontFamily)}`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                fillBoldText(ctx, row._internal_qtyText, qtyLeft + row._internal_qtyW / 2, top + ROW_H / 2);
+            }
+            if (cancel.visible) {
+                ctx.fillStyle = cancel.backgroundColor;
+                ctx.fillRect(cancelLeft, top, CANCEL_W, ROW_H);
+                if (shellBorder) {
+                    ctx.fillStyle = body.borderColor;
+                    ctx.fillRect(cancelLeft, top, 1, ROW_H);
+                }
+                drawCancelIcon(ctx, cancelLeft + CANCEL_W / 2, top + ROW_H / 2, cancel.iconColor || '#000000');
+            }
             ctx.restore();
+            return row;
         });
+        if (layout === null) {
+            return;
+        }
     }
 }
 
@@ -2792,16 +2734,6 @@ class CustomPriceLineOrderPillsPaneView {
     }
     _internal_update() {
         this._private__invalidated = true;
-    }
-    _internal_updateCoordinate(y) {
-        if (this._private__invalidated || !this._private__rendererData._internal_visible) {
-            return;
-        }
-        if (this._private__rendererData._internal_y === y) {
-            return;
-        }
-        this._private__rendererData._internal_y = y;
-        this._private__renderer._internal_updateY(y);
     }
     _internal_renderer() {
         if (!this._private__series._internal_visible()) {
@@ -2843,9 +2775,6 @@ class CustomPriceLineOrderPillsPaneView {
         data._internal_accentColor = options.color;
         data._internal_paneWidth = paneWidth;
         data._internal_isMoving = Boolean(pills?.moving);
-        data._internal_lineVisible = options.lineVisible;
-        data._internal_lineWidth = options.lineWidth;
-        data._internal_lineStyle = options.lineStyle;
         if (layoutKey !== this._private__layoutKey) {
             this._private__layoutKey = layoutKey;
             data._internal_pills = pills;
@@ -2944,7 +2873,6 @@ function syncOrderLineOptionKeys(target) {
 }
 class CustomPriceLine {
     constructor(series, options) {
-        this._private__lastYCoord = null;
         this._private__series = series;
         this._private__options = options;
         syncOrderLineOptionKeys(this._private__options);
@@ -2956,29 +2884,6 @@ class CustomPriceLine {
     _internal_applyOptions(options) {
         merge(this._private__options, options);
         syncOrderLineOptionKeys(this._private__options);
-        if (this._internal_isOrderLine() && this._private__isOrderLineAppearancePatch(options)) {
-            const keys = Object.keys(options);
-            const pillsOnly = keys.every((key) => key === 'pills');
-            const needsLine = options.color !== undefined;
-            const needsAxis = this._private__options.axisLabelVisible &&
-                (options.axisLabelText !== undefined ||
-                    options.axisLabelColor !== undefined ||
-                    options.color !== undefined);
-            if (options._internal_pills !== undefined) {
-                this._private__orderPillsPaneView._internal_update();
-            }
-            if (needsLine) {
-                this._private__priceLineView._internal_update();
-            }
-            if (needsAxis) {
-                this._private__priceAxisView._internal_update();
-            }
-            if (!pillsOnly || needsLine || needsAxis) {
-                this._private__lastYCoord = this._internal_yCoord();
-            }
-            this._private__series._internal_model()._internal_lightUpdate();
-            return;
-        }
         this._internal_update();
         this._private__series._internal_model()._internal_lightUpdate();
     }
@@ -3001,27 +2906,9 @@ class CustomPriceLine {
         return this._private__priceAxisView;
     }
     _internal_update() {
-        this._private__lastYCoord = this._internal_yCoord();
         this._private__priceLineView._internal_update();
         this._private__orderPillsPaneView._internal_update();
         this._private__priceAxisView._internal_update();
-    }
-    /** During time-scale scroll: skip work when price→Y mapping is unchanged. */
-    _internal_updateScrollPosition() {
-        const y = this._internal_yCoord();
-        if (y === this._private__lastYCoord) {
-            return;
-        }
-        this._private__lastYCoord = y;
-        if (y === null) {
-            this._internal_update();
-            return;
-        }
-        this._private__priceLineView._internal_updateCoordinate(y);
-        this._private__orderPillsPaneView._internal_updateCoordinate(y);
-        if (!this._internal_isOrderLine() || this._private__options.axisLabelVisible) {
-            this._private__priceAxisView._internal_update();
-        }
     }
     _internal_yCoord() {
         const series = this._private__series;
@@ -3035,20 +2922,6 @@ class CustomPriceLine {
             return null;
         }
         return priceScale._internal_priceToCoordinate(this._private__options.price, firstValue._internal_value);
-    }
-    _private__isOrderLineAppearancePatch(options) {
-        const keys = Object.keys(options);
-        if (keys.length === 0) {
-            return false;
-        }
-        const allowed = new Set([
-            'pills',
-            'color',
-            'axisLabelColor',
-            'axisLabelText',
-            'axisLabelTextColor',
-        ]);
-        return keys.every((key) => allowed.has(key));
     }
 }
 
@@ -3390,6 +3263,16 @@ class DataConflater {
     }
 }
 
+class PriceDataSource extends DataSource {
+    constructor(model) {
+        super();
+        this._private__model = model;
+    }
+    _internal_model() {
+        return this._private__model;
+    }
+}
+
 function isWhitespaceData(data) {
     return data.open === undefined && data.value === undefined;
 }
@@ -3511,16 +3394,6 @@ function getSeriesPlotRowCreator(seriesType) {
         Custom: wrapWhitespaceData(getCustomSeriesPlotRow),
     };
     return seriesPlotRowFnMap[seriesType];
-}
-
-class PriceDataSource extends DataSource {
-    constructor(model) {
-        super();
-        this._private__model = model;
-    }
-    _internal_model() {
-        return this._private__model;
-    }
 }
 
 const barStyleFnMap = {
@@ -4455,7 +4328,7 @@ class Series extends PriceDataSource {
         const res = [];
         extractPrimitivePaneViews(this._private__primitives, primitivePaneViewsExtractor, 'top', res);
         const orderLines = this._private__customPriceLines.filter((line) => line._internal_isOrderLine());
-        res.push(...orderLines.map((line) => line._internal_orderPillsPaneView()));
+        res.push(...orderLines.flatMap((line) => [line._internal_paneView(), line._internal_orderPillsPaneView()]));
         const animationPaneView = this._private__lastPriceAnimationPaneView;
         if (animationPaneView === null || !animationPaneView._internal_visible()) {
             return res;
@@ -4498,7 +4371,7 @@ class Series extends PriceDataSource {
         const topPaneViews = [];
         topPaneViews.push(...main._internal_topPaneViews, this._private__priceLineView);
         const orderLines = this._private__customPriceLines.filter((line) => line._internal_isOrderLine());
-        topPaneViews.push(...orderLines.map((line) => line._internal_orderPillsPaneView()));
+        topPaneViews.push(...orderLines.flatMap((line) => [line._internal_paneView(), line._internal_orderPillsPaneView()]));
         return {
             _internal_normalPaneViews: normalPaneViews,
             _internal_topPaneViews: topPaneViews,
@@ -4519,12 +4392,9 @@ class Series extends PriceDataSource {
             .filter((result) => result !== null);
     }
     _internal_labelPaneViews() {
-        const orderLabelViews = this._private__customPriceLines
-            .filter((line) => !line._internal_isOrderLine() || line._internal_options().axisLabelVisible)
-            .map((line) => line._internal_labelPaneView());
         return [
             this._private__panePriceAxisView,
-            ...orderLabelViews,
+            ...this._private__customPriceLines.map((line) => line._internal_labelPaneView()),
         ];
     }
     _internal_priceAxisViews(pane, priceScale) {
@@ -4533,9 +4403,6 @@ class Series extends PriceDataSource {
         }
         const result = [...this._private__priceAxisViews];
         for (const customPriceLine of this._private__customPriceLines) {
-            if (customPriceLine._internal_isOrderLine() && !customPriceLine._internal_options().axisLabelVisible) {
-                continue;
-            }
             result.push(customPriceLine._internal_priceAxisView());
         }
         this._private__primitives.forEach((wrapper) => {
@@ -4573,12 +4440,7 @@ class Series extends PriceDataSource {
             priceAxisView._internal_update();
         }
         for (const customPriceLine of this._private__customPriceLines) {
-            if (customPriceLine._internal_isOrderLine()) {
-                customPriceLine._internal_updateScrollPosition();
-            }
-            else {
-                customPriceLine._internal_update();
-            }
+            customPriceLine._internal_update();
         }
         this._private__priceLineView._internal_update();
         this._private__baseHorizontalLineView._internal_update();
@@ -18077,7 +17939,7 @@ const customSeriesDefaultOptions = {
  * Returns the current version as a string. For example `'3.3.0'`.
  */
 function version() {
-    return "5.2.0-dev+202606252058";
+    return "5.2.0-dev+202606251734";
 }
 
 export { areaSeries as AreaSeries, barSeries as BarSeries, baselineSeries as BaselineSeries, candlestickSeries as CandlestickSeries, ColorType, CrosshairMode, histogramSeries as HistogramSeries, LastPriceAnimationMode, lineSeries as LineSeries, LineStyle, LineType, MismatchDirection, PriceLineSource, PriceScaleMode, TickMarkType, TrackingModeExitMode, createChart, createChartEx, createFastTimezoneProvider, createImageWatermark, createOptionsChart, createSeriesMarkers, createTextWatermark, createUpDownMarkers, createYieldCurveChart, customSeriesDefaultOptions, defaultHorzScaleBehavior, isBusinessDay, isUTCTimestamp, version };

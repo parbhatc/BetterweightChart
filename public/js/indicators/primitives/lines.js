@@ -1,8 +1,8 @@
-import { chartTimeToCoordinate, safePriceToY, safeTimeToX } from "../../chart/coords/timeScale.js";
+import { safePriceToY } from "../../chart/coords/timeScale.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import { drawLabelCallout } from "./labelCallout.js";
 import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
-import { resolveOverlayMapBars } from "./overlayMapBars.js";
+import { createOverlayTimeToX } from "./overlayMapBars.js";
 
 /** @param {number} x1 @param {number} x2 @param {number} paneW */
 function lineIntersectsViewport(x1, x2, paneW) {
@@ -253,36 +253,14 @@ class LinesPrimitive {
     if (!chart || !series) {
       return { lines: [], timeToX: () => null, priceToY: () => null, paneW: 0 };
     }
-    const ts = chart.timeScale();
     const ctx = this._timeCtx;
-    const seriesData = series.data?.() ?? [];
-    const ctxMapBars = ctx?.mapBars ?? [];
-    const { mapBars, useAdapter } = resolveOverlayMapBars(seriesData, ctxMapBars);
-    const timeAdapter = useAdapter ? (ctx?.timeAdapter ?? null) : null;
-    const barSec = ctx?.barSec ?? 60;
-    const lastReal = ctx?.lastRealChartTime ?? mapBars.at(-1)?.time;
     const paneW = chart.paneSize?.()?.width ?? 0;
+    const timeToX = createOverlayTimeToX(chart, series, ctx);
 
     return {
       lines: this._lines,
       paneW,
-      timeToX: (t) => {
-        if (t == null || !Number.isFinite(Number(t))) return null;
-        const time = Number(t);
-        if (timeAdapter) {
-          const x = timeAdapter.coord.xFromChart(chart, time);
-          if (x != null && Number.isFinite(x)) return x;
-        }
-        if (mapBars.length) {
-          const x = chartTimeToCoordinate(ts, mapBars, barSec, time, lastReal);
-          if (x != null && Number.isFinite(x)) return x;
-        }
-        if (typeof ts.timeToCoordinate === "function") {
-          const x = ts.timeToCoordinate(time);
-          if (x != null && Number.isFinite(x) && x !== 0) return x;
-        }
-        return safeTimeToX(ts, time);
-      },
+      timeToX,
       priceToY: (p) => safePriceToY(series, p),
     };
   }

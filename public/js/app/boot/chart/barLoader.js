@@ -109,7 +109,12 @@ export function attachBarLoader(ctx) {
     },
     onPaneHistoryDataUpdated: (pane) => {
       if (pane._historyRestorePending || pane._loadingHistory) return;
-      ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
+      ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
+      if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
+        ctx.refreshIndicatorsImmediate?.(pane.index);
+      } else {
+        ctx.refreshOverlaysImmediate?.(pane.index);
+      }
     },
     syncPaneEmptyState: (pane, state) =>
       syncPaneEmptyState(pane, {

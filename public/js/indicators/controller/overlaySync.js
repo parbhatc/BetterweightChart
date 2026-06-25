@@ -7,6 +7,7 @@ import {
   overlayRecomputeKey,
 } from "../overlayCache.js";
 import { logIndicatorLoad } from "./indicatorLoadLog.js";
+import { logOverlayIndexAudit } from "../../debug/chart/historyPrependDebug.js";
 import {
   instanceUsesCompareSymbols,
   instanceUsesHtfKeys,
@@ -47,8 +48,17 @@ export function createOverlaySync(deps) {
     return deps.getAllChartPanes().find((p) => p.index === paneIndex);
   }
 
-  /** @param {import("../types.js").IndicatorInstance & { _overlayPrimitive?: { setLabels: (l: object[]) => void; setBoxes: (b: object[], c?: object, o?: object) => void; destroy: () => void } }} instance @param {object} timeCtx @param {{ geometryUnchanged?: boolean, skipRedraw?: boolean }} [opts] */
+  /** @param {import("../types.js").IndicatorInstance & { _overlayPrimitive?: { setLabels: (l: object[]) => void; setBoxes: (b: object[], c?: object, o?: object) => void; destroy: () => void } }} instance @param {object} timeCtx @param {{ geometryUnchanged?: boolean, skipRedraw?: boolean, cacheHit?: boolean, indicatorId?: string }} [opts] */
   function applyOverlayBoxes(instance, overlayData, timeCtx, opts = {}) {
+    if (overlayData?.length) {
+      logOverlayIndexAudit(
+        paneByIndex(instance.paneIndex) ?? { index: instance.paneIndex },
+        opts.indicatorId ?? instance.defId ?? "overlay",
+        overlayData,
+        timeCtx,
+        { geometryUnchanged: opts.geometryUnchanged, cacheHit: opts.cacheHit },
+      );
+    }
     if (typeof instance._overlayPrimitive?.setBoxes === "function") {
       instance._overlayPrimitive.setBoxes(overlayData, timeCtx, opts);
     } else {
@@ -64,9 +74,13 @@ export function createOverlaySync(deps) {
     instance._overlayLastSyncToken = undefined;
     applyOverlayBoxes(instance, pending.overlayData, pending.timeCtx, {
       geometryUnchanged: pending.geometryUnchanged,
+      indicatorId: Indicator.id ?? instance.defId,
     });
     if (!pending.geometryUnchanged) {
       instance._overlayAppliedGeomKey = overlayGeometryKey(pending.overlayData);
+      instance._overlayAppliedTimeCtxKey = overlayTimeCtxKey(pending.timeCtx);
+    } else {
+      instance._overlayAppliedTimeCtxKey = overlayTimeCtxKey(pending.timeCtx);
     }
   }
 
@@ -98,6 +112,12 @@ export function createOverlaySync(deps) {
     }
 
     const { utcBars, chartBars } = getPaneBars(pane);
+    const chartHeadKey = `${chartBars[0]?.time ?? ""}|${chartBars.length}`;
+    if (instance._overlayChartHeadKey && instance._overlayChartHeadKey !== chartHeadKey) {
+      clearOverlayInstanceCache(instance);
+    }
+    instance._overlayChartHeadKey = chartHeadKey;
+
     if (!utcBars.length || utcBars.length !== chartBars.length) {
       instance._overlayPrimitive?.setLabels([]);
       if (typeof instance._overlayPrimitive?.setBoxes === "function") {
@@ -190,15 +210,18 @@ export function createOverlaySync(deps) {
       lastRealChartTime: chartBars.at(-1)?.time,
       timeAdapter: view?.timeAdapter ?? pane.timeAdapter ?? null,
     };
+    const timeCtxKey = overlayTimeCtxKey(timeCtx);
 
-    const syncToken = `${recomputeKey}|${geomKey}|${overlayTimeCtxKey(timeCtx)}|${pane._historyRestorePending ? 1 : 0}|${instance._initPending ? 1 : 0}`;
+    const syncToken = `${recomputeKey}|${geomKey}|${timeCtxKey}|${pane._historyRestorePending ? 1 : 0}|${instance._initPending ? 1 : 0}`;
     if (instance._overlayLastSyncToken === syncToken) {
       return;
     }
     instance._overlayLastSyncToken = syncToken;
 
     const geometryUnchanged =
-      instance._overlayAppliedGeomKey === geomKey && instance._overlayAppliedGeomKey != null;
+      instance._overlayAppliedGeomKey === geomKey &&
+      instance._overlayAppliedGeomKey != null &&
+      instance._overlayAppliedTimeCtxKey === timeCtxKey;
 
     if (geometryUnchanged) {
       instance.lastPlots = { overlay: instance._overlayBoxCache ?? overlayData };
@@ -212,6 +235,8 @@ export function createOverlaySync(deps) {
       }
       applyOverlayBoxes(instance, instance._overlayBoxCache ?? overlayData, timeCtx, {
         geometryUnchanged: true,
+        cacheHit: Boolean(cacheHit && !refreshLiveOnCacheHit),
+        indicatorId: indicatorName,
       });
       return;
     }
@@ -225,8 +250,12 @@ export function createOverlaySync(deps) {
       return;
     }
 
-    applyOverlayBoxes(instance, overlayData, timeCtx);
+    applyOverlayBoxes(instance, overlayData, timeCtx, {
+      cacheHit: Boolean(cacheHit && !refreshLiveOnCacheHit),
+      indicatorId: indicatorName,
+    });
     instance._overlayAppliedGeomKey = geomKey;
+    instance._overlayAppliedTimeCtxKey = timeCtxKey;
     instance.lastPlots = { overlay: overlayData };
   }
 
@@ -254,9 +283,7 @@ export function createOverlaySync(deps) {
           instanceUsesCompareSymbols(instance, paneCtx, getIndicatorClass, filter.compareSymbols);
         if (!usesHtf && !usesCompare) continue;
       }
-      clearOverlayInstanceCache(instance, {
-        soft: Boolean(filter?.htfKeys?.size && instance.defId === "fvg" && instance._fvgRuntime?.snapshot),
-      });
+      clearOverlayInstanceCache(instance);
       if (instance.lastPlots) instance.lastPlots.overlay = [];
     }
   }
@@ -283,7 +310,10 @@ export function createOverlaySync(deps) {
       if (instance.hidden) continue;
       const overlayData = instance._overlayBoxCache ?? instance.lastPlots?.overlay ?? [];
       if (!overlayData.length) continue;
-      applyOverlayBoxes(instance, overlayData, timeCtx, { geometryUnchanged: true });
+      applyOverlayBoxes(instance, overlayData, timeCtx, {
+        geometryUnchanged: true,
+        indicatorId: deps.getIndicatorClass(instance.defId)?.id ?? instance.defId,
+      });
       delete instance._pendingOverlayApply;
     }
   }

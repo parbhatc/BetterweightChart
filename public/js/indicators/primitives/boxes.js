@@ -1,7 +1,7 @@
-import { chartTimeToCoordinate, safePriceToY, safeTimeToX } from "../../chart/coords/timeScale.js";
+import { safePriceToY } from "../../chart/coords/timeScale.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
-import { resolveOverlayMapBars } from "./overlayMapBars.js";
+import { createOverlayTimeToX } from "./overlayMapBars.js";
 
 const LABEL_FONT =
   `11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`;
@@ -244,28 +244,12 @@ class BoxesPrimitive {
     if (!chart || !series) {
       return { boxes: [], timeToX: () => null, priceToY: () => null };
     }
-    const ts = chart.timeScale();
     const ctx = this._timeCtx;
-    const seriesData = series.data?.() ?? [];
-    const ctxMapBars = ctx?.mapBars ?? [];
-    const { mapBars, useAdapter } = resolveOverlayMapBars(seriesData, ctxMapBars);
-    const timeAdapter = useAdapter ? (ctx?.timeAdapter ?? null) : null;
-    const barSec = ctx?.barSec ?? 60;
-    const lastReal = ctx?.lastRealChartTime ?? mapBars.at(-1)?.time;
+    const timeToX = createOverlayTimeToX(chart, series, ctx);
 
     return {
       boxes: this._boxes,
-      timeToX: (t) => {
-        if (timeAdapter) {
-          const x = timeAdapter.coord.xFromChart(chart, t);
-          if (x != null && Number.isFinite(x)) return x;
-        }
-        if (mapBars.length) {
-          const x = chartTimeToCoordinate(ts, mapBars, barSec, t, lastReal);
-          if (x != null && Number.isFinite(x)) return x;
-        }
-        return safeTimeToX(ts, t);
-      },
+      timeToX,
       priceToY: (p) => safePriceToY(series, p),
     };
   }

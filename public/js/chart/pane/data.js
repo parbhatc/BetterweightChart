@@ -15,6 +15,7 @@ import {
   prependBarsInView,
   utcBarsForPane,
 } from "./viewCache.js";
+import { logBarStackSnapshot } from "../../debug/chart/historyPrependDebug.js";
 
 export { invalidatePaneChartView, utcBarsForPane } from "./viewCache.js";
 
@@ -76,11 +77,15 @@ export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutio
 }
 
 /**
- * Prepend older UTC bars via series.prepend (incremental — no full setData).
+ * Prepend older UTC bars via cached view + series.setData.
+ * Avoids series.prepend(), which leaves LWC series rows ahead of mapBars/view
+ * and shifts overlay indicators until a full resync.
  * @returns {boolean}
  */
 export function prependHistoryToPaneSeries(pane, olderUtcBars, settingsStore, symbolInfo, resolutions, opts = {}) {
   return chartDebugTime("data", `prepend pane ${pane.index}`, () => {
+    logBarStackSnapshot(pane, "before-prepend", { offered: olderUtcBars.length });
+
     const batch = prependBarsInView(pane, olderUtcBars, settingsStore, symbolInfo, resolutions);
     if (!batch) {
       chartDebug("data", "prepend skipped (no new bars vs series head)", {
@@ -91,23 +96,31 @@ export function prependHistoryToPaneSeries(pane, olderUtcBars, settingsStore, sy
       return false;
     }
 
-    if (typeof pane.series.prepend !== "function") {
-      chartDebug("data", "prepend skipped (series.prepend missing — run npm run vendor)", {
-        pane: pane.index,
-      });
+    const view = pane._chartView;
+    if (!view?.seriesData?.length) {
+      chartDebug("data", "prepend skipped (empty chart view)", { pane: pane.index });
       return false;
     }
 
+    // LWC may synchronously fire visible-range handlers during setData. Sync pane.bars
+    // to the prepended view first so getPaneChartView does not rebuild stale data.
+    pane.bars = view.utcBars.slice();
+    pane.shiftedBars = view.chartBars;
+    pane._shiftedKey = view.utcKey;
+    pane.mapBars = view.mapBars;
+    pane.timeAdapter = view.timeAdapter;
+    delete pane.utcTimeToIdx;
+    delete pane.chartTimeToIdx;
+    delete pane.timeToIdx;
+
     try {
-      pane.series.prepend(batch.candles);
-      delete pane.utcTimeToIdx;
-      delete pane.chartTimeToIdx;
-      delete pane.timeToIdx;
+      pane.series.setData(view.seriesData);
       chartDebugCount("data", "prepend");
-      chartDebug("data", "prepend history", {
+      logBarStackSnapshot(pane, "after-prepend", { added: batch.added });
+      chartDebug("data", "prepend history (setData)", {
         pane: pane.index,
         added: batch.added,
-        utcBars: pane._chartView?.utcBars?.length ?? 0,
+        utcBars: view.utcBars.length,
         seriesPoints: pane.series.data?.().length ?? null,
       });
       pane.sessionBg?.requestRefresh();

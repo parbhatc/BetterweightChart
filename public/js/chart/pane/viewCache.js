@@ -4,6 +4,7 @@ import { chartTimeZoneForPane } from "../timezone/chartTime.js";
 import { resolveTimezone } from "../timezone/list.js";
 import { createTimeAdapter } from "../time/timeAdapter.js";
 import { BAR_SEC } from "../constants.js";
+import { logChartViewResolve } from "../../debug/chart/historyPrependDebug.js";
 
 /** @param {object} pane @param {{ id: string, sec?: number }[]} resolutions */
 function barSecForPane(pane, resolutions) {
@@ -78,6 +79,11 @@ export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolution
   pane.mapBars = mapBars;
   pane.shiftedBars = chartBars;
   pane._shiftedKey = key;
+  logChartViewResolve(pane, "rebuild", {
+    paneBars: pane.bars?.length ?? 0,
+    viewBars: utcBars.length,
+    utcKey: key,
+  });
   return view;
 }
 
@@ -95,9 +101,24 @@ export function getPaneChartView(pane, settingsStore, symbolInfo, resolutions) {
   const utcBars = utcBarsForPane(pane, settingsStore, symbolInfo);
   const key = utcBarsKey(utcBars, session);
   const view = pane._chartView;
-  if (view && view.timezone === tz && view.utcKey === key) {
+  const viewAheadOfPane =
+    Boolean(pane._historyRestorePending && view?.utcBars?.length && view.utcBars.length > utcBars.length);
+  if (view && view.timezone === tz && (view.utcKey === key || viewAheadOfPane)) {
+    logChartViewResolve(pane, viewAheadOfPane ? "keep-ahead" : "hit", {
+      paneBars: utcBars.length,
+      viewBars: view.utcBars.length,
+      utcKey: key,
+      viewKey: view.utcKey,
+    });
     return view;
   }
+  logChartViewResolve(pane, "rebuild", {
+    paneBars: utcBars.length,
+    viewBars: view?.utcBars?.length ?? 0,
+    utcKey: key,
+    viewKey: view?.utcKey ?? null,
+    reason: "key-mismatch",
+  });
   return rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions);
 }
 

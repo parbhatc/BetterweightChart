@@ -8,6 +8,7 @@ import {
   chartDebugTime,
   chartDebugTimeAsync,
 } from "../../debug/chart/index.js";
+import { logBarStackSnapshot } from "../../debug/chart/historyPrependDebug.js";
 import {
   isFormingUpdatesPaused,
   isLiveBarsPaused,
@@ -210,7 +211,7 @@ export function createBarLoader(opts) {
       setTimeout(() => {
         historyNotifyTimerByPane.delete(pane.index);
         onHistoryPrepended?.(pane);
-      }, 48),
+      }, 0),
     );
   }
 
@@ -378,6 +379,7 @@ export function createBarLoader(opts) {
     const finishPrepend = () => {
       pane._historyRestorePending = false;
       pane.sessionBg?.requestRefresh();
+      logBarStackSnapshot(pane, "prepend-finish", { added });
       onPaneHistoryDataUpdated?.(pane);
       notifyHistoryPrependedDebounced(pane);
     };

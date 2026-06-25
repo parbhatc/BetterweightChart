@@ -46,6 +46,7 @@ export function clearOverlayInstanceCache(instance, opts = {}) {
   instance._overlayBoxCache = undefined;
   instance._overlayLastSyncToken = undefined;
   instance._overlayAppliedGeomKey = undefined;
+  instance._overlayAppliedTimeCtxKey = undefined;
   instance._pendingOverlayApply = undefined;
   if (!opts.soft) {
     delete instance._fvgRuntime;

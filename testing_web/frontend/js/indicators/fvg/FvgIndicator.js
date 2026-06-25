@@ -52,6 +52,13 @@ function isAppendOneBar(chartBars, rt) {
   return chartBars[len - 2]?.time === rt.barTail;
 }
 
+/** Chart head changed but tail unchanged — history was prepended (incremental paths are invalid). */
+function isPrependHistory(chartBars, rt) {
+  if (!rt?.barHead || !chartBars.length) return false;
+  if (chartBars[0].time === rt.barHead) return false;
+  return chartBars.at(-1)?.time === rt.barTail && chartBars.length > (rt.barLen ?? 0);
+}
+
 /** @param {object[]} chartBars */
 function barMeta(chartBars) {
   return {
@@ -163,7 +170,12 @@ class FvgIndicator extends BarScriptIndicator {
     const liveKey = formingLiveKey(instance, ctx);
     const meta = barMeta(chartBars);
 
-    const rt = instance._fvgRuntime;
+    let rt = instance._fvgRuntime;
+    if (isPrependHistory(chartBars, rt)) {
+      delete instance._fvgRuntime;
+      rt = null;
+    }
+
     if (rt?.fullKey === fullKey && rt.liveKey === liveKey && Array.isArray(rt.boxes)) {
       return rt.boxes;
     }
@@ -228,7 +240,7 @@ class FvgIndicator extends BarScriptIndicator {
     }
 
     const boxes = super.computeOverlay(utcBars, chartBars, instance, ctx);
-    const snapshot = instance._fvgSnapshot ?? rt?.snapshot ?? null;
+    const snapshot = instance._fvgSnapshot ?? null;
     delete instance._fvgSnapshot;
     instance._fvgRuntime = { fullKey, chartKey, htfKey, liveKey, snapshot, boxes, ...meta };
     return boxes;

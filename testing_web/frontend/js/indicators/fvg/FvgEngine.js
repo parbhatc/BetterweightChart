@@ -632,6 +632,9 @@ export class FvgEngine {
 
     const utcBars = this.script.bars;
     const chartBars = this.script.chartBars;
+    if (snapshot.barLen != null && snapshot.barLen !== utcBars.length) {
+      return null;
+    }
     this.restoreSnapshotState(snapshot, utcBars, chartBars);
     const maxBack = snapshot.cfg.maxBack ?? 300;
     const lastChartTime = chartBars.at(-1)?.time;
