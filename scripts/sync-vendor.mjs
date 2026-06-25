@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const VENDOR = path.join(ROOT, "public", "vendor");
-const LOCAL_LWC_DIST = path.join(ROOT, "..", "lightweightchart", "dist");
 
 /** Set BWC_LWC_DEV=1 or pass --dev to copy the faster unminified standalone build. */
 const useDevBundle =
@@ -25,8 +24,6 @@ const VENDOR_FILES = [
 ];
 
 function resolveVendorSource(fileName) {
-  const local = path.join(LOCAL_LWC_DIST, fileName);
-  if (fs.existsSync(local)) return local;
   const fromModules = path.join(ROOT, "node_modules", "lightweight-charts", "dist", fileName);
   if (fs.existsSync(fromModules)) return fromModules;
   return null;
@@ -38,7 +35,15 @@ for (const { src, dest } of VENDOR_FILES) {
   const from = resolveVendorSource(src);
   const to = path.join(VENDOR, dest);
   if (!from) {
-    console.error(`Missing dependency: ${src} — build ../lightweightchart or run npm install`);
+    if (fs.existsSync(to)) {
+      console.warn(
+        `vendor: ${src} not found in node_modules/lightweight-charts/dist — keeping existing ${dest}`,
+      );
+      continue;
+    }
+    console.error(
+      `Missing dependency: ${src} — run npm install --ignore-scripts, build https://github.com/parbhatc/lightweight-charts, then npm run vendor`,
+    );
     process.exit(1);
   }
   if (fs.existsSync(to)) {

@@ -1,11 +1,12 @@
 # BetterweightChart
 
-Standalone chart widget on [lightweight-charts](https://github.com/tradingview/lightweight-charts) v5 with 68 drawing tools. Uses **fake OHLC data** — no live feed. Use on any site via **ES modules** (like lightweight-charts) or iframe embed.
+Standalone chart widget on a **[lightweight-charts](https://github.com/tradingview/lightweight-charts) v5 fork** ([parbhatc/lightweight-charts](https://github.com/parbhatc/lightweight-charts)) with 68 drawing tools. Uses **fake OHLC data** — no live feed. Use on any site via **ES modules** (like lightweight-charts) or iframe embed.
 
 ## Quick start
 
 ```bash
-npm install
+npm install --ignore-scripts
+npm run vendor   # optional — vendored bundle is already in public/vendor/
 npm start
 ```
 
@@ -411,10 +412,43 @@ Set the display timezone under **Settings → Symbol → Timezone**.
 
 ## Development
 
+### lightweight-charts fork
+
+Runtime loads a standalone bundle from `public/vendor/lightweight-charts.mjs`. The npm dependency pins the fork at **[github.com/parbhatc/lightweight-charts](https://github.com/parbhatc/lightweight-charts)** (prepend history, order lines, timezone, pan perf).
+
+Use `--ignore-scripts` on install so the fork’s git-hooks postinstall does not run inside `node_modules`:
+
 ```bash
-npm run dev          # nodemon server
-npm run sync-vendor  # copy lightweight-charts to public/vendor/
+npm install --ignore-scripts
+npm run vendor:dev   # copy dev bundle from node_modules (after building the fork — see below)
+npm run dev          # dev server
 ```
+
+Refresh the vendor bundle after updating the fork:
+
+```bash
+cd node_modules/lightweight-charts
+npm install
+npm run build
+cd ../..
+npm run vendor:dev
+```
+
+Or build from a separate clone of the fork:
+
+```bash
+git clone https://github.com/parbhatc/lightweight-charts.git
+cd lightweight-charts && npm install && npm run build && cd ..
+# point node_modules at the clone, or copy dist/*.mjs into node_modules/lightweight-charts/dist/
+npm run vendor:dev
+```
+
+| Script | Description |
+|--------|-------------|
+| `npm run vendor` | Production standalone bundle → `public/vendor/` |
+| `npm run vendor:dev` | Unminified dev bundle |
+| `npm run dev` | Dev server |
+| `npm run dev:live` | Fork rollup watch + dev server (requires built fork in `node_modules/lightweight-charts`) |
 
 ### Debug console (lag / perf)
 

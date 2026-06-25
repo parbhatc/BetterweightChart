@@ -23,9 +23,9 @@
     "vendor": "node scripts/sync-vendor.mjs",
     "vendor:dev": "node scripts/sync-vendor.mjs --dev",
     "vendor:link": "node scripts/sync-vendor.mjs --dev --link",
-    "lwc:build": "npm run build --prefix ../lightweightchart",
-    "lwc:build:dev": "npm run build --prefix ../lightweightchart",
-    "lwc:watch": "npm run rollup-watch --prefix ../lightweightchart",
+    "lwc:build": "npm run build --prefix ./node_modules/lightweight-charts",
+    "lwc:build:dev": "npm run build --prefix ./node_modules/lightweight-charts",
+    "lwc:watch": "npm run rollup-watch --prefix ./node_modules/lightweight-charts",
     "lwc:sync": "npm run lwc:build:dev && npm run vendor:dev",
     "start": "node server/index.mjs",
     "predev": "node scripts/sync-vendor.mjs --dev",
@@ -35,7 +35,7 @@
     "dev:testing": "npm run dev"
   },
   "dependencies": {
-    "lightweight-charts": "file:../lightweightchart",
+    "lightweight-charts": "github:parbhatc/lightweight-charts",
     "ws": "^8.21.0"
   },
   "devDependencies": {

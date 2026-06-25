@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
-const LWC_ROOT = path.join(ROOT, "..", "lightweightchart");
+const LWC_ROOT = path.join(ROOT, "node_modules", "lightweight-charts");
 
 const children = [];
 

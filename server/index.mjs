@@ -29,7 +29,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const PUBLIC = path.resolve(ROOT, "public");
 const TESTING = path.resolve(ROOT, "testing_web/frontend");
-const LWC_LIVE_BUNDLE = path.resolve(ROOT, "..", "lightweightchart", "dist", "lightweight-charts.standalone.development.mjs");
+const LWC_LIVE_BUNDLE = path.resolve(
+  ROOT,
+  "node_modules",
+  "lightweight-charts",
+  "dist",
+  "lightweight-charts.standalone.development.mjs",
+);
 const LWC_LIVE = process.env.BWC_LWC_LIVE === "1" || process.env.BWC_LWC_LIVE === "true";
 const PORT = Number(process.env.PORT) || 3460;
 
