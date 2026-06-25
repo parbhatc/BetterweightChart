@@ -127,12 +127,25 @@ export function createOrderLineAdapter(manager, id) {
     },
     setText(text) {
       state.text = String(text ?? "");
-      manager.requestRefresh();
+      if (
+        !applyNativeOrderLinePatch(state, {
+          pills: { body: { text: state.text } },
+        })
+      ) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setQuantity(qty) {
       state.quantity = String(qty ?? "");
-      manager.requestRefresh();
+      const qtyText = state.quantity;
+      if (
+        !applyNativeOrderLinePatch(state, {
+          pills: { quantity: { text: qtyText, visible: Boolean(qtyText) } },
+        })
+      ) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setLineStyle(style) {
@@ -147,17 +160,32 @@ export function createOrderLineAdapter(manager, id) {
     },
     setLineColor(color) {
       state.lineColor = String(color ?? state.lineColor);
-      manager.requestRefresh();
+      const c = state.lineColor;
+      if (
+        !applyNativeOrderLinePatch(state, {
+          color: c,
+          lineColor: c,
+          axisLabelColor: c,
+        })
+      ) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setBodyBackgroundColor(color) {
       state.bodyBackgroundColor = String(color ?? state.bodyBackgroundColor);
-      manager.requestRefresh();
+      const c = state.bodyBackgroundColor;
+      if (!applyNativeOrderLinePatch(state, { pills: { body: { backgroundColor: c } } })) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setBodyTextColor(color) {
       state.bodyTextColor = String(color ?? state.bodyTextColor);
-      manager.requestRefresh();
+      const c = state.bodyTextColor;
+      if (!applyNativeOrderLinePatch(state, { pills: { body: { textColor: c } } })) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setBodyBorderColor(color) {
@@ -167,12 +195,18 @@ export function createOrderLineAdapter(manager, id) {
     },
     setQuantityBackgroundColor(color) {
       state.quantityBackgroundColor = String(color ?? state.quantityBackgroundColor);
-      manager.requestRefresh();
+      const c = state.quantityBackgroundColor;
+      if (!applyNativeOrderLinePatch(state, { pills: { quantity: { backgroundColor: c } } })) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setQuantityTextColor(color) {
       state.quantityTextColor = String(color ?? state.quantityTextColor);
-      manager.requestRefresh();
+      const c = state.quantityTextColor;
+      if (!applyNativeOrderLinePatch(state, { pills: { quantity: { textColor: c } } })) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setQuantityBorderColor(color) {
@@ -260,6 +294,64 @@ export function createOrderLineAdapter(manager, id) {
     setQuantityFontFamily(family) {
       state.quantityFontFamily = resolveOrderLineFontFamily(family);
       manager.requestRefresh();
+      return adapter;
+    },
+
+    /**
+     * Single native patch for live PnL ticks (text + profit colors).
+     * @param {{ text?: string, profit?: boolean, fill?: string, textColor?: string }} appearance
+     */
+    applyAppearance(appearance) {
+      const patch = { pills: {} };
+      let changed = false;
+
+      if (appearance.text != null) {
+        state.text = String(appearance.text);
+        patch.pills.body = { ...(patch.pills.body || {}), text: state.text };
+        changed = true;
+      }
+
+      if (appearance.fill != null) {
+        const fill = String(appearance.fill);
+        state.lineColor = fill;
+        state.bodyBackgroundColor = fill;
+        state.quantityBackgroundColor = fill;
+        patch.color = fill;
+        patch.pills.body = {
+          ...(patch.pills.body || {}),
+          backgroundColor: fill,
+        };
+        patch.pills.quantity = {
+          ...(patch.pills.quantity || {}),
+          backgroundColor: fill,
+        };
+        changed = true;
+      }
+
+      if (appearance.textColor != null) {
+        const textColor = String(appearance.textColor);
+        state.bodyTextColor = textColor;
+        state.quantityTextColor = textColor;
+        patch.pills.body = {
+          ...(patch.pills.body || {}),
+          textColor,
+        };
+        patch.pills.quantity = {
+          ...(patch.pills.quantity || {}),
+          textColor,
+        };
+        changed = true;
+      }
+
+      if (appearance.profit != null && appearance.fill == null) {
+        changed = true;
+      }
+
+      if (!changed) return adapter;
+
+      if (!applyNativeOrderLinePatch(state, patch)) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
 

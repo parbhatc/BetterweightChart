@@ -19,6 +19,7 @@ export {
   getIndicatorClass,
   createTradingViewChartApi,
   createOrderLineManager,
+  createPositionOverlay,
   createExecutionShapeManager,
   registerTradeContextActions,
   clearChartContextActions,

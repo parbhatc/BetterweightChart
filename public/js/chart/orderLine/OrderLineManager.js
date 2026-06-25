@@ -2,7 +2,9 @@ import { createOrderLineAdapter } from "./createOrderLineAdapter.js";
 import {
   applyNativeOrderLinePatch,
   createOrderLinePriceLineSync,
+  flushDeferredOrderLinePatches,
   orderLineOverlayState,
+  setOrderLinePanHooks,
 } from "./orderLinePriceLineSync.js";
 import {
   layoutOrderLineGeometry,
@@ -28,7 +30,9 @@ export class OrderLineManager {
    */
   constructor(getActivePane, opts = {}) {
     this._getActivePane = getActivePane;
+    this._getIsPanning = opts.getIsPanning ?? (() => false);
     this._settingsStore = opts.settingsStore ?? null;
+    setOrderLinePanHooks({ getIsPanning: () => this._getIsPanning() });
     /** @type {Map<string, ReturnType<typeof createOrderLineAdapter>>} */
     this._adapters = new Map();
     /** @type {object | null} */
@@ -136,19 +140,20 @@ export class OrderLineManager {
   }
 
   requestRefresh() {
+    if (this._getIsPanning()) {
+      return;
+    }
     if (this._refreshRaf) return;
     this._refreshRaf = requestAnimationFrame(() => {
       this._refreshRaf = 0;
+      if (this._getIsPanning()) return;
       this._priceLineSync.sync(this._activeStates(), this._adapters);
     });
   }
 
-  _syncNow() {
-    if (this._refreshRaf) {
-      cancelAnimationFrame(this._refreshRaf);
-      this._refreshRaf = 0;
-    }
-    this._priceLineSync.sync(this._activeStates(), this._adapters);
+  /** Apply live pill patches deferred while the chart was panning. */
+  flushDeferredLivePatches() {
+    flushDeferredOrderLinePatches(this._adapters);
   }
 
   /** Block chart pan while dragging an order line. */

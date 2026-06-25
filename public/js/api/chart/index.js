@@ -54,3 +54,4 @@ export {
 } from "../../datafeed/index.js";
 export { createChartWidgetApi } from "../../app/boot/widgetApi.js";
 export { bootChart } from "../../app/boot/chart.js";
+export { createPositionOverlay } from "../../chart/orderLine/positionOverlay.js";

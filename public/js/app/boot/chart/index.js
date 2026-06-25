@@ -221,10 +221,19 @@ export async function bootChart(overrides = {}) {
       setViewportRestorePending: (v) => {
         ctx._viewportRestorePending = v;
       },
+      ui: ctx.ui,
+      liveBarListeners: ctx.liveBarListeners,
     });
     ctx.orderLines = widget.orderLines;
+    const orderLines = widget.orderLines;
+    const prevPanEnd = ctx.viewportDeps.onChartPanEnd;
+    ctx.viewportDeps.onChartPanEnd = () => {
+      orderLines?.flushDeferredLivePatches?.();
+      prevPanEnd?.();
+    };
     if (typeof window !== "undefined") {
       window.__BWC_WIDGET__ = widget;
+      window.__BWC_UI__ = ctx.ui;
       if (debugOn) {
         chartDebug("boot", "widget API", {
           getBars: typeof widget.getBars === "function",

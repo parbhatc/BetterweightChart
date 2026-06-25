@@ -78,6 +78,8 @@ export function attachBarLoader(ctx) {
       pane.priceLineLabel?.requestRefresh();
       if (pane.index === (ctx.layoutManager?.getActivePaneIndex() ?? 0)) {
         ctx.scheduleStatusLine?.(pane);
+        const bar = pane.bars?.at(-1);
+        if (bar) ctx.notifyLiveBar?.(bar, meta);
       }
       if (meta.isNewBar) {
         if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {

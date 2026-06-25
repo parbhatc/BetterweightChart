@@ -7,9 +7,9 @@ import {
 import {
   createOrderLineManager,
   createTradingViewChartApi,
+  createPositionOverlay,
 } from "../../chart/orderLine/index.js";
 import { createExecutionShapeManager } from "../../chart/executionShape/index.js";
-import { mountOrderTestDev } from "../../chart/orderLine/orderTestDev.js";
 import { createWidgetShortcutRegistry } from "../../chart/widgetShortcuts.js";
 import {
   showChartPendingOverlay,
@@ -68,6 +68,7 @@ export function createChartWidgetApi(ctx) {
   const orderLines = createOrderLineManager(getActivePane, {
     settingsStore,
     symbolInfo: getSymbolInfo,
+    getIsPanning: () => Boolean(ctx.ui?.chartPanning),
   });
   const executionShapes = createExecutionShapeManager(getActivePane);
   const shortcutRegistry = createWidgetShortcutRegistry(getActivePane);
@@ -80,6 +81,28 @@ export function createChartWidgetApi(ctx) {
   const widget = {
     /** Order-line manager (position / bracket overlays). */
     orderLines,
+
+    /** True while the user is dragging the time scale (pan). */
+    isChartPanning() {
+      return Boolean(ctx.ui?.chartPanning);
+    },
+
+    /**
+     * Subscribe to live bar ticks on the active pane (forming candle updates).
+     * @param {(bar: object, meta?: object) => void} cb
+     * @returns {() => void} unsubscribe
+     */
+    onLiveBar(cb) {
+      if (typeof cb !== "function") return () => {};
+      const listeners = ctx.liveBarListeners;
+      if (!listeners) {
+        console.warn("[BWC] onLiveBar unavailable — liveBarListeners not wired");
+        return () => {};
+      }
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+
     /** Raw lightweight-charts IChartApi instance. */
     lcChart: chart,
     series,
@@ -89,9 +112,7 @@ export function createChartWidgetApi(ctx) {
 
     /** Bars currently loaded on the active pane (snapshot). */
     getBars() {
-      const bars = getBarsSnapshot();
-      chartDebug("data", "widget.getBars", { count: bars.length });
-      return bars;
+      return getBarsSnapshot();
     },
 
     getSymbol,
@@ -410,6 +431,7 @@ export function createChartWidgetApi(ctx) {
 
     /** Tear down host-global side effects (touch scroll lock, clocks). */
     destroy() {
+      widget.positionOverlay?.destroy?.();
       releaseTouchScrollLock?.();
       ctx.tzClock?.destroy?.();
       if (typeof window !== "undefined" && window.__BWC_WIDGET__ === widget) {
@@ -418,7 +440,7 @@ export function createChartWidgetApi(ctx) {
     },
   };
 
-  mountOrderTestDev(widget);
+  widget.positionOverlay = createPositionOverlay(widget);
 
   return widget;
 }

@@ -23,7 +23,7 @@ export function stateToOrderLineOptions(state) {
     price: state.price,
     color,
     lineVisible: true,
-    axisLabelVisible: true,
+    axisLabelVisible: false,
     axisLabelColor: color,
     axisLabelTextColor: "#ffffff",
     axisLabelText: formatOrderLinePrice(state.price),
@@ -156,8 +156,59 @@ export function orderLineOverlayState(state) {
   return state;
 }
 
+/** @param {Record<string, unknown> | undefined} base @param {Record<string, unknown>} patch */
+function mergeOrderLinePatch(base, patch) {
+  const out = { ...(base ?? {}) };
+  for (const [key, value] of Object.entries(patch)) {
+    if (
+      value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      out[key] &&
+      typeof out[key] === "object" &&
+      !Array.isArray(out[key])
+    ) {
+      out[key] = mergeOrderLinePatch(/** @type {Record<string, unknown>} */ (out[key]), /** @type {Record<string, unknown>} */ (value));
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+let getIsChartPanning = () => false;
+/** @type {Map<string, Record<string, unknown>>} */
+const deferredPatchesById = new Map();
+
+/** @param {{ getIsPanning?: () => boolean }} hooks */
+export function setOrderLinePanHooks(hooks) {
+  getIsChartPanning = hooks.getIsPanning ?? (() => false);
+}
+
+/**
+ * @param {Map<string, ReturnType<import("./createOrderLineAdapter.js").createOrderLineAdapter>>} adapters
+ */
+export function flushDeferredOrderLinePatches(adapters) {
+  if (!deferredPatchesById.size) return;
+  for (const [id, patch] of deferredPatchesById) {
+    const native = adapters.get(id)?._state?._nativeLine;
+    if (native?.applyOptions) {
+      native.applyOptions(patch);
+    }
+  }
+  deferredPatchesById.clear();
+}
+
 /** @param {import("./types.js").OrderLineState} state */
 export function applyNativeOrderLinePatch(state, patch) {
+  if (getIsChartPanning()) {
+    deferredPatchesById.set(
+      state.id,
+      mergeOrderLinePatch(deferredPatchesById.get(state.id), patch),
+    );
+    return true;
+  }
+
   const native = state._nativeLine;
   if (!native?.applyOptions) return false;
   native.applyOptions(patch);

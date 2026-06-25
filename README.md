@@ -79,7 +79,7 @@ Host this repo (or deploy to your server), then import ES modules from stable pa
 
 | Import path | Exports |
 |-------------|---------|
-| `/chart/sdk.js` | `bootChart`, `ChartApi`, `mountDrawings`, `createDatafeed`, `CHART_FEATURES`, … |
+| `/chart/sdk.js` | `bootChart`, `ChartApi`, `mountDrawings`, `createDatafeed`, `createPositionOverlay`, `CHART_FEATURES`, … |
 | `/chart/app.js` | `bootChart`, `readPageOptions` |
 | `/chart/api.js` | `ChartApi`, `createDatafeed` |
 
@@ -157,7 +157,14 @@ widget.getSymbol();
 widget.setBars(allBars);  // static/simple feeds
 widget.setTheme("light");
 widget.openSettings("symbol");
+
+// Position overlay — see docs/position-overlay.md
+widget.positionOverlay.buy();
+widget.positionOverlay.getPosition();
+widget.positionOverlay.onStopLossChanged((old, next) => {});
 ```
+
+See **[docs/position-overlay.md](docs/position-overlay.md)** for the full API (orders, SL/TP, events).
 
 ### Simple datafeed (easiest custom data)
 

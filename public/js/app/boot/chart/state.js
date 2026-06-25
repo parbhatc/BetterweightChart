@@ -199,6 +199,17 @@ export function createBootContext(overrides) {
     panFps: /** @type {object} */ ({}),
     paneExtras: /** @type {object} */ ({}),
     viewportDeps: /** @type {object} */ ({}),
+    /** @type {Set<(bar: object, meta: object) => void>} */
+    liveBarListeners: new Set(),
+    notifyLiveBar(bar, meta) {
+      for (const fn of this.liveBarListeners) {
+        try {
+          fn(bar, meta);
+        } catch {
+          //
+        }
+      }
+    },
     applyTheme: () => {},
     scrollToLatest: () => {},
     applyThemeMode: () => {},
