@@ -2,11 +2,13 @@ export { createDatafeed, readPageOptions } from "./client.js";
 export { createCustomDatafeed, createStaticDatafeed, normalizeBar, normalizeBars } from "./custom.js";
 export { createSimpleDatafeed } from "./simple.js";
 export { createTradingViewDatafeed } from "./tradingview/index.js";
+export { createTradeseaDatafeed } from "./tradesea/index.js";
 export { datafeedSupportsQuotes, quoteSymbolKey } from "./quotes.js";
 
 import { createDatafeed } from "./client.js";
 import { createStaticDatafeed } from "./custom.js";
 import { createTradingViewDatafeed } from "./tradingview/index.js";
+import { createTradeseaDatafeed } from "./tradesea/index.js";
 
 /**
  * Pick a datafeed from boot options: custom instance, static bars, or HTTP UDF.
@@ -18,6 +20,9 @@ import { createTradingViewDatafeed } from "./tradingview/index.js";
  */
 export function resolveDatafeed(options = {}) {
   if (options.datafeed) return options.datafeed;
+  if (options.datafeedType === "tradesea") {
+    return createTradeseaDatafeed(options.datafeedUrl ?? "/datafeed/ts");
+  }
   if (options.datafeedType === "tradingview" || options.tradingview) {
     return createTradingViewDatafeed(options.datafeedUrl ?? "/datafeed/tv");
   }

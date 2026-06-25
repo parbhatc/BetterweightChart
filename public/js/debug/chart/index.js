@@ -13,6 +13,16 @@
  */
 
 import { destroyDebugHud, ensureDebugHud } from "./hud.js";
+import {
+  getLiveControlStatus,
+  pauseFormingUpdates,
+  pauseLiveBars,
+  pauseNewBarUpdates,
+  resumeFormingUpdates,
+  resumeLiveBars,
+  resumeNewBarUpdates,
+  setFormingCoalesce,
+} from "./liveControl.js";
 
 const LS_KEY = "bwc-debug";
 const LS_FORMING_KEY = "bwc-debug-forming";
@@ -405,6 +415,23 @@ export function disableChartDebug() {
 }
 
 export { destroyDebugHud, ensureDebugHud, mountDebugHud } from "./hud.js";
+export {
+  getLiveControlStatus,
+  installLiveControlGlobal,
+  isFormingUpdatesPaused,
+  isLiveBarsPaused,
+  isNewBarsPaused,
+  pauseFormingUpdates,
+  pauseLiveBars,
+  pauseNewBarUpdates,
+  registerLivePauseHook,
+  resumeAllLiveControls,
+  resumeFormingUpdates,
+  resumeLiveBars,
+  resumeNewBarUpdates,
+  setFormingCoalesce,
+  shouldCoalesceFormingUpdates,
+} from "./liveControl.js";
 export function installChartDebugGlobal() {
   if (typeof window === "undefined") return;
   if (window.__BWC_DEBUG__) return;
@@ -418,6 +445,14 @@ export function installChartDebugGlobal() {
     setSlowMs: (ms) => {
       slowMs = Math.max(0, Number(ms));
     },
+    pauseLive: pauseLiveBars,
+    resumeLive: resumeLiveBars,
+    pauseForming: pauseFormingUpdates,
+    resumeForming: resumeFormingUpdates,
+    pauseNewBars: pauseNewBarUpdates,
+    resumeNewBars: resumeNewBarUpdates,
+    setFormingCoalesce,
+    liveStatus: getLiveControlStatus,
     log: chartDebug,
     isEnabled: isChartDebugEnabled,
   };

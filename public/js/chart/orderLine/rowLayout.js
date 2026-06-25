@@ -1,8 +1,8 @@
 import { resolveStudyLabelPositions } from "../../indicators/primitives/scaleLabels.js";
 import { hasShellBorder } from "./pillLayout.js";
 
-export const ORDER_LINE_FONT = "'Trebuchet MS', Roboto, Ubuntu, sans-serif";
-export const ORDER_LINE_ROW_H = 18;
+export const ORDER_LINE_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+export const ORDER_LINE_ROW_H = 20;
 export const ORDER_LINE_WIDTH = 1;
 
 /** @param {number} y — series media Y for the order price */
@@ -10,14 +10,14 @@ export function orderLineCenterY(y) {
   if (!Number.isFinite(y)) return 0;
   return Math.round(y) + (ORDER_LINE_WIDTH % 2 ? 0.5 : 0);
 }
-export const ORDER_LINE_CANCEL_W = 18;
+export const ORDER_LINE_CANCEL_W = 20;
 export const ORDER_LINE_GAP = 0;
 export const ORDER_LINE_PAD_X = 6;
 export const ORDER_LINE_FONT_SIZE = 12;
 export const ORDER_LINE_MIN_BODY_W = 36;
-export const ORDER_LINE_MIN_QTY_W = 22;
+export const ORDER_LINE_MIN_QTY_W = 24;
 export const ORDER_LINE_PILL_INSET = 4;
-export const DEFAULT_ORDER_LINE_FONT_WEIGHT = 900;
+export const DEFAULT_ORDER_LINE_FONT_WEIGHT = 600;
 export const DEFAULT_ORDER_LINE_FONT_SIZE = 12;
 export const DEFAULT_ORDER_LINE_FONT_FAMILY = ORDER_LINE_FONT;
 

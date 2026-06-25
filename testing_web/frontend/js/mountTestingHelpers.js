@@ -21,6 +21,7 @@ export function mountTestingHelpers(widget) {
   }
 
   if (pageOpts.datafeedType === "tradingview" || pageOpts.tradingview) return;
+  if (pageOpts.datafeedType === "tradesea" || pageOpts.tradesea) return;
 
   mountOrderTestDev(widget, { auto: true });
   mountBarTestDev(widget);

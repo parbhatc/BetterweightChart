@@ -11,8 +11,11 @@ export function wrapDatafeedDebug(datafeed) {
   datafeed.getBars = async (symbolInfo, resolution, periodParams = {}) => {
     const symbol =
       symbolInfo?.ticker || symbolInfo?.name || symbolInfo?.full_name || symbolInfo?.symbol || "?";
+    const wireSymbol =
+      symbolInfo?.broker_symbol || symbolInfo?.streamTicker || symbolInfo?.ticker || symbol;
     chartDebug("data", "getBars request", {
       symbol,
+      wireSymbol: wireSymbol !== symbol ? wireSymbol : undefined,
       resolution,
       from: periodParams.from,
       to: periodParams.to,

@@ -17,6 +17,13 @@ import {
   tradingViewResolve,
   tradingViewSearch,
 } from "./lib/tradingview/datafeed.mjs";
+import {
+  tradeseaDatafeedConfig,
+  tradeseaHistory,
+  tradeseaResolve,
+  tradeseaSearch,
+} from "./lib/tradesea/datafeed.mjs";
+import { subscribeTradeseaBars } from "./lib/tradesea/mds.mjs";
 import { subscribeTradingViewBars } from "./lib/tradingview/client.mjs";
 import {
   fetchTradingViewQuoteSnapshot,
@@ -27,6 +34,34 @@ import { csvDatafeedSymbols } from "./lib/csv/history.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
+
+function loadDotEnv() {
+  try {
+    const envPath = path.join(ROOT, ".env");
+    if (!fs.existsSync(envPath)) return;
+    const text = fs.readFileSync(envPath, "utf8");
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+      const eq = trimmed.indexOf("=");
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      let val = trimmed.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (process.env[key] == null) process.env[key] = val;
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+loadDotEnv();
+
 const PUBLIC = path.resolve(ROOT, "public");
 const TESTING = path.resolve(ROOT, "testing_web/frontend");
 const LWC_LIVE_BUNDLE = path.resolve(
@@ -227,8 +262,95 @@ async function handleTradingViewDatafeed(pathname, sp, res) {
   return false;
 }
 
+async function handleTradeseaDatafeed(pathname, sp, res) {
+  if (pathname === "/datafeed/ts/config") {
+    json(res, 200, tradeseaDatafeedConfig());
+    return true;
+  }
+
+  if (pathname === "/datafeed/ts/search") {
+    try {
+      const query = sp.get("query") || sp.get("text") || "";
+      const limit = sp.get("limit");
+      const rows = await tradeseaSearch(query, limit != null ? Number(limit) : 50);
+      json(res, 200, rows);
+    } catch (err) {
+      json(res, 502, { s: "error", errmsg: err.message || "Search failed" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/ts/symbols") {
+    try {
+      const symbol = sp.get("symbol") || "";
+      const info = await tradeseaResolve(symbol);
+      json(res, 200, info);
+    } catch (err) {
+      json(res, 200, { s: "error", errmsg: err.message || "Unknown symbol" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/ts/history") {
+    try {
+      const payload = await tradeseaHistory({
+        symbol: sp.get("symbol") || "MNQ",
+        resolution: sp.get("resolution") || "1",
+        from: sp.get("from") != null ? Number(sp.get("from")) : undefined,
+        to: sp.get("to") != null ? Number(sp.get("to")) : undefined,
+        countback: sp.get("countback") != null ? Number(sp.get("countback")) : undefined,
+      });
+      json(res, 200, payload);
+    } catch (err) {
+      json(res, 200, { s: "error", errmsg: err.message || "History failed" });
+    }
+    return true;
+  }
+
+  if (pathname === "/datafeed/ts/stream") {
+    const symbol = sp.get("symbol") || "";
+    const resolution = sp.get("resolution") || "1";
+    if (!symbol) {
+      json(res, 400, { error: "symbol required" });
+      return true;
+    }
+
+    res.writeHead(200, {
+      ...HDR,
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+    });
+    res.write(": connected\n\n");
+
+    let unsub = () => {};
+    try {
+      unsub = subscribeTradeseaBars(symbol, resolution, (bar) => {
+        res.write(`data: ${JSON.stringify(bar)}\n\n`);
+      });
+    } catch (err) {
+      res.write(`data: ${JSON.stringify({ error: err.message || "stream failed" })}\n\n`);
+    }
+
+    const ping = setInterval(() => res.write(": ping\n\n"), 15000);
+    res.on("close", () => {
+      clearInterval(ping);
+      unsub();
+    });
+    return true;
+  }
+
+  if (pathname.startsWith("/datafeed/ts/")) {
+    json(res, 404, { s: "error", errmsg: "Unknown Tradesea datafeed route" });
+    return true;
+  }
+
+  return false;
+}
+
 async function handleDatafeed(pathname, sp, res) {
   if (await handleTradingViewDatafeed(pathname, sp, res)) return true;
+  if (await handleTradeseaDatafeed(pathname, sp, res)) return true;
 
   if (pathname === "/datafeed/config") {
     json(res, 200, datafeedConfig());

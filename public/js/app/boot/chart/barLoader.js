@@ -106,6 +106,7 @@ export function attachBarLoader(ctx) {
       ctx.syncLayoutDateRangeFrom(source.chart);
     },
     onPaneHistoryDataUpdated: (pane) => {
+      if (pane._historyRestorePending || pane._loadingHistory) return;
       ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
     },
     syncPaneEmptyState: (pane, state) =>

@@ -1,6 +1,7 @@
 import { chartTimeToCoordinate, safePriceToY, safeTimeToX } from "../../chart/coords/timeScale.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
+import { resolveOverlayMapBars } from "./overlayMapBars.js";
 
 const LABEL_FONT =
   `11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`;
@@ -247,15 +248,8 @@ class BoxesPrimitive {
     const ctx = this._timeCtx;
     const seriesData = series.data?.() ?? [];
     const ctxMapBars = ctx?.mapBars ?? [];
-    // After history prepend, cached mapBars lags behind series until overlay sync runs.
-    const mapBars =
-      seriesData.length > ctxMapBars.length
-        ? seriesData
-        : ctxMapBars.length
-          ? ctxMapBars
-          : seriesData;
-    const timeAdapter =
-      seriesData.length > ctxMapBars.length ? null : (ctx?.timeAdapter ?? null);
+    const { mapBars, useAdapter } = resolveOverlayMapBars(seriesData, ctxMapBars);
+    const timeAdapter = useAdapter ? (ctx?.timeAdapter ?? null) : null;
     const barSec = ctx?.barSec ?? 60;
     const lastReal = ctx?.lastRealChartTime ?? mapBars.at(-1)?.time;
 

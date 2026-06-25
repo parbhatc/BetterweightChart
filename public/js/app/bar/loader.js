@@ -9,6 +9,13 @@ import {
   chartDebugTimeAsync,
 } from "../../debug/chart/index.js";
 import {
+  isFormingUpdatesPaused,
+  isLiveBarsPaused,
+  isNewBarsPaused,
+  registerLivePauseHook,
+  shouldCoalesceFormingUpdates,
+} from "../../debug/chart/liveControl.js";
+import {
   alignBarTime,
   buildInitialPeriodParams,
   buildPrependPeriodParams,
@@ -122,6 +129,77 @@ export function createBarLoader(opts) {
 
   /** @type {Map<number, ReturnType<typeof setTimeout>>} */
   const historyNotifyTimerByPane = new Map();
+  /** @type {Map<number, { bar: object, raf: number }>} */
+  const formingCoalesceByPane = new Map();
+
+  function cancelFormingCoalesce(paneIndex) {
+    const slot = formingCoalesceByPane.get(paneIndex);
+    if (!slot) return;
+    cancelAnimationFrame(slot.raf);
+    formingCoalesceByPane.delete(paneIndex);
+  }
+
+  /**
+   * Push one forming or new bar to the chart series + overlays.
+   * @param {object} pane
+   * @param {object} bar
+   * @param {boolean} isNewBar
+   */
+  function applyLiveChartUpdate(pane, bar, isNewBar) {
+    if (!isNewBar && pane._deferSeriesUpdates) {
+      pane._deferredLiveBar = bar;
+      chartDebugCount("tick", "deferredPan");
+      chartDebugForming("update forming deferred (pan)", { pane: pane.index, time: bar.time });
+      return;
+    }
+
+    const result = isNewBar
+      ? { ok: Boolean(appendNewBarOnPane?.(pane, bar)), isNewBar: true }
+      : { ok: Boolean(updateFormingBarOnPane?.(pane, bar)), isNewBar: false };
+
+    if (!result.ok) {
+      invalidatePaneChartView(pane);
+      applyLiveBarToPane(pane);
+      chartDebugCount("tick", "setData");
+    } else if (isNewBar) {
+      chartDebugCount("tick", "append");
+      pane.sessionBg?.requestRefresh();
+      publishResolutionCache(pane);
+    } else {
+      chartDebugCount("tick", "update");
+    }
+
+    onPaneBarUpdate?.(pane, { isNewBar: result.isNewBar });
+
+    if (pane.index === 0) setPrimaryBars(pane);
+
+    if (pane.index === getActivePaneIndex()) {
+      refreshStatusLine();
+    }
+  }
+
+  function cancelAllFormingCoalesce() {
+    for (const paneIndex of [...formingCoalesceByPane.keys()]) {
+      cancelFormingCoalesce(paneIndex);
+    }
+  }
+
+  function scheduleFormingCoalesce(pane, bar) {
+    const existing = formingCoalesceByPane.get(pane.index);
+    if (existing) {
+      existing.bar = bar;
+      return;
+    }
+
+    const slot = { bar, raf: 0 };
+    slot.raf = requestAnimationFrame(() => {
+      formingCoalesceByPane.delete(pane.index);
+      applyLiveChartUpdate(pane, slot.bar, false);
+    });
+    formingCoalesceByPane.set(pane.index, slot);
+  }
+
+  registerLivePauseHook(cancelAllFormingCoalesce);
 
   /** Debounce indicator refresh when multiple history chunks land in one pan. */
   function notifyHistoryPrependedDebounced(pane) {
@@ -161,6 +239,10 @@ export function createBarLoader(opts) {
   function upsertLiveBar(pane, rawBar) {
     if (!pane.bars.length) return;
     if (typeof opts.isReplayLocked === "function" && opts.isReplayLocked()) return;
+    if (isLiveBarsPaused()) {
+      chartDebugCount("tick", "paused");
+      return;
+    }
 
     chartDebugCount("tick", "incoming");
     pane._suppressHistoryPrefetch = true;
@@ -173,9 +255,15 @@ export function createBarLoader(opts) {
       if (idx >= 0) {
         pane.bars[idx] = bar;
       } else if (bar.time > last.time) {
+        if (isNewBarsPaused()) {
+          chartDebugCount("tick", "newBarPaused");
+          chartDebug("data", "new bar paused", { pane: pane.index, time: bar.time });
+          return;
+        }
         const closed = last;
         pane.bars.push(bar);
         isNewBar = true;
+        cancelFormingCoalesce(pane.index);
         chartDebugCount("tick", "newBar");
         chartDebug("data", "closed candle", {
           pane: pane.index,
@@ -207,35 +295,18 @@ export function createBarLoader(opts) {
         return;
       }
 
-      if (!isNewBar && pane._deferSeriesUpdates) {
-        pane._deferredLiveBar = bar;
-        chartDebugCount("tick", "deferredPan");
-        chartDebugForming("update forming deferred (pan)", { pane: pane.index, time: bar.time });
-      } else {
-        const result = isNewBar
-          ? { ok: Boolean(appendNewBarOnPane?.(pane, bar)), isNewBar: true }
-          : { ok: Boolean(updateFormingBarOnPane?.(pane, bar)), isNewBar: false };
-
-        if (!result.ok) {
-          invalidatePaneChartView(pane);
-          applyLiveBarToPane(pane);
-          chartDebugCount("tick", "setData");
-        } else if (isNewBar) {
-          chartDebugCount("tick", "append");
-          pane.sessionBg?.requestRefresh();
-          publishResolutionCache(pane);
-        } else {
-          chartDebugCount("tick", "update");
-        }
-
-        onPaneBarUpdate?.(pane, { isNewBar: result.isNewBar });
+      if (!isNewBar && isFormingUpdatesPaused()) {
+        chartDebugCount("tick", "formingPaused");
+        chartDebugForming("update forming paused", { pane: pane.index, time: bar.time });
+        return;
       }
 
-      if (pane.index === 0) setPrimaryBars(pane);
-
-      if (pane.index === getActivePaneIndex()) {
-        refreshStatusLine();
+      if (!isNewBar && shouldCoalesceFormingUpdates()) {
+        scheduleFormingCoalesce(pane, bar);
+        return;
       }
+
+      applyLiveChartUpdate(pane, bar, isNewBar);
     });
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -301,7 +372,6 @@ export function createBarLoader(opts) {
       refreshPaneCandleData(pane, { deferSessionBg: true });
     }
     restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
-    onPaneHistoryDataUpdated?.(pane);
     if (pane.index === 0) setPrimaryBars(pane);
     publishResolutionCache(pane);
 

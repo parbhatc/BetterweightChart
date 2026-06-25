@@ -264,7 +264,7 @@ export function createOverlaySync(deps) {
   /** @param {number} paneIndex Push fresh mapBars/timeAdapter after candle setData (history prepend). */
   function syncOverlayTimeCtxForPane(paneIndex) {
     const pane = paneByIndex(paneIndex);
-    if (!pane?.series) return;
+    if (!pane?.series || pane._historyRestorePending || pane._loadingHistory) return;
     const { chartBars } = getPaneBars(pane);
     if (!chartBars.length) return;
 
@@ -284,6 +284,7 @@ export function createOverlaySync(deps) {
       const overlayData = instance._overlayBoxCache ?? instance.lastPlots?.overlay ?? [];
       if (!overlayData.length) continue;
       applyOverlayBoxes(instance, overlayData, timeCtx, { geometryUnchanged: true });
+      delete instance._pendingOverlayApply;
     }
   }
 

@@ -10,6 +10,7 @@ import {
   chartDebugTimeAsync,
   configureChartDebug,
   installChartDebugGlobal,
+  installLiveControlGlobal,
 } from "../../../debug/chart/index.js";
 import { wrapDatafeedDebug } from "../../../debug/chart/datafeed.js";
 import { barTimeLabel } from "../../../chart/format.js";
@@ -51,6 +52,7 @@ export { readPageOptions };
  */
 export async function bootChart(overrides = {}) {
   installChartDebugGlobal();
+  installLiveControlGlobal();
   const debugOn = configureChartDebug();
 
   const ctx = createBootContext(overrides);

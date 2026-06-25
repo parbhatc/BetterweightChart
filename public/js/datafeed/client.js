@@ -104,16 +104,24 @@ export function createDatafeed(baseUrl = "/datafeed") {
 /** @param {string} [search] */
 export function readPageOptions(search = window.location.search) {
   const sp = new URLSearchParams(search);
-  const datafeed = sp.get("datafeed");
-  const defaultSymbol = datafeed === "tradingview" ? "CME_MINI:NQ1!" : "NQ";
-  const rawSymbol = sp.get("symbol") || loadLastSymbol(defaultSymbol);
-  const defaultResolution = datafeed === "tradingview" ? "5" : "1";
-  const resolution = sp.get("resolution") || loadLastResolution(defaultResolution);
+  const isTesting =
+    typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "").endsWith("/testing");
+  const datafeed = sp.get("datafeed") ?? (isTesting ? "tradesea" : undefined);
+  const remoteFeed = datafeed === "tradingview" || datafeed === "tradesea";
+  const defaultSymbol =
+    datafeed === "tradingview" ? "CME_MINI:NQ1!" : datafeed === "tradesea" ? "MNQ" : "NQ";
+  const rawSymbol =
+    sp.get("symbol") || (remoteFeed ? defaultSymbol : loadLastSymbol(defaultSymbol));
+  const defaultResolution =
+    datafeed === "tradingview" ? "5" : datafeed === "tradesea" ? "1" : "1";
+  const resolution =
+    sp.get("resolution") || (remoteFeed ? defaultResolution : loadLastResolution(defaultResolution));
   const themeParam = sp.get("theme");
   const theme =
     themeParam === "light" ? "light" : themeParam === "dark" ? "dark" : loadThemePreference("dark");
+  const upperCaseSymbol = datafeed !== "tradingview" && datafeed !== "tradesea";
   return {
-    symbol: datafeed === "tradingview" ? rawSymbol : rawSymbol.toUpperCase(),
+    symbol: upperCaseSymbol ? rawSymbol.toUpperCase() : rawSymbol,
     theme,
     resolution,
     drawings: sp.get("drawings") !== "0",
@@ -126,6 +134,7 @@ export function readPageOptions(search = window.location.search) {
     historyChunk: sp.get("historychunk") != null ? Number(sp.get("historychunk")) : 200,
     datafeedType: datafeed ?? undefined,
     tradingview: datafeed === "tradingview",
+    tradesea: datafeed === "tradesea",
   };
 }
 
