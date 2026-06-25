@@ -1,9 +1,10 @@
 import { resolveTimezone } from "./list.js";
 
 /**
- * LWC treats all times as UTC. For display, bar `time` is pseudo-UTC whose
- * components match wall-clock time in the user timezone (LWC time-zones docs).
- * `pane.bars` keeps real UTC; shift only when calling setData/update.
+ * LWC stores series times as UTC. Display timezone is applied via chart
+ * `timezoneProvider` (O(log N) offset lookup) at axis/crosshair format time.
+ * `utcToChartTime` / `shiftBarsToChartTime` remain for one-off UTC ↔ wall-clock
+ * conversion outside the render loop (dialogs, tests, transition table build).
  */
 
 /** @type {Map<string, { fmt: Intl.DateTimeFormat, cache: Map<number, number> }>} */
@@ -85,12 +86,12 @@ export function utcToChartTime(unixSec, timeZone) {
 }
 
 /** @param {number} unixSec @param {string} timeZone */
-function chartOffsetSec(unixSec, timeZone) {
+export function chartOffsetSec(unixSec, timeZone) {
   return utcToChartTime(unixSec, timeZone) - unixSec;
 }
 
 /** @param {number} fromSec @param {string} timeZone @param {number} offsetSec */
-function nextOffsetChangeAfter(fromSec, timeZone, offsetSec) {
+export function nextOffsetChangeAfter(fromSec, timeZone, offsetSec) {
   let t = fromSec;
   let step = 86400;
   const end = fromSec + 10 * 365 * 86400;

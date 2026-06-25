@@ -9,6 +9,7 @@ import { createPaneExtras } from "../paneExtras.js";
  */
 export function attachPaneExtrasBoot(ctx) {
   function applySymbolLineStyleLocal() {
+    if (ctx.ui?.chartPanning) return;
     applySymbolLineStyle({
       settingsStore: ctx.settingsStore,
       getAllChartPanes: ctx.getAllChartPanes,
@@ -27,11 +28,10 @@ export function attachPaneExtrasBoot(ctx) {
     getLayoutManager: () => ctx.layoutManager,
     prependHistory: null,
     ensureHistoryNearEdge: null,
+    resumeHistoryAfterPan: null,
+    flushDeferredHistory: null,
     onChartPanStart: null,
     onChartPanEnd: null,
-    setPrimaryFutureWhitespace: (n) => {
-      ctx.futureWhitespaceBars = n;
-    },
   };
 
   const paneExtras = createPaneExtras({
@@ -54,6 +54,7 @@ export function attachPaneExtrasBoot(ctx) {
     getQuoteForSymbol: (symbol) => ctx.getQuoteForSymbol?.(symbol) ?? null,
   });
 
+  ctx.ensurePaneBackgroundForPane = paneExtras.ensurePaneBackgroundForPane;
   ctx.paneExtras = paneExtras;
   ctx.setupPaneExtras = paneExtras.setupPaneExtras;
   ctx.refreshPaneStatusLine = paneExtras.refreshPaneStatusLine;

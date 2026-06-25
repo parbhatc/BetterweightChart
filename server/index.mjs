@@ -29,6 +29,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const PUBLIC = path.resolve(ROOT, "public");
 const TESTING = path.resolve(ROOT, "testing_web/frontend");
+const LWC_LIVE_BUNDLE = path.resolve(ROOT, "..", "lightweightchart", "dist", "lightweight-charts.standalone.development.mjs");
+const LWC_LIVE = process.env.BWC_LWC_LIVE === "1" || process.env.BWC_LWC_LIVE === "true";
 const PORT = Number(process.env.PORT) || 3460;
 
 const MIME = {
@@ -75,15 +77,30 @@ function resolveStatic(relPath) {
   return null;
 }
 
-function serveFile(res, filePath) {
+function serveFile(res, filePath, opts = {}) {
   const ext = path.extname(filePath);
-  const cacheable = ext === ".mjs" || ext === ".js" || ext === ".css";
+  const cacheable = !opts.noCache && (ext === ".mjs" || ext === ".js" || ext === ".css");
   res.writeHead(200, {
     ...HDR,
     "Content-Type": MIME[ext] || "application/octet-stream",
     "Cache-Control": cacheable ? "public, max-age=86400" : "no-store",
   });
   fs.createReadStream(filePath).pipe(res);
+}
+
+/** Serve LWC fork dist directly — no vendor copy step while developing the fork. */
+function tryServeLiveLwc(res, relPath) {
+  if (!LWC_LIVE) return false;
+  if (relPath !== "vendor/lightweight-charts.mjs") return false;
+  if (!fs.existsSync(LWC_LIVE_BUNDLE)) {
+    res.writeHead(503, { ...HDR, "Content-Type": "text/plain; charset=utf-8" });
+    res.end(
+      "LWC live bundle missing. Run once: npm run lwc:build:dev — then npm run dev:live (or lwc:watch in another terminal).\n",
+    );
+    return true;
+  }
+  serveFile(res, LWC_LIVE_BUNDLE, { noCache: true });
+  return true;
 }
 
 function parseUrl(req) {
@@ -351,6 +368,9 @@ function handleRequest(req, res) {
       }
 
       const rel = filePathname.startsWith("/") ? filePathname.slice(1) : filePathname;
+
+      if (tryServeLiveLwc(res, rel)) return;
+
       let filePath = null;
       if (pathname === "/testing" || pathname === "/testing/" || pathname.startsWith("/testing/")) {
         filePath = safeTesting(rel);
@@ -388,6 +408,9 @@ wss.on("connection", (ws) => {
 
 server.listen(PORT, () => {
   console.log(`Chart UI:  http://127.0.0.1:${PORT}/`);
+  if (LWC_LIVE) {
+    console.log(`LWC live:  ${path.relative(ROOT, LWC_LIVE_BUNDLE)} (hard-refresh after fork rebuild)`);
+  }
   console.log(`Testing:   http://127.0.0.1:${PORT}/testing/`);
   console.log(`Dev helpers: __BWC_TEST_ORDER__ | __BWC_TEST__ (fake feed only)`);
   console.log(`Embed:     http://127.0.0.1:${PORT}/embed?symbol=NQ&theme=dark`);

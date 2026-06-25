@@ -1,20 +1,24 @@
 import { createTvChart } from "../../../chart/view/index.js";
 import {
+  scrollPaneToLatest as scrollPaneToLatestViewport,
+  resetPanePriceScale,
+} from "../../../chart/viewportReset.js";
+import {
   enforcePriceBarRatio,
   enforcePriceBarRatioOnPriceZoom,
 } from "../../../chart/price/barRatio.js";
 import { ensureDebugHud } from "../../../debug/chart/hud.js";
-import { createPanFpsMonitor } from "../../../debug/chart/index.js";
+import { createPanFpsMonitor, chartDebugThrottle } from "../../../debug/chart/index.js";
+import { lwcPaneIndexAtY } from "../../../chart/pane/studyScale.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
  */
 export function initPrimaryChart(ctx) {
-  const { chart, series, applyTheme, scrollToLatest } = createTvChart(ctx.el, ctx.themeColors);
+  const { chart, series, applyTheme } = createTvChart(ctx.el, ctx.themeColors);
   ctx.chart = chart;
   ctx.series = series;
   ctx.applyTheme = applyTheme;
-  ctx.scrollToLatest = scrollToLatest;
 
   let ratioLockBusy = false;
 
@@ -47,7 +51,9 @@ export function initPrimaryChart(ctx) {
     onSample: (stats) => {
       ctx.debugHud?.setPanStats({
         fps: stats.fps,
-        panning: stats.panning !== false,
+        panning: Boolean(stats.panning),
+        zooming: Boolean(stats.zooming),
+        modes: stats.modes ?? [],
       });
     },
   });
@@ -64,9 +70,39 @@ export function initPrimaryChart(ctx) {
       if (!onRight && !onLeft) return;
       const target = lockedRatioTarget();
       if (target == null) return;
+      chartDebugThrottle(
+        "zoom",
+        "price-wheel",
+        ev.deltaY < 0 ? "price zoom in" : "price zoom out",
+        { deltaY: ev.deltaY, target },
+        200,
+      );
       requestAnimationFrame(() => enforcePriceBarRatioOnPriceZoom(chart, series, target));
     },
     true,
+  );
+
+  ctx.el.addEventListener(
+    "dblclick",
+    (ev) => {
+      const rect = ctx.el.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      const y = ev.clientY - rect.top;
+      const rw = chart.priceScale("right").width();
+      const lw = chart.priceScale("left").width();
+      const onRight = rw > 0 && x >= rect.width - rw;
+      const onLeft = lw > 0 && x <= lw;
+      if (!onRight && !onLeft) return;
+      if (lwcPaneIndexAtY(chart, y) !== 0) return;
+
+      const pane = ctx.chartPanes.get(0);
+      if (!pane) return;
+
+      requestAnimationFrame(() => {
+        resetPanePriceScale(pane, ctx.settingsStore, ctx.activePriceScaleId);
+      });
+    },
+    false,
   );
 
   chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
@@ -83,22 +119,31 @@ export function initPrimaryChart(ctx) {
     resolution: ctx.resolution,
     symbolInfo: ctx.symbolInfo,
     bars: ctx.bars,
-    futureWhitespaceBars: null,
     statusEl: ctx.statusEl ?? null,
     timeAdapter: null,
   });
 
   ctx.resetChartView = () => {
-    const primary = ctx.chartPanes.get(0);
-    if (primary) primary._manualScaleLocked = false;
-    const margins = { top: 0.08, bottom: 0.12 };
-    series.priceScale().applyOptions({ autoScale: true, scaleMargins: margins });
-    chart.priceScale(ctx.activePriceScaleId()).applyOptions({ autoScale: true, scaleMargins: margins });
-    if (ctx.bars.length) scrollToLatest(ctx.bars.length);
+    for (const pane of ctx.chartPanes.values()) {
+      ctx.resetPaneChartView?.(pane);
+    }
   };
 
   ctx.resetTimeScale = () => {
-    chart.timeScale().resetTimeScale();
-    if (ctx.bars.length) scrollToLatest(ctx.bars.length);
+    for (const pane of ctx.chartPanes.values()) {
+      ctx.resetPaneTimeScale?.(pane);
+    }
+  };
+
+  ctx.scrollToLatest = (barCount) => {
+    const pane = ctx.chartPanes.get(0);
+    if (!pane) return;
+    const count = barCount ?? pane.bars?.length ?? 0;
+    if (!count) return;
+    const ts = pane.chart.timeScale();
+    const range = ts.getVisibleLogicalRange();
+    scrollPaneToLatestViewport(pane, ctx.settingsStore, {
+      width: range ? range.to - range.from : undefined,
+    });
   };
 }

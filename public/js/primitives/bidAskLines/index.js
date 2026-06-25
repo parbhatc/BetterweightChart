@@ -1,39 +1,35 @@
 import { LineStyle } from "lightweight-charts";
-import { attachCustomPriceLineHost } from "../priceLine/customPriceLine.js";
 
 /** @typedef {"bid" | "ask"} QuoteSide */
 
 /**
- * Bid/ask via custom price line (stacks against symbol anchor when noOverlappingLabels is on).
+ * Bid/ask via native lightweight-charts createPriceLine.
  * @param {object} opts
  * @param {import("lightweight-charts").ISeriesApi} opts.series
  * @param {() => object} opts.getState
  */
 export function attachBidAskLinesPrimitive(opts) {
-  const host = attachCustomPriceLineHost({
-    series: opts.series,
-    getContext: () => {
-      const state = opts.getState();
-      return {
-        scaleId: state.scaleId ?? "right",
-        scaleVisible: state.scaleVisible !== false,
-        reservedAnchors: state.reservedAnchors ?? [],
-        noOverlappingLabels: state.noOverlappingLabels !== false,
-      };
-    },
-  });
-
-  /** @type {Map<QuoteSide, import("../priceLine/customPriceLine.js").CustomPriceLineHandle>} */
+  /** @type {Map<QuoteSide, import("lightweight-charts").IPriceLine>} */
   const lines = new Map();
+
+  /** @param {QuoteSide} side */
+  function removeSide(side) {
+    const line = lines.get(side);
+    if (!line) return;
+    try {
+      opts.series.removePriceLine(line);
+    } catch {
+      /* ignore */
+    }
+    lines.delete(side);
+  }
 
   function sync() {
     const state = opts.getState();
     if (!state?.enabled) {
       for (const side of /** @type {QuoteSide[]} */ (["bid", "ask"])) {
-        lines.get(side)?.remove();
-        lines.delete(side);
+        removeSide(side);
       }
-      host.requestRefresh();
       return;
     }
 
@@ -43,22 +39,20 @@ export function attachBidAskLinesPrimitive(opts) {
     for (const side of /** @type {QuoteSide[]} */ (["bid", "ask"])) {
       const cfg = state[side];
       if (!cfg || cfg.price == null || !Number.isFinite(cfg.price)) {
-        lines.get(side)?.remove();
-        lines.delete(side);
+        removeSide(side);
         continue;
       }
 
       const lineVisible = Boolean(cfg.lineVisible);
       const axisLabelVisible = Boolean(cfg.valueVisible);
       if (!lineVisible && !axisLabelVisible) {
-        lines.get(side)?.remove();
-        lines.delete(side);
+        removeSide(side);
         continue;
       }
 
       const color = cfg.color ?? (side === "bid" ? "#2962FF" : "#F23645");
       const title = axisLabelVisible ? (side === "ask" ? "Ask" : "Bid") : "";
-      const options = {
+      const lineOptions = {
         id: side,
         price: cfg.price,
         color,
@@ -74,13 +68,11 @@ export function attachBidAskLinesPrimitive(opts) {
 
       const existing = lines.get(side);
       if (existing) {
-        existing.applyOptions(options);
+        existing.applyOptions(lineOptions);
       } else {
-        lines.set(side, host.createCustomPriceLine(options));
+        lines.set(side, opts.series.createPriceLine(lineOptions));
       }
     }
-
-    host.requestRefresh();
   }
 
   sync();
@@ -91,10 +83,8 @@ export function attachBidAskLinesPrimitive(opts) {
     requestRefresh: () => sync(),
     destroy: () => {
       for (const side of /** @type {QuoteSide[]} */ (["bid", "ask"])) {
-        lines.get(side)?.remove();
-        lines.delete(side);
+        removeSide(side);
       }
-      host.destroy();
     },
   };
 }

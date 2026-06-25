@@ -21,17 +21,26 @@
   "scripts": {
     "postinstall": "node scripts/sync-vendor.mjs",
     "vendor": "node scripts/sync-vendor.mjs",
+    "vendor:dev": "node scripts/sync-vendor.mjs --dev",
+    "vendor:link": "node scripts/sync-vendor.mjs --dev --link",
+    "lwc:build": "npm run build --prefix ../lightweightchart",
+    "lwc:build:dev": "npm run build --prefix ../lightweightchart",
+    "lwc:watch": "npm run rollup-watch --prefix ../lightweightchart",
+    "lwc:sync": "npm run lwc:build:dev && npm run vendor:dev",
     "start": "node server/index.mjs",
-    "dev": "nodemon --watch server --watch testing_web server/index.mjs",
+    "predev": "node scripts/sync-vendor.mjs --dev",
+    "dev": "node scripts/dev-server.mjs",
+    "dev:live": "node scripts/dev-live.mjs",
     "start:testing": "node server/index.mjs",
     "dev:testing": "npm run dev"
   },
   "dependencies": {
-    "lightweight-charts": "^5.2.0",
+    "lightweight-charts": "file:../lightweightchart",
     "ws": "^8.21.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "nodemon": "^3.1.10",
+    "playwright": "^1.61.1"
   },
   "repository": {
     "type": "git",

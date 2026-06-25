@@ -1,5 +1,6 @@
 import { safePriceToY, safeTimeToX } from "../../chart/coords/timeScale.js";
 import { drawLabelCallout } from "./labelCallout.js";
+import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
 
 class LabelsPaneRenderer {
   /** @param {() => object} getData */
@@ -79,16 +80,10 @@ class LabelsPrimitive {
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
-    const ts = this._chart.timeScale();
-    const handler = () => this._requestUpdate?.();
-    ts.subscribeVisibleLogicalRangeChange(handler);
-    this._unsub = () => {
-      try {
-        ts.unsubscribeVisibleLogicalRangeChange(handler);
-      } catch {
-        /* ignore */
-      }
-    };
+    this._unsub = subscribePrimitiveViewportRefresh(
+      this._chart.timeScale(),
+      () => this._requestUpdate?.(),
+    );
   }
 
   detached() {

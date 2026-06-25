@@ -1,11 +1,3 @@
-import {
-  CHART_FUTURE_WHITESPACE_CHUNK,
-  CHART_FUTURE_WHITESPACE_MARGIN,
-  CHART_FUTURE_WHITESPACE_MAX,
-  CHART_FUTURE_WHITESPACE_MIN,
-  appendFutureWhitespaceTail,
-  isFutureWhitespaceEnabled,
-} from "../future/whitespace.js";
 import { BAR_SEC } from "../constants.js";
 import {
   chartDebug,
@@ -20,6 +12,7 @@ import {
   patchFormingBarInView,
   rebuildPaneChartView,
   appendNewBarInView,
+  prependBarsInView,
   utcBarsForPane,
 } from "./viewCache.js";
 
@@ -66,73 +59,6 @@ export function buildChartSeriesForPane(pane, _visible, settingsStore, resolutio
 }
 
 /**
- * @param {object} opts
- */
-export function ensureFutureWhitespace(opts) {
-  if (opts.futureWhitespaceEnabled === false) return;
-  const {
-    chart,
-    series,
-    barsForChart,
-    buildChartSeriesForDisplay,
-    getFutureWhitespaceBars,
-    setFutureWhitespaceBars,
-    requestAllSessionBgRefresh,
-  } = opts;
-
-  const visible = barsForChart();
-  if (!visible.length) return;
-  const r = chart.timeScale().getVisibleLogicalRange();
-  if (!r || r.to == null || !Number.isFinite(r.to)) return;
-  const realCount = visible.length;
-  const have = getFutureWhitespaceBars() ?? CHART_FUTURE_WHITESPACE_MIN;
-  if (r.to < realCount - 16) return;
-  const neededAhead = Math.ceil(r.to) - realCount + CHART_FUTURE_WHITESPACE_MARGIN;
-  if (neededAhead <= have) return;
-  const nextHave = Math.min(
-    CHART_FUTURE_WHITESPACE_MAX,
-    Math.max(neededAhead, have + CHART_FUTURE_WHITESPACE_CHUNK),
-  );
-  chartDebug("whitespace", "grow", { have, nextHave, neededAhead, realCount, rangeTo: r.to });
-  setFutureWhitespaceBars(nextHave);
-  const add = nextHave - have;
-
-  if (opts.pane) {
-    opts.pane.futureWhitespaceBars = nextHave;
-  }
-
-  if (opts.pane && opts.barSec != null && opts.pane._chartView?.mapBars?.length && add > 0) {
-    const view = opts.pane._chartView;
-    const appended = chartDebugTime("data", `append whitespace +${add}`, () => {
-      const tailStart = view.mapBars.length;
-      appendFutureWhitespaceTail(view.mapBars, opts.barSec, add);
-      appendFutureWhitespaceTail(view.seriesData, opts.barSec, add);
-      for (let i = tailStart; i < view.mapBars.length; i += 1) {
-        try {
-          series.update(view.seriesData[i], true);
-        } catch {
-          view.mapBars.length = tailStart;
-          view.seriesData.length = tailStart;
-          return false;
-        }
-      }
-      view.futureWhitespace = nextHave;
-      opts.pane.mapBars = view.mapBars;
-      return true;
-    });
-    if (appended) return;
-  }
-
-  chartDebugTime("data", `setData whitespace ${visible.length}+${nextHave}`, () => {
-    if (opts.pane) invalidatePaneChartView(opts.pane);
-    withPreservedViewport(chart, () => {
-      series.setData(buildChartSeriesForDisplay(visible));
-    }, { followUpFrames: 1 });
-  });
-  requestAllSessionBgRefresh();
-}
-
-/**
  * @param {object} pane
  * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
  * @param {object | null} symbolInfo
@@ -150,6 +76,54 @@ export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutio
 }
 
 /**
+ * Prepend older UTC bars via series.prepend (incremental — no full setData).
+ * @returns {boolean}
+ */
+export function prependHistoryToPaneSeries(pane, olderUtcBars, settingsStore, symbolInfo, resolutions, opts = {}) {
+  return chartDebugTime("data", `prepend pane ${pane.index}`, () => {
+    const batch = prependBarsInView(pane, olderUtcBars, settingsStore, symbolInfo, resolutions);
+    if (!batch) {
+      chartDebug("data", "prepend skipped (no new bars vs series head)", {
+        pane: pane.index,
+        offered: olderUtcBars.length,
+        seriesBars: pane._chartView?.utcBars?.length ?? pane.bars.length,
+      });
+      return false;
+    }
+
+    if (typeof pane.series.prepend !== "function") {
+      chartDebug("data", "prepend skipped (series.prepend missing — run npm run vendor)", {
+        pane: pane.index,
+      });
+      return false;
+    }
+
+    try {
+      pane.series.prepend(batch.candles);
+      delete pane.utcTimeToIdx;
+      delete pane.chartTimeToIdx;
+      delete pane.timeToIdx;
+      chartDebugCount("data", "prepend");
+      chartDebug("data", "prepend history", {
+        pane: pane.index,
+        added: batch.added,
+        utcBars: pane._chartView?.utcBars?.length ?? 0,
+        seriesPoints: pane.series.data?.().length ?? null,
+      });
+      pane.sessionBg?.requestRefresh();
+      return true;
+    } catch (err) {
+      chartDebugCount("data", "prependFail");
+      chartDebug("data", "prepend history failed", { pane: pane.index, err: String(err) });
+      invalidatePaneChartView(pane);
+      applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions, opts);
+      if (!opts.deferSessionBg) pane.sessionBg?.requestRefresh();
+      return false;
+    }
+  });
+}
+
+/**
  * Push latest UTC bars to the series via cached chart view.
  */
 export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolutions, opts = {}) {
@@ -162,12 +136,6 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
     delete pane.utcTimeToIdx;
     delete pane.chartTimeToIdx;
     delete pane.timeToIdx;
-    const sc = settingsStore.get().scales ?? {};
-    if (!isFutureWhitespaceEnabled(sc)) {
-      pane.futureWhitespaceBars = 0;
-    } else if (!pane.futureWhitespaceBars) {
-      pane.futureWhitespaceBars = CHART_FUTURE_WHITESPACE_MIN;
-    }
 
     const logicalRange = opts.logicalRange;
     const setData = () => {
@@ -188,7 +156,6 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
     chartDebug("data", "setData live", {
       pane: pane.index,
       bars: view.utcBars.length,
-      ws: view.futureWhitespace,
       logicalRange: logicalRange ?? null,
     });
   });
@@ -241,15 +208,8 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
 
     try {
       withPreservedViewport(pane.chart, () => {
-        if (batch.whitespace.length) {
-          // Series ends with whitespace — use historicalUpdate so the new real bar replaces W0, not appends before the tail.
-          pane.series.update(batch.newCandle, true);
-          const tailWs = batch.whitespace[batch.whitespace.length - 1];
-          if (tailWs) pane.series.update(tailWs);
-        } else {
-          if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
-          pane.series.update(batch.newCandle);
-        }
+        if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
+        pane.series.update(batch.newCandle);
       }, { followUpFrames: 2 });
       pane.timeAdapter = pane._chartView?.timeAdapter ?? pane.timeAdapter;
       delete pane.utcTimeToIdx;
@@ -260,8 +220,6 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
         pane: pane.index,
         time: utcBar.time,
         close: utcBar.close,
-        ws: batch.whitespace.length,
-        mode: batch.whitespace.length ? "update+ws" : "update",
       });
       return true;
     } catch (err) {

@@ -6,6 +6,7 @@ import {
 import { showLayoutNameDialog } from "../../../ui/header/layout/dialogs.js";
 import { getLayoutToolDefaultsSnapshot, setLayoutToolDefaults } from "../../../drawings/toolbars/defaults/layoutScope.js";
 import { getLayoutDrawingTemplatesSnapshot, setLayoutDrawingTemplates } from "../../../drawings/toolbars/defaults/layoutTemplates.js";
+import { scrollPaneToLatest } from "../../../chart/viewportReset.js";
 import { applyPriceScaleMarginsAfterBarLoad } from "../../../chart/settings/applier.js";
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -164,7 +165,7 @@ export function attachLayoutPersistence(ctx) {
   function finishPaneAfterLoad(pane, opts = {}) {
     if (!pane.bars?.length) return;
     if (opts.scrollToLatest) {
-      ctx.scrollToLatest?.(pane.bars.length);
+      scrollPaneToLatest(pane, ctx.settingsStore);
     }
     if (!opts.skipPriceScaleMargins) {
       applyPriceScaleMarginsAfterBarLoad(pane, ctx.settingsStore, ctx.activePriceScaleId);

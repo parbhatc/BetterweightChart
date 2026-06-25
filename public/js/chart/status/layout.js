@@ -19,9 +19,30 @@ export function syncStatusLineLayout(pane, getSettings) {
   el.style.setProperty("--status-line-inset-end", `${endInset}px`);
 }
 
-/** @param {object} pane @param {() => object} getSettings */
-export function wireStatusLineLayout(pane, getSettings) {
-  const run = () => syncStatusLineLayout(pane, getSettings);
+/**
+ * @param {object} pane
+ * @param {() => object} getSettings
+ * @param {{ shouldDeferRangeUpdate?: () => boolean }} [opts]
+ */
+export function wireStatusLineLayout(pane, getSettings, opts = {}) {
+  const shouldDefer = opts.shouldDeferRangeUpdate ?? (() => false);
+  let layoutPending = false;
+
+  const run = () => {
+    if (shouldDefer()) {
+      layoutPending = true;
+      return;
+    }
+    layoutPending = false;
+    syncStatusLineLayout(pane, getSettings);
+  };
+
+  pane._flushStatusLineLayout = () => {
+    if (!layoutPending) return;
+    layoutPending = false;
+    syncStatusLineLayout(pane, getSettings);
+  };
+
   run();
 
   const chart = pane.chart;
@@ -36,6 +57,7 @@ export function wireStatusLineLayout(pane, getSettings) {
     pane._statusLineLayoutCleanup = () => {
       prev?.();
       ro.disconnect();
+      delete pane._flushStatusLineLayout;
     };
   }
 }

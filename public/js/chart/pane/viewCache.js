@@ -1,7 +1,6 @@
 import { buildCandleSeriesData } from "../bar/data.js";
-import { CHART_FUTURE_WHITESPACE_MIN, futureWhitespaceBarCount, isFutureWhitespaceEnabled, withFutureWhitespace } from "../future/whitespace.js";
 import { isElectronicSession } from "../../primitives/session/background.js";
-import { shiftBarsToChartTime, chartTimeZoneForPane } from "../timezone/chartTime.js";
+import { chartTimeZoneForPane } from "../timezone/chartTime.js";
 import { resolveTimezone } from "../timezone/list.js";
 import { createTimeAdapter } from "../time/timeAdapter.js";
 import { BAR_SEC } from "../constants.js";
@@ -52,18 +51,15 @@ export function invalidatePaneChartView(pane) {
  */
 export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions, utcBarsOverride) {
   const sym = settingsStore.get().symbol ?? {};
-  const sc = settingsStore.get().scales ?? {};
   const session = sym.session ?? "electronic";
   const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
   const utcBars = (utcBarsOverride ?? utcBarsForPane(pane, settingsStore, symbolInfo)).slice();
   const key = utcBarsKey(utcBars, session);
   const barSec = barSecForPane(pane, resolutions);
-  const wsEnabled = isFutureWhitespaceEnabled(sc);
-  const ws = futureWhitespaceBarCount(pane, sc);
 
-  const chartBars = shiftBarsToChartTime(utcBars, tz);
-  const mapBars = withFutureWhitespace(chartBars, barSec, ws);
-  const seriesData = withFutureWhitespace(buildCandleSeriesData(chartBars, sym), barSec, ws);
+  const chartBars = utcBars;
+  const mapBars = chartBars.map((b) => ({ time: b.time }));
+  const seriesData = buildCandleSeriesData(utcBars, sym);
   const timeAdapter = createTimeAdapter({ utcBars, chartBars, mapBars, barSec });
 
   const view = {
@@ -75,8 +71,6 @@ export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolution
     mapBars,
     seriesData,
     barSec,
-    futureWhitespace: ws,
-    futureWhitespaceEnabled: wsEnabled,
     timeAdapter,
   };
 
@@ -96,21 +90,12 @@ export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolution
  */
 export function getPaneChartView(pane, settingsStore, symbolInfo, resolutions) {
   const sym = settingsStore.get().symbol ?? {};
-  const sc = settingsStore.get().scales ?? {};
   const session = sym.session ?? "electronic";
   const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
   const utcBars = utcBarsForPane(pane, settingsStore, symbolInfo);
   const key = utcBarsKey(utcBars, session);
-  const wsEnabled = isFutureWhitespaceEnabled(sc);
-  const ws = futureWhitespaceBarCount(pane, sc);
   const view = pane._chartView;
-  if (
-    view &&
-    view.timezone === tz &&
-    view.utcKey === key &&
-    view.futureWhitespace === ws &&
-    view.futureWhitespaceEnabled === wsEnabled
-  ) {
+  if (view && view.timezone === tz && view.utcKey === key) {
     return view;
   }
   return rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions);
@@ -148,7 +133,7 @@ export function patchFormingBarInView(pane, utcBar, settingsStore, symbolInfo, r
 
 /**
  * Extend cached view by one real bar (O(1) — avoids full setData on new candle).
- * @returns {{ newCandle: object, prevCandle: object | null, whitespace: object[] } | null}
+ * @returns {{ newCandle: object, prevCandle: object | null } | null}
  */
 export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, resolutions) {
   const sym = settingsStore.get().symbol ?? {};
@@ -174,34 +159,15 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
   if (view.utcBars.length !== prevUtcOnly.length) return null;
 
   view.utcBars.push(utcBar);
-  const chartBar = shiftBarsToChartTime([utcBar], tz)[0];
+  const chartBar = utcBar;
   view.chartBars.push(chartBar);
 
-  const ws = view.futureWhitespace;
-  const barSec = view.barSec;
-  if (ws > 0) {
-    view.mapBars.length -= ws;
-    view.seriesData.length -= ws;
-  }
-
-  const candles = buildCandleSeriesData(view.chartBars, sym);
+  const candles = buildCandleSeriesData(view.utcBars, sym);
   const newCandle = candles[candles.length - 1];
   const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
 
   view.seriesData.push(newCandle);
   view.mapBars.push({ time: chartBar.time });
-
-  /** @type {object[]} */
-  const whitespace = [];
-  if (ws > 0) {
-    const lastChartTime = chartBar.time;
-    for (let i = 0; i < ws; i += 1) {
-      const pt = { time: lastChartTime + (i + 1) * barSec };
-      whitespace.push(pt);
-      view.mapBars.push(pt);
-      view.seriesData.push(pt);
-    }
-  }
 
   view.utcKey = utcBarsKey(allUtc, session);
   pane.mapBars = view.mapBars;
@@ -211,8 +177,47 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
     utcBars: view.utcBars,
     chartBars: view.chartBars,
     mapBars: view.mapBars,
-    barSec,
+    barSec: view.barSec,
   });
 
-  return { newCandle, prevCandle, whitespace };
+  return { newCandle, prevCandle };
+}
+
+/**
+ * Extend cached view at the head with older UTC bars (O(n) on prepended chunk only).
+ * @returns {{ candles: object[], added: number } | null}
+ */
+export function prependBarsInView(pane, olderUtcBars, settingsStore, symbolInfo, resolutions) {
+  if (!olderUtcBars.length) return null;
+
+  const view = getPaneChartView(pane, settingsStore, symbolInfo, resolutions);
+  if (!view.utcBars.length) return null;
+
+  const sym = settingsStore.get().symbol ?? {};
+  const session = sym.session ?? "electronic";
+  const firstTime = view.utcBars[0].time;
+  const filtered = olderUtcBars.filter((b) => b.time < firstTime);
+  if (!filtered.length) return null;
+
+  const newCandles = buildCandleSeriesData(filtered, sym);
+
+  view.utcBars = filtered.concat(view.utcBars);
+  view.chartBars = filtered.concat(view.chartBars);
+  view.mapBars = filtered.map((b) => ({ time: b.time })).concat(view.mapBars);
+  view.seriesData = newCandles.concat(view.seriesData);
+  view.utcKey = utcBarsKey(view.utcBars, session);
+  view.timeAdapter = createTimeAdapter({
+    utcBars: view.utcBars,
+    chartBars: view.chartBars,
+    mapBars: view.mapBars,
+    barSec: view.barSec,
+  });
+
+  pane._chartView = view;
+  pane.mapBars = view.mapBars;
+  pane.shiftedBars = view.chartBars;
+  pane._shiftedKey = view.utcKey;
+  pane.timeAdapter = view.timeAdapter;
+
+  return { candles: newCandles, added: filtered.length };
 }

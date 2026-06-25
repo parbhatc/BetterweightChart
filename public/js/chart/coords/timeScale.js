@@ -1,6 +1,6 @@
 /**
  * Chart coordinate helpers for time/price ↔ pixel mapping.
- * Supports mapping times beyond the last bar (future whitespace).
+ * Supports mapping times beyond the last bar (virtual future time via LWC extrapolation).
  */
 
 import { chartDebug } from "../../debug/chart/index.js";

@@ -53,31 +53,21 @@ export function applySymbolLineStyle(opts) {
     const sym = settingsStore.get().symbol ?? {};
     for (const pane of getAllChartPanes()) {
       const visible = barsForPane(pane, settingsStore, symbolInfo);
-      const useCustomPriceLabel = Boolean(sc.countdownToBarClose);
-      const { bar, prevBar } = useCustomPriceLabel
-        ? priceLineBarForPane(pane, settingsStore, symbolInfo)
-        : {
-            bar: pane.hoverBar ?? visible.at(-1),
-            prevBar:
-              pane.hoverBar != null
-                ? pane.hoverPrev
-                : visible.length > 1
-                  ? visible.at(-2)
-                  : undefined,
-          };
+      const { bar, prevBar } = priceLineBarForPane(pane, settingsStore, symbolInfo);
       const lineStyle = Number(sc.symbolLabelLineStyle ?? 2);
       const options = {
-        lastValueVisible: useCustomPriceLabel ? false : Boolean(sc.symbolLabelValue),
-        priceLineVisible: useCustomPriceLabel ? false : Boolean(sc.symbolLabelLine),
+        lastValueVisible: false,
+        priceLineVisible: false,
         priceLineColor: resolveSymbolLineColor(sc, sym, bar, prevBar),
         priceLineWidth: Number(sc.symbolLabelLineWidth) || 1,
         priceLineStyle: lineStyle,
-        title: sc.symbolLabelName ? pane.symbol : "",
+        title: "",
       };
-      const key = `${useCustomPriceLabel}|${options.lastValueVisible}|${options.priceLineVisible}|${options.priceLineWidth}|${lineStyle}|${options.title}`;
+      const key = `${options.priceLineColor}|${options.priceLineWidth}|${lineStyle}`;
       if (paneStyleKeys.get(pane.index) === key) continue;
       paneStyleKeys.set(pane.index, key);
       pane.series.applyOptions(options);
+      pane.priceLineLabel?.requestRefresh?.();
     }
   } finally {
     applyingSymbolLineStyle = false;

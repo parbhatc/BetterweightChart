@@ -107,18 +107,14 @@ export function getChartViewportStats(deps, opts = {}) {
       ? Math.max(0, Math.round((liveEndUtc - cursorUtc) / barSec))
       : null;
 
-  const futureWhitespaceBars = view.futureWhitespace ?? pane.futureWhitespaceBars ?? null;
   const maxFutureUtc =
-    cursorUtc != null && futureWhitespaceBars != null && barSec > 0
-      ? cursorUtc + futureWhitespaceBars * barSec
-      : null;
+    cursorUtc != null && barSec > 0 && liveEndUtc != null ? liveEndUtc + barSec * 48 : null;
 
   const relativeToLatest = {
     barsBefore: behindCursorBars,
     barsAfterVisible: aheadOfCursorBars,
     timeBefore: behindCursorSec != null ? formatDuration(-behindCursorSec) : null,
     timeAfterVisible: aheadOfCursorSec != null ? formatDuration(aheadOfCursorSec) : null,
-    maxFutureBars: futureWhitespaceBars,
     maxFutureUtc,
     maxFutureLabel: utcLabel(maxFutureUtc),
     timeToMaxFuture:
@@ -198,8 +194,6 @@ export function getChartViewportStats(deps, opts = {}) {
     viewportLayout,
     priceLayout,
     whitespace: {
-      futureBars: futureWhitespaceBars,
-      enabled: view.futureWhitespaceEnabled ?? null,
       maxUtc: maxFutureUtc,
       maxLabel: utcLabel(maxFutureUtc),
     },
@@ -234,9 +228,9 @@ export function getChartViewportStats(deps, opts = {}) {
     lines.push(
       `  vs ${anchor}: ${stats.relativeToLatest.timeBefore ?? "?"} left, ${stats.relativeToLatest.timeAfterVisible ?? "?"} to visible right (${stats.relativeToLatest.barsAfterVisible ?? "?"} bars)`,
     );
-    if (stats.whitespace.futureBars != null) {
+    if (stats.whitespace.maxUtc != null) {
       lines.push(
-        `  max scroll past ${anchor}: ${stats.relativeToLatest.timeToMaxFuture ?? "?"} (${stats.whitespace.futureBars} whitespace bars → ${stats.whitespace.maxLabel ?? "?"})`,
+        `  max scroll past ${anchor}: ${stats.relativeToLatest.timeToMaxFuture ?? "?"} (→ ${stats.whitespace.maxLabel ?? "?"})`,
       );
     }
     console.info(lines.join("\n"));

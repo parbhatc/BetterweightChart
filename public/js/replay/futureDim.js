@@ -54,176 +54,208 @@ function drawReplayTimeLabel(ctx, x, bottomY, text) {
   ctx.restore();
 }
 
+/**
+ * @typedef {import("../primitives/background/composite.js").PaneBackgroundPrimitive} PaneBackgroundPrimitive
+ */
+
+/**
+ * @typedef {object} ReplayFutureDimState
+ * @property {PaneBackgroundPrimitive | undefined} host
+ * @property {() => { bars: object[], barSec: number, timeAdapter: object | null }} getContext
+ * @property {() => number | null} getCutBarIndex
+ * @property {() => number | null} getDimBarIndex
+ * @property {() => number | null} getScissorsY
+ * @property {() => boolean} getShowCutLine
+ * @property {() => boolean} getShowScissors
+ * @property {() => string} getFill
+ * @property {() => string | null} getTimeLabel
+ */
+
+/** @param {ReplayFutureDimState} state */
+function replayFutureDimDrawData(state) {
+  const host = state.host;
+  const chart = host?.chart;
+  const cutIndex = state.getCutBarIndex();
+  const dimIndex = state.getDimBarIndex();
+  const { bars, timeAdapter } = state.getContext();
+  const fill = state.getFill();
+  const scissorsY = state.getScissorsY();
+  const showCutLine = state.getShowCutLine();
+  const showScissors = state.getShowScissors();
+  const timeLabel = state.getTimeLabel();
+
+  if (!chart || !bars?.length || !timeAdapter) {
+    return {
+      dimVisible: false,
+      cutVisible: false,
+      showScissors: false,
+      timeLabel: null,
+      fill,
+      fromX: null,
+      rightX: null,
+      cutX: null,
+      scissorsY: null,
+    };
+  }
+
+  let cutX = null;
+  if (cutIndex != null && cutIndex >= 0 && cutIndex < bars.length) {
+    const cutBar = bars[cutIndex];
+    const cutChartTime = timeAdapter.time.toChart(cutBar.time);
+    cutX = timeAdapter.coord.xFromChart(chart, cutChartTime);
+  }
+
+  let fromX = null;
+  let dimVisible = false;
+  const rightX = timeAdapter.coord.visibleRightX(chart);
+
+  if (dimIndex != null && dimIndex >= 0 && dimIndex < bars.length - 1) {
+    const nextBar = bars[dimIndex + 1];
+    const fromChartTime = timeAdapter.time.toChart(nextBar.time);
+    fromX = timeAdapter.coord.xFromChart(chart, fromChartTime);
+    dimVisible =
+      fromX != null &&
+      rightX != null &&
+      Number.isFinite(fromX) &&
+      Number.isFinite(rightX) &&
+      rightX > fromX;
+  }
+
+  const cutVisible = showCutLine && cutX != null && Number.isFinite(cutX);
+
+  return {
+    dimVisible,
+    cutVisible,
+    showScissors: showScissors && cutX != null && scissorsY != null && Number.isFinite(scissorsY),
+    timeLabel: cutVisible ? timeLabel : null,
+    fill,
+    fromX,
+    rightX,
+    cutX,
+    scissorsY,
+  };
+}
+
+/** Replay future dim as a background-layer (not a standalone primitive). */
+export function createReplayFutureDimLayer() {
+  /** @type {ReplayFutureDimState} */
+  const state = {
+    host: undefined,
+    getContext: () => ({ bars: [], barSec: 60, timeAdapter: null }),
+    getCutBarIndex: () => null,
+    getDimBarIndex: () => null,
+    getScissorsY: () => null,
+    getShowCutLine: () => false,
+    getShowScissors: () => false,
+    getFill: () => "rgba(0, 0, 0, 0.5)",
+    getTimeLabel: () => null,
+  };
+
+  const view = new ReplayFutureDimPaneView(state);
+
+  const layer = {
+    id: "replay",
+    view,
+    onAttached(/** @type {PaneBackgroundPrimitive} */ host) {
+      state.host = host;
+      if (!scissorsImage) {
+        scissorsLoadListeners.add(() => host.requestUpdate());
+      }
+    },
+    onDetached() {
+      state.host = undefined;
+    },
+    requestRefresh() {
+      state.host?.requestUpdate();
+    },
+    setContextProvider(/** @type {ReplayFutureDimState["getContext"]} */ fn) {
+      state.getContext = fn;
+    },
+    setCutBarIndexProvider(/** @type {ReplayFutureDimState["getCutBarIndex"]} */ fn) {
+      state.getCutBarIndex = fn;
+    },
+    setDimBarIndexProvider(/** @type {ReplayFutureDimState["getDimBarIndex"]} */ fn) {
+      state.getDimBarIndex = fn;
+    },
+    setScissorsYProvider(/** @type {ReplayFutureDimState["getScissorsY"]} */ fn) {
+      state.getScissorsY = fn;
+    },
+    setShowCutLineProvider(/** @type {ReplayFutureDimState["getShowCutLine"]} */ fn) {
+      state.getShowCutLine = fn;
+    },
+    setShowScissorsProvider(/** @type {ReplayFutureDimState["getShowScissors"]} */ fn) {
+      state.getShowScissors = fn;
+    },
+    setFillProvider(/** @type {ReplayFutureDimState["getFill"]} */ fn) {
+      state.getFill = fn;
+    },
+    setTimeLabelProvider(/** @type {ReplayFutureDimState["getTimeLabel"]} */ fn) {
+      state.getTimeLabel = fn;
+    },
+    drawData() {
+      return replayFutureDimDrawData(state);
+    },
+  };
+
+  return layer;
+}
+
+/** @deprecated Use createReplayFutureDimLayer with PaneBackgroundPrimitive */
 export class ReplayFutureDimPrimitive {
   constructor() {
-    /** @type {import("lightweight-charts").IChartApi | null} */
-    this._chart = null;
-    /** @type {(() => void) | null} */
-    this._requestUpdate = null;
-    /** @type {() => { bars: object[], barSec: number, timeAdapter: object | null }} */
-    this._getContext = () => ({ bars: [], barSec: 60, timeAdapter: null });
-    /** @type {() => number | null} */
-    this._getCutBarIndex = () => null;
-    /** @type {() => number | null} */
-    this._getDimBarIndex = () => null;
-    /** @type {() => number | null} */
-    this._getScissorsY = () => null;
-    /** @type {() => boolean} */
-    this._getShowCutLine = () => false;
-    /** @type {() => boolean} */
-    this._getShowScissors = () => false;
-    /** @type {() => string} */
-    this._getFill = () => "rgba(0, 0, 0, 0.5)";
-    /** @type {() => string | null} */
-    this._getTimeLabel = () => null;
-    this._paneView = new ReplayFutureDimPaneView(this);
-    /** @type {(() => void) | null} */
-    this._unsub = null;
+    const layer = createReplayFutureDimLayer();
+    this._layer = layer;
+    this._paneView = layer.view;
   }
 
-  /** @param {() => { bars: object[], barSec: number, timeAdapter: object | null }} fn */
   setContextProvider(fn) {
-    this._getContext = fn;
+    this._layer.setContextProvider(fn);
   }
-
-  /** @param {() => number | null} fn */
   setCutBarIndexProvider(fn) {
-    this._getCutBarIndex = fn;
+    this._layer.setCutBarIndexProvider(fn);
   }
-
-  /** @param {() => number | null} fn */
   setDimBarIndexProvider(fn) {
-    this._getDimBarIndex = fn;
+    this._layer.setDimBarIndexProvider(fn);
   }
-
-  /** @param {() => number | null} fn */
   setScissorsYProvider(fn) {
-    this._getScissorsY = fn;
+    this._layer.setScissorsYProvider(fn);
   }
-
-  /** @param {() => boolean} fn */
   setShowCutLineProvider(fn) {
-    this._getShowCutLine = fn;
+    this._layer.setShowCutLineProvider(fn);
   }
-
-  /** @param {() => boolean} fn */
   setShowScissorsProvider(fn) {
-    this._getShowScissors = fn;
+    this._layer.setShowScissorsProvider(fn);
   }
-
-  /** @param {() => string} fn */
   setFillProvider(fn) {
-    this._getFill = fn;
+    this._layer.setFillProvider(fn);
   }
-
-  /** @param {() => string | null} fn */
   setTimeLabelProvider(fn) {
-    this._getTimeLabel = fn;
+    this._layer.setTimeLabelProvider(fn);
   }
-
   requestRefresh() {
-    this._requestUpdate?.();
+    this._layer.requestRefresh();
   }
-
-  /** @param {import("lightweight-charts").SeriesAttachedParameter} param */
   attached(param) {
     this._chart = param.chart;
     this._requestUpdate = param.requestUpdate;
-    if (!scissorsImage) {
-      scissorsLoadListeners.add(() => this._requestUpdate?.());
-    }
-    const ts = this._chart.timeScale();
-    const onRange = () => this._requestUpdate?.();
-    ts.subscribeVisibleLogicalRangeChange(onRange);
-    this._unsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
   }
-
-  detached() {
-    this._unsub?.();
-    this._unsub = null;
-    this._chart = null;
-    this._requestUpdate = null;
-  }
-
+  detached() {}
   updateAllViews() {}
-
   paneViews() {
     return [this._paneView];
   }
-
   drawData() {
-    const chart = this._chart;
-    const cutIndex = this._getCutBarIndex();
-    const dimIndex = this._getDimBarIndex();
-    const { bars, timeAdapter } = this._getContext();
-    const fill = this._getFill();
-    const scissorsY = this._getScissorsY();
-    const showCutLine = this._getShowCutLine();
-    const showScissors = this._getShowScissors();
-    const timeLabel = this._getTimeLabel();
-
-    if (!chart || !bars?.length || !timeAdapter) {
-      return {
-        dimVisible: false,
-        cutVisible: false,
-        showScissors: false,
-        timeLabel: null,
-        fill,
-        fromX: null,
-        rightX: null,
-        cutX: null,
-        scissorsY: null,
-      };
-    }
-
-    let cutX = null;
-    if (cutIndex != null && cutIndex >= 0 && cutIndex < bars.length) {
-      const cutBar = bars[cutIndex];
-      const cutChartTime = timeAdapter.time.toChart(cutBar.time);
-      cutX = timeAdapter.coord.xFromChart(chart, cutChartTime);
-    }
-
-    let fromX = null;
-    let dimVisible = false;
-    const rightX = timeAdapter.coord.visibleRightX(chart);
-
-    if (
-      dimIndex != null &&
-      dimIndex >= 0 &&
-      dimIndex < bars.length - 1
-    ) {
-      const nextBar = bars[dimIndex + 1];
-      const fromChartTime = timeAdapter.time.toChart(nextBar.time);
-      fromX = timeAdapter.coord.xFromChart(chart, fromChartTime);
-      dimVisible =
-        fromX != null &&
-        rightX != null &&
-        Number.isFinite(fromX) &&
-        Number.isFinite(rightX) &&
-        rightX > fromX;
-    }
-
-    const cutVisible = showCutLine && cutX != null && Number.isFinite(cutX);
-
-    return {
-      dimVisible,
-      cutVisible,
-      showScissors: showScissors && cutX != null && scissorsY != null && Number.isFinite(scissorsY),
-      timeLabel: cutVisible ? timeLabel : null,
-      fill,
-      fromX,
-      rightX,
-      cutX,
-      scissorsY,
-    };
+    return this._layer.drawData();
   }
 }
 
 class ReplayFutureDimPaneView {
-  /** @param {ReplayFutureDimPrimitive} source */
+  /** @param {ReplayFutureDimState} source */
   constructor(source) {
     this._source = source;
   }
+
+  update() {}
 
   zOrder() {
     return "top";
@@ -235,12 +267,14 @@ class ReplayFutureDimPaneView {
 }
 
 class ReplayFutureDimPaneRenderer {
-  /** @param {ReplayFutureDimPrimitive} source */
+  /** @param {ReplayFutureDimState} source */
   constructor(source) {
     this._source = source;
   }
 
   draw(target) {
+    if (this._source.host?.shouldDeferInteraction?.()) return;
+
     const {
       dimVisible,
       cutVisible,
@@ -251,7 +285,7 @@ class ReplayFutureDimPaneRenderer {
       rightX,
       cutX,
       scissorsY,
-    } = this._source.drawData();
+    } = replayFutureDimDrawData(this._source);
     if (!dimVisible && !cutVisible && !showScissors) return;
 
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
@@ -291,8 +325,13 @@ class ReplayFutureDimPaneRenderer {
  * @param {ReturnType<import("./mode.js").mountReplayMode>} replay
  */
 export function attachReplayFutureDim(ctx, replay) {
-  /** @type {Map<number, { primitive: ReplayFutureDimPrimitive, attached: boolean }>} */
-  const primitives = new Map();
+  /** @type {Map<number, { layer: ReturnType<typeof createReplayFutureDimLayer>, attached: boolean }>} */
+  const layers = new Map();
+
+  const ensureBackground =
+    ctx.ensurePaneBackgroundForPane ??
+    ctx.paneExtras?.ensurePaneBackgroundForPane ??
+    null;
 
   function resolveFill() {
     const cv = ctx.settingsStore.get().canvas ?? {};
@@ -305,14 +344,14 @@ export function attachReplayFutureDim(ctx, replay) {
   }
 
   /** @param {object} pane */
-  function getOrCreatePrimitive(pane) {
+  function getOrCreateLayer(pane) {
     if (!pane?.series) return null;
 
-    let entry = primitives.get(pane.index);
+    let entry = layers.get(pane.index);
     if (entry) return entry;
 
-    const primitive = new ReplayFutureDimPrimitive();
-    primitive.setContextProvider(() => {
+    const layer = createReplayFutureDimLayer();
+    layer.setContextProvider(() => {
       const view = pane._chartView;
       const ta = view?.timeAdapter ?? pane.timeAdapter;
       return {
@@ -321,22 +360,22 @@ export function attachReplayFutureDim(ctx, replay) {
         timeAdapter: ta ?? null,
       };
     });
-    primitive.setCutBarIndexProvider(() => {
+    layer.setCutBarIndexProvider(() => {
       const state = replay.getState();
       if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
       return pane.replayHoverBarIndex ?? null;
     });
-    primitive.setDimBarIndexProvider(() => {
+    layer.setDimBarIndexProvider(() => {
       const state = replay.getState();
       if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
       return pane.replayHoverBarIndex ?? null;
     });
-    primitive.setScissorsYProvider(() => {
+    layer.setScissorsYProvider(() => {
       const state = replay.getState();
       if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
       return pane.replayHoverLocalY ?? null;
     });
-    primitive.setShowCutLineProvider(() => {
+    layer.setShowCutLineProvider(() => {
       const state = replay.getState();
       return Boolean(
         state.active &&
@@ -345,7 +384,7 @@ export function attachReplayFutureDim(ctx, replay) {
           pane.replayHoverBarIndex != null,
       );
     });
-    primitive.setTimeLabelProvider(() => {
+    layer.setTimeLabelProvider(() => {
       const state = replay.getState();
       if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
 
@@ -360,7 +399,7 @@ export function attachReplayFutureDim(ctx, replay) {
       const tz = resolveTimezone(sym.timezone, pane.symbolInfo ?? ctx.symbolInfo);
       return formatReplayCutTimeLabel(bar.time, tz);
     });
-    primitive.setShowScissorsProvider(() => {
+    layer.setShowScissorsProvider(() => {
       const state = replay.getState();
       return Boolean(
         state.active &&
@@ -369,27 +408,32 @@ export function attachReplayFutureDim(ctx, replay) {
           pane.replayHoverBarIndex != null,
       );
     });
-    primitive.setFillProvider(resolveFill);
-    entry = { primitive, attached: false };
-    primitives.set(pane.index, entry);
+    layer.setFillProvider(resolveFill);
+    entry = { layer, attached: false };
+    layers.set(pane.index, entry);
     return entry;
   }
 
   /** @param {object} pane */
   function attachPane(pane) {
-    const entry = getOrCreatePrimitive(pane);
-    if (!entry || entry.attached) return entry?.primitive ?? null;
-    pane.series.attachPrimitive(entry.primitive);
-    pane.replayFutureDim = entry.primitive;
+    if (!ensureBackground) return null;
+    const entry = getOrCreateLayer(pane);
+    if (!entry || entry.attached) return entry?.layer ?? null;
+
+    const composite = ensureBackground(pane);
+    if (!composite.getLayer("replay")) {
+      composite.addLayer(entry.layer);
+    }
+    pane.replayFutureDim = entry.layer;
     entry.attached = true;
-    return entry.primitive;
+    return entry.layer;
   }
 
   /** @param {object} pane */
   function detachPane(pane) {
-    const entry = primitives.get(pane?.index);
-    if (!entry?.attached || !pane?.series) return;
-    pane.series.detachPrimitive(entry.primitive);
+    const entry = layers.get(pane?.index);
+    if (!entry?.attached) return;
+    pane.backgroundPrimitive?.removeLayer("replay");
     entry.attached = false;
     delete pane.replayFutureDim;
   }
@@ -408,8 +452,8 @@ export function attachReplayFutureDim(ctx, replay) {
   }
 
   function refreshAll() {
-    for (const entry of primitives.values()) {
-      if (entry.attached) entry.primitive.requestRefresh();
+    for (const entry of layers.values()) {
+      if (entry.attached) entry.layer.requestRefresh();
     }
   }
 

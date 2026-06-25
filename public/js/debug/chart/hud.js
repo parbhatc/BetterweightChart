@@ -26,6 +26,9 @@ export function mountDebugHud(opts = {}) {
   let pingMs = null;
   let panFps = null;
   let panning = false;
+  let zooming = false;
+  /** @type {string[]} */
+  let viewportModes = [];
   let rafId = 0;
   /** @type {ReturnType<typeof setInterval> | null} */
   let pingTimer = null;
@@ -36,9 +39,10 @@ export function mountDebugHud(opts = {}) {
 
   function render() {
     const ping = pingMs == null ? "…" : `${pingMs}ms`;
-    if (panning) {
-      const pan = panFps == null ? "—" : String(panFps);
-      root.textContent = `Pan ${pan} fps · Render ${liveFps} · Ping ${ping}`;
+    if (panning || zooming) {
+      const label = viewportModes.length ? viewportModes.join("+") : panning ? "pan" : "zoom";
+      const interactionFps = panFps == null ? "—" : String(panFps);
+      root.textContent = `${label} ${interactionFps} fps · Render ${liveFps} · Ping ${ping}`;
       return;
     }
     root.textContent = `FPS ${liveFps} · Ping ${ping}`;
@@ -107,9 +111,11 @@ export function mountDebugHud(opts = {}) {
   pingTimer = setInterval(measurePing, 4000);
 
   const api = {
-    /** @param {{ fps?: number, panning?: boolean }} stats */
+    /** @param {{ fps?: number, panning?: boolean, zooming?: boolean, modes?: string[] }} stats */
     setPanStats(stats) {
+      if (stats.modes) viewportModes = [...stats.modes];
       if (stats.panning != null) panning = Boolean(stats.panning);
+      if (stats.zooming != null) zooming = Boolean(stats.zooming);
       if (stats.fps != null) panFps = stats.fps;
       render();
     },

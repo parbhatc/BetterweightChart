@@ -1,5 +1,6 @@
 import { safePriceToY } from "../coords/timeScale.js";
 import { mapUtcTimeToChartTime } from "../../indicators/math/barTimeMap.js";
+import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
 
 /**
  * @param {number} utcTime
@@ -38,10 +39,10 @@ export class ExecutionShapesPrimitive {
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
-    const ts = this._chart.timeScale();
-    const onRange = () => this._requestUpdate?.();
-    ts.subscribeVisibleLogicalRangeChange(onRange);
-    this._unsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
+    this._unsub = subscribePrimitiveViewportRefresh(
+      this._chart.timeScale(),
+      () => this._requestUpdate?.(),
+    );
   }
 
   detached() {

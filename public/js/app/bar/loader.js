@@ -4,6 +4,7 @@ import { normalizeBar } from "../../datafeed/custom.js";
 import {
   chartDebug,
   chartDebugCount,
+  chartDebugForming,
   chartDebugTime,
   chartDebugTimeAsync,
 } from "../../debug/chart/index.js";
@@ -28,15 +29,18 @@ import {
 
 /** Load more when the visible range is within this many bars of the left edge. */
 export const HISTORY_EDGE_BARS = 80;
+/** Max negative logical `from` still treated as left-edge whitespace (not zoom-out). */
+const LEFT_WHITESPACE_EDGE_BARS = 16;
 
 /**
  * True when the user has panned near the oldest loaded bar (scroll-back prefetch).
- * Negative logical `from` is padding left of bar 0 — not a scroll-back signal.
+ * Deeply negative `from` (zoomed out) is not the history edge.
  * @param {{ from: number, to: number } | null | undefined} range
  */
 export function isNearHistoryLeftEdge(range) {
   if (!range) return false;
-  if (range.from < 0) return false;
+  if (range.from < -LEFT_WHITESPACE_EDGE_BARS) return false;
+  if (range.from < 0) return true;
   return range.from < HISTORY_EDGE_BARS;
 }
 /** Max burst loads per pan when prefetching history. */
@@ -82,6 +86,7 @@ export function createBarLoader(opts) {
     getAllChartPanes,
     loader,
     refreshPaneCandleData,
+    prependHistoryToPaneSeries,
     applyLiveBarToPane,
     updateFormingBarOnPane,
     appendNewBarOnPane,
@@ -101,6 +106,7 @@ export function createBarLoader(opts) {
     isReplayHistoryBlocked,
     getReplayLoadCapTo,
     getReplayLoadContext,
+    isChartPanning,
   } = opts;
 
   /** @type {Map<number, string>} */
@@ -201,24 +207,31 @@ export function createBarLoader(opts) {
         return;
       }
 
-      const result = isNewBar
-        ? { ok: Boolean(appendNewBarOnPane?.(pane, bar)), isNewBar: true }
-        : { ok: Boolean(updateFormingBarOnPane?.(pane, bar)), isNewBar: false };
-
-      if (!result.ok) {
-        invalidatePaneChartView(pane);
-        applyLiveBarToPane(pane);
-        chartDebugCount("tick", "setData");
-      } else if (isNewBar) {
-        chartDebugCount("tick", result.isNewBar ? "append" : "update");
-        pane.sessionBg?.requestRefresh();
-        publishResolutionCache(pane);
+      if (!isNewBar && pane._deferSeriesUpdates) {
+        pane._deferredLiveBar = bar;
+        chartDebugCount("tick", "deferredPan");
+        chartDebugForming("update forming deferred (pan)", { pane: pane.index, time: bar.time });
       } else {
-        chartDebugCount("tick", "update");
+        const result = isNewBar
+          ? { ok: Boolean(appendNewBarOnPane?.(pane, bar)), isNewBar: true }
+          : { ok: Boolean(updateFormingBarOnPane?.(pane, bar)), isNewBar: false };
+
+        if (!result.ok) {
+          invalidatePaneChartView(pane);
+          applyLiveBarToPane(pane);
+          chartDebugCount("tick", "setData");
+        } else if (isNewBar) {
+          chartDebugCount("tick", "append");
+          pane.sessionBg?.requestRefresh();
+          publishResolutionCache(pane);
+        } else {
+          chartDebugCount("tick", "update");
+        }
+
+        onPaneBarUpdate?.(pane, { isNewBar: result.isNewBar });
       }
 
       if (pane.index === 0) setPrimaryBars(pane);
-      onPaneBarUpdate?.(pane, { isNewBar: result.isNewBar });
 
       if (pane.index === getActivePaneIndex()) {
         refreshStatusLine();
@@ -261,9 +274,6 @@ export function createBarLoader(opts) {
     if (!relevant.length) return 0;
 
     const beforeLen = pane.bars.length;
-    pane.bars = mergeBarsDeduped(relevant, pane.bars);
-    const added = pane.bars.length - beforeLen;
-    if (added <= 0) return 0;
 
     const captured = captureVisibleViewport(pane.chart);
     /** @type {{ from: number, to: number } | null} */
@@ -275,9 +285,21 @@ export function createBarLoader(opts) {
     }
 
     pane._historyRestorePending = true;
-    invalidatePaneChartView(pane);
     pane._historyExhausted = false;
-    refreshPaneCandleData(pane, { deferSessionBg: true });
+    // Prepend while pane.bars is still the old tail — otherwise getPaneChartView
+    // rebuilds with merged data and prependBarsInView finds nothing to inject.
+    const prepended = prependHistoryToPaneSeries?.(pane, relevant, { deferSessionBg: true });
+    pane.bars = mergeBarsDeduped(relevant, pane.bars);
+    const added = pane.bars.length - beforeLen;
+    if (added <= 0) {
+      pane._historyRestorePending = false;
+      return 0;
+    }
+
+    if (!prepended) {
+      invalidatePaneChartView(pane);
+      refreshPaneCandleData(pane, { deferSessionBg: true });
+    }
     restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
     onPaneHistoryDataUpdated?.(pane);
     if (pane.index === 0) setPrimaryBars(pane);
@@ -335,18 +357,53 @@ export function createBarLoader(opts) {
     }
   }
 
+  function isPanning() {
+    return typeof isChartPanning === "function" && isChartPanning();
+  }
+
+  /** @param {object} pane @param {object[]} older */
+  function queueDeferredHistory(pane, older) {
+    if (!older.length) return;
+    const existing = pane._deferredHistoryOlder;
+    pane._deferredHistoryOlder = existing?.length
+      ? mergeBarsDeduped(older, existing)
+      : older;
+    chartDebug("perf", "prependHistory deferred (pan)", {
+      pane: pane.index,
+      bars: pane._deferredHistoryOlder.length,
+    });
+  }
+
+  /**
+   * Apply history fetched while the user was panning (deferred to avoid jank).
+   * @param {object} pane
+   */
+  function flushDeferredHistory(pane) {
+    const older = pane._deferredHistoryOlder;
+    if (!older?.length) return false;
+    pane._deferredHistoryOlder = null;
+    pane._loadingHistory = true;
+    try {
+      const added = mergeOlderBarsIntoPane(pane, older, { reason: "history prepended (deferred)" });
+      if (added > 0) syncPrependedBarsToPeers(pane, older);
+      return added > 0;
+    } finally {
+      pane._loadingHistory = false;
+    }
+  }
+
   /**
    * @param {object} pane
    * @param {number} [chunk]
    */
   async function prependHistory(pane, chunk = historyChunk) {
-    if (pane._loadingHistory || !pane.bars.length) return false;
+    if (pane._historyFetchInFlight || pane._loadingHistory || !pane.bars.length) return false;
     if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
     await ensurePaneSymbolInfo(pane);
     if (!pane.symbolInfo) return false;
     if (trySyncHistoryFromPeer(pane)) return true;
 
-    pane._loadingHistory = true;
+    pane._historyFetchInFlight = true;
     try {
       const first = pane.bars[0];
       const barSec = getBarSecForPane?.(pane) ?? 60;
@@ -356,11 +413,17 @@ export function createBarLoader(opts) {
         pane: pane.index,
         countBack: requestCountBack,
         maxChunk: chunk,
+        panning: isPanning(),
         ...periodParams,
       });
       const result = await chartDebugTimeAsync("data", `prependHistory pane ${pane.index}`, () =>
         datafeed.getBars(pane.symbolInfo, pane.resolution, periodParams),
       );
+      const older = (result.bars ?? []).filter((b) => b.time < first.time);
+      if (isPanning()) {
+        if (older.length) queueDeferredHistory(pane, older);
+        return false;
+      }
       if (!result.bars?.length || result.noData) {
         chartDebug("data", "prependHistory noData — history exhausted", {
           pane: pane.index,
@@ -371,7 +434,6 @@ export function createBarLoader(opts) {
         return false;
       }
 
-      const older = result.bars.filter((b) => b.time < first.time);
       if (!older.length) {
         pane._historyExhausted = true;
         return false;
@@ -389,12 +451,21 @@ export function createBarLoader(opts) {
       pane._historyErrorUntil = Date.now() + HISTORY_ERROR_COOLDOWN_MS;
       return false;
     } finally {
-      pane._loadingHistory = false;
+      pane._historyFetchInFlight = false;
     }
   }
 
   function needsMoreHistory(pane) {
-    if (pane._historyExhausted || pane._loadingHistory || !pane.bars.length) return false;
+    if (isPanning()) return false;
+    if (
+      pane._historyExhausted ||
+      pane._loadingHistory ||
+      pane._historyFetchInFlight ||
+      pane._deferredHistoryOlder?.length ||
+      !pane.bars.length
+    ) {
+      return false;
+    }
     if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
     if (pane._suppressHistoryPrefetch) return false;
     const ts = pane.chart.timeScale();
@@ -466,14 +537,32 @@ export function createBarLoader(opts) {
     pane._firstDataRequest = true;
     pane._emptyStateMeta = null;
     pane.bars = [];
-    pane.futureWhitespaceBars = null;
     invalidatePaneChartView(pane);
     syncPaneEmptyState?.(pane, { show: false });
   }
 
+  /**
+   * Run after pan ends / viewport restore — flush deferred bars then prefetch if still at edge.
+   * @param {object} pane
+   */
+  async function resumeHistoryAfterPan(pane) {
+    if (isPanning()) return false;
+    flushDeferredHistory(pane);
+    if (pane._historyRestorePending) {
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      });
+    }
+    return ensureHistoryNearEdge(pane);
+  }
+
   /** Burst load when panning near the left edge or into a gap. */
   async function ensureHistoryNearEdge(pane) {
+    if (isPanning()) return false;
     if (typeof isReplayHistoryBlocked === "function" && isReplayHistoryBlocked()) return false;
+    if (pane._deferredHistoryOlder?.length) {
+      flushDeferredHistory(pane);
+    }
     if (!needsMoreHistory(pane)) return false;
     chartDebug("data", "history edge prefetch", {
       pane: pane.index,
@@ -483,6 +572,7 @@ export function createBarLoader(opts) {
     let loaded = false;
     let bursts = 0;
     while (needsMoreHistory(pane) && bursts < HISTORY_BURST_MAX) {
+      if (isPanning()) break;
       const got = await prependHistory(pane);
       if (!got) break;
       loaded = true;
@@ -594,7 +684,6 @@ export function createBarLoader(opts) {
         bars = bars.filter((b) => b.time <= replayCapTo);
       }
       pane.bars = bars;
-      pane.futureWhitespaceBars = null;
       invalidatePaneChartView(pane);
       pane._historyExhausted = Boolean(result.noData);
       pane._historyErrorUntil = null;
@@ -685,7 +774,9 @@ export function createBarLoader(opts) {
     pushLiveBar: upsertLiveBar,
     prependHistory,
     ensureHistoryNearEdge,
+    resumeHistoryAfterPan,
     needsMoreHistory,
+    flushDeferredHistory,
     setOverlayLoaderEnabled,
     stashPaneResolutionCache,
   };

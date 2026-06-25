@@ -7,6 +7,7 @@ import {
   resolvePriceScalePlacement,
 } from "../scale/settings.js";
 import { invalidateChartTimeCache } from "../timezone/chartTime.js";
+import { createTimezoneProvider, invalidateTimezoneProviderCache, toDisplayTime } from "../timezone/provider.js";
 import { priceFormatFromPrecisionSetting, precisionFromSettings, resolveTimezone } from "../timezone/list.js";
 import { formatDisplayPrice } from "../format.js";
 import {
@@ -20,7 +21,7 @@ import { applyColorOpacity } from "../../ui/color/picker.js";
 import { enforcePriceBarRatio, measurePriceBarRatio } from "../price/barRatio.js";
 import { resolutionSec } from "../resolutions.js";
 
-/** Series times are pseudo-UTC (local wall clock); format as UTC, not with a tz offset. */
+/** Label formatters treat display-shifted timestamps as UTC wall clock. */
 const CHART_TIME_LABEL_TZ = "Etc/UTC";
 
 /** @param {object} sc @param {object} cv @param {string} activeScale */
@@ -71,6 +72,9 @@ export function applySettingsToChart(opts) {
   );
   const activeScale = placement.left ? "left" : "right";
   const paneSymbolInfo = pane.symbolInfo ?? symbolInfo;
+  const timeZone = resolveTimezone(sym.timezone, paneSymbolInfo);
+  const timezoneProvider = createTimezoneProvider(timeZone);
+  pane._timezoneProvider = timezoneProvider;
 
   targetChart.applyOptions({
     layout: {
@@ -108,26 +112,29 @@ export function applySettingsToChart(opts) {
       borderColor: cv.scalesLineColor ?? themeColors.border,
       rightOffset: Number.isFinite(marginRight) ? marginRight : FUTURE_RIGHT_OFFSET,
       tickMarkFormatter: (time, tickMarkType) => {
+        const displayTime = toDisplayTime(time, timezoneProvider);
         switch (tickMarkType) {
           case TickMarkType.Year:
-            return String(toDate(time).getUTCFullYear());
+            return String(toDate(displayTime).getUTCFullYear());
           case TickMarkType.Month:
-            return formatAxisMonthTick(time, sc, CHART_TIME_LABEL_TZ);
+            return formatAxisMonthTick(displayTime, sc, CHART_TIME_LABEL_TZ);
           case TickMarkType.DayOfMonth:
-            return formatAxisDateTick(time, sc, CHART_TIME_LABEL_TZ);
+            return formatAxisDateTick(displayTime, sc, CHART_TIME_LABEL_TZ);
           case TickMarkType.Time:
-            return formatAxisTimeTick(toDate(time), CHART_TIME_LABEL_TZ, sc);
+            return formatAxisTimeTick(toDate(displayTime), CHART_TIME_LABEL_TZ, sc);
           default:
             return "";
         }
       },
     },
+    timezoneProvider,
     localization: {
       locale: navigator.language,
       priceFormatter: (price) => formatDisplayPrice(price, precisionFromSettings(s, paneSymbolInfo)),
       timeFormatter: (t) => {
         const barSec = pane._chartView?.barSec ?? resolutionSec(pane.resolution) ?? 60;
-        return formatChartTimeLabel(t, sc, CHART_TIME_LABEL_TZ, {
+        const displayTime = toDisplayTime(t, timezoneProvider);
+        return formatChartTimeLabel(displayTime, sc, CHART_TIME_LABEL_TZ, {
           includeTime: barSec < 86400,
         });
       },
@@ -450,6 +457,8 @@ export function applyChartTimezone(opts) {
   if (previousTimezone !== undefined && timezone !== previousTimezone) {
     invalidateChartTimeCache(previousTimezone);
     invalidateChartTimeCache(timezone);
+    invalidateTimezoneProviderCache(previousTimezone);
+    invalidateTimezoneProviderCache(timezone);
   }
 
   if (dataChanged) {

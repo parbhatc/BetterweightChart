@@ -1,4 +1,8 @@
 import {
+  applyNativeOrderLinePatch,
+} from "./orderLinePriceLineSync.js";
+import {
+  formatOrderLinePrice,
   resolveOrderLineFontFamily,
   resolveOrderLineFontSize,
   resolveOrderLineFontWeight,
@@ -110,7 +114,15 @@ export function createOrderLineAdapter(manager, id) {
       const p = Number(price);
       if (!Number.isFinite(p)) return adapter;
       state.price = p;
-      manager.requestRefresh();
+      if (
+        !applyNativeOrderLinePatch(state, {
+          price: p,
+          axisLabelText: formatOrderLinePrice(p),
+          pills: { moving: state.isMoving },
+        })
+      ) {
+        manager.requestRefresh();
+      }
       return adapter;
     },
     setText(text) {

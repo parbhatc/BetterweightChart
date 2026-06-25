@@ -9,6 +9,7 @@ import {
   createTradingViewChartApi,
 } from "../../chart/orderLine/index.js";
 import { createExecutionShapeManager } from "../../chart/executionShape/index.js";
+import { mountOrderTestDev } from "../../chart/orderLine/orderTestDev.js";
 import { createWidgetShortcutRegistry } from "../../chart/widgetShortcuts.js";
 import {
   showChartPendingOverlay,
@@ -416,6 +417,8 @@ export function createChartWidgetApi(ctx) {
       }
     },
   };
+
+  mountOrderTestDev(widget);
 
   return widget;
 }

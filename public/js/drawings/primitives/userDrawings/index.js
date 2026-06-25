@@ -1,6 +1,7 @@
 import { finalizeMeasureDrawing } from "../../tools/measure/index.js";
 import { renderDrawing } from "../renderers/index.js";
 import { DrawingPriceLinesSync } from "../priceLines/index.js";
+import { subscribePrimitiveViewportRefresh } from "../../../primitives/viewportRefresh.js";
 
 /** @typedef {import("../../types.js").UserDrawing} UserDrawing */
 
@@ -115,10 +116,10 @@ export class UserDrawingsPrimitive {
     this._requestUpdate = param.requestUpdate;
     this._priceLines.setSeries(this._series);
     this._syncPriceLines();
-    const ts = this._chart.timeScale();
-    const onRange = () => this._requestUpdate?.();
-    ts.subscribeVisibleLogicalRangeChange(onRange);
-    this._unsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
+    this._unsub = subscribePrimitiveViewportRefresh(
+      this._chart.timeScale(),
+      () => this._requestUpdate?.(),
+    );
   }
 
   detached() {

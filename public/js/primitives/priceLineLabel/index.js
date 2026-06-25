@@ -1,25 +1,17 @@
 import { formatBarCloseCountdown, secondsUntilBarClose } from "../../chart/bar/countdown.js";
 import { SYMBOL_PRICE_LINE_STYLE } from "../../chart/line/style.js";
 import {
-  attachCustomPriceLineHost,
-  customPriceLineLabelHeight,
-} from "../priceLine/customPriceLine.js";
-import {
   SCALE_LABEL_H,
-  SCALE_LABEL_FONT_SIZE,
   SCALE_LABEL_TITLE_FONT_SIZE,
-  STACKED_LABEL_TOP_PAD,
   STACKED_LABEL_LINE_GAP,
   STACKED_LABEL_BOTTOM_PAD,
 } from "../priceLine/axisLabelRenderer.js";
 
-/** @param {boolean} [showCountdown] @param {import("lightweight-charts").IChartApi} [chart] */
-export function symbolPriceLabelHeight(showCountdown = false, chart = null) {
-  if (chart) return customPriceLineLabelHeight(chart, showCountdown);
+/** @param {boolean} [showCountdown] */
+export function symbolPriceLabelHeight(showCountdown = false) {
   if (!showCountdown) return SCALE_LABEL_H;
   return (
-    STACKED_LABEL_TOP_PAD +
-    SCALE_LABEL_FONT_SIZE +
+    SCALE_LABEL_H +
     STACKED_LABEL_LINE_GAP +
     SCALE_LABEL_TITLE_FONT_SIZE +
     STACKED_LABEL_BOTTOM_PAD
@@ -27,44 +19,42 @@ export function symbolPriceLabelHeight(showCountdown = false, chart = null) {
 }
 
 /**
- * Symbol close price line + axis label (LWC-style custom price line).
+ * Symbol close price line + axis label via native lightweight-charts createPriceLine.
  * @param {object} opts
  * @param {import("lightweight-charts").ISeriesApi} opts.series
  * @param {() => object} opts.getState
  */
 export function attachPriceLineLabelPrimitive(opts) {
-  const host = attachCustomPriceLineHost({
-    series: opts.series,
-    getContext: () => {
-      const state = opts.getState();
-      return {
-        scaleId: state.scaleId ?? "right",
-        scaleVisible: state.scaleVisible !== false,
-      };
-    },
-  });
-
-  /** @type {import("../priceLine/customPriceLine.js").CustomPriceLineHandle | null} */
+  /** @type {import("lightweight-charts").IPriceLine | null} */
   let symbolLine = null;
   /** @type {ReturnType<typeof setInterval> | null} */
   let tickTimer = null;
 
   function sync() {
     const state = opts.getState();
-    const showCountdown = Boolean(state.marketOpen);
+    const showCountdown = Boolean(state.countdownToBarClose && state.marketOpen);
+    const active = Boolean(
+      state.symbolLabelActive ||
+        state.lineVisible ||
+        state.axisLabelVisible ||
+        state.title ||
+        showCountdown,
+    );
 
-    if (!state.enabled || state.scaleVisible === false) {
-      symbolLine?.remove();
-      symbolLine = null;
-      host.requestRefresh();
+    if (!active || state.scaleVisible === false) {
+      if (symbolLine) {
+        opts.series.removePriceLine(symbolLine);
+        symbolLine = null;
+      }
       return;
     }
 
     const price = state.price;
     if (price == null || !Number.isFinite(price)) {
-      symbolLine?.remove();
-      symbolLine = null;
-      host.requestRefresh();
+      if (symbolLine) {
+        opts.series.removePriceLine(symbolLine);
+        symbolLine = null;
+      }
       return;
     }
 
@@ -78,13 +68,14 @@ export function attachPriceLineLabelPrimitive(opts) {
         : "";
 
     if (!lineVisible && !axisLabelVisible && !title) {
-      symbolLine?.remove();
-      symbolLine = null;
-      host.requestRefresh();
+      if (symbolLine) {
+        opts.series.removePriceLine(symbolLine);
+        symbolLine = null;
+      }
       return;
     }
 
-    const options = {
+    const lineOptions = {
       id: "symbol",
       price,
       color: state.color,
@@ -100,11 +91,10 @@ export function attachPriceLineLabelPrimitive(opts) {
     };
 
     if (symbolLine) {
-      symbolLine.applyOptions(options);
+      symbolLine.applyOptions(lineOptions);
     } else {
-      symbolLine = host.createCustomPriceLine(options);
+      symbolLine = opts.series.createPriceLine(lineOptions);
     }
-    host.requestRefresh();
   }
 
   sync();
@@ -119,8 +109,14 @@ export function attachPriceLineLabelPrimitive(opts) {
         clearInterval(tickTimer);
         tickTimer = null;
       }
-      symbolLine?.remove();
-      host.destroy();
+      if (symbolLine) {
+        try {
+          opts.series.removePriceLine(symbolLine);
+        } catch {
+          /* ignore */
+        }
+        symbolLine = null;
+      }
     },
   };
 }

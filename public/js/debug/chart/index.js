@@ -2,7 +2,7 @@
  * Opt-in chart debug logging for perf issues (lag, setData, pan, etc.)
  *
  * Enable:
- *   ?debug=1  or  ?debug=perf,tick,data
+ *   ?debug=1  or  ?debug=perf,pan,zoom,viewport,data
  *   localStorage.setItem("bwc-debug", "1")
  *   window.__BWC_DEBUG__.enable()
  *
@@ -147,7 +147,7 @@ export function chartDebugForming(message, detail) {
 }
 
 /**
- * @param {string} category perf | pan | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt | replay
+ * @param {string} category perf | pan | zoom | viewport | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt | replay
  * @param {string} message
  * @param {unknown} [detail]
  */
@@ -241,7 +241,7 @@ function recordSlow(category, label, ms, detail) {
   }
 }
 
-/** FPS sample while panning. */
+/** FPS sample while panning / zooming the viewport. */
 export function createPanFpsMonitor(opts = {}) {
   const onSample = typeof opts.onSample === "function" ? opts.onSample : null;
   let rafId = 0;
@@ -250,17 +250,25 @@ export function createPanFpsMonitor(opts = {}) {
   let lastHudAt = 0;
   /** @type {number[]} */
   const samples = [];
+  /** @type {Set<string>} */
+  const activeModes = new Set();
 
-  function panFpsNow(now) {
+  function fpsNow(now) {
     const elapsed = now - windowStart;
     if (elapsed <= 0 || frames <= 0) return 0;
     return Math.round((frames / elapsed) * 1000);
   }
 
-  function emitHud(now, panning) {
+  function emitHud(now) {
     if (!onSample) return;
-    const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : panFpsNow(now);
-    onSample({ fps: panFpsNow(now), avgFps: avg, panning });
+    const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : fpsNow(now);
+    onSample({
+      fps: fpsNow(now),
+      avgFps: avg,
+      panning: activeModes.has("pan"),
+      zooming: activeModes.has("zoom"),
+      modes: [...activeModes],
+    });
   }
 
   function tick() {
@@ -268,12 +276,19 @@ export function createPanFpsMonitor(opts = {}) {
     const now = performance.now();
     if (onSample && now - lastHudAt >= 100) {
       lastHudAt = now;
-      emitHud(now, true);
+      emitHud(now);
     }
     if (now - windowStart >= 1000) {
       samples.push(frames);
       if (samples.length > 12) samples.shift();
-      chartDebug("pan", `fps ${frames}`, { avg: Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) });
+      const avg = Math.round(samples.reduce((a, b) => a + b, 0) / samples.length);
+      const cat = activeModes.has("pan") && activeModes.has("zoom") ? "viewport" : activeModes.has("zoom") ? "zoom" : "pan";
+      chartDebug(cat, `fps ${frames}`, { avg, modes: [...activeModes] });
+      if (activeModes.has("pan") && activeModes.has("zoom") && frames < 90) {
+        chartDebugThrottle("viewport", "lowFps", "low fps during pan+zoom", { fps: frames, avg, modes: [...activeModes] }, 800);
+      } else if (activeModes.has("pan") && frames < 90) {
+        chartDebugThrottle("viewport", "lowPanFps", "low fps during pan", { fps: frames, avg, modes: [...activeModes] }, 800);
+      }
       frames = 0;
       windowStart = now;
       lastHudAt = 0;
@@ -281,27 +296,72 @@ export function createPanFpsMonitor(opts = {}) {
     rafId = requestAnimationFrame(tick);
   }
 
+  function ensureRaf() {
+    if (!enabled || rafId) return;
+    frames = 0;
+    windowStart = performance.now();
+    lastHudAt = 0;
+    samples.length = 0;
+    rafId = requestAnimationFrame(tick);
+    emitHud(performance.now());
+  }
+
+  function stopRafIfIdle() {
+    if (activeModes.size > 0 || !rafId) return;
+    cancelAnimationFrame(rafId);
+    rafId = 0;
+  }
+
+  /**
+   * @param {string} [mode] pan | zoom
+   */
+  function start(mode = "pan") {
+    const wasEmpty = activeModes.size === 0;
+    activeModes.add(mode);
+    if (!enabled) return;
+    ensureRaf();
+    if (wasEmpty) {
+      onSample?.({ fps: 0, avgFps: 0, panning: activeModes.has("pan"), zooming: activeModes.has("zoom"), modes: [...activeModes] });
+    }
+    chartDebug(mode === "zoom" ? "zoom" : "pan", `${mode} start`, { modes: [...activeModes] });
+    if (activeModes.has("pan") && activeModes.has("zoom")) {
+      chartDebug("viewport", "pan+zoom overlap", { modes: [...activeModes] });
+    }
+  }
+
+  /**
+   * @param {string} [mode] pan | zoom
+   */
+  function stop(mode = "pan") {
+    if (!activeModes.has(mode)) return;
+    activeModes.delete(mode);
+    const now = performance.now();
+    const finalFps = fpsNow(now);
+    const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : finalFps;
+    chartDebug(mode === "zoom" ? "zoom" : "pan", `${mode} end`, {
+      lastFps: finalFps,
+      avgFps: avg,
+      samples: [...samples],
+      modes: [...activeModes],
+    });
+    if (activeModes.size === 0) {
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = 0;
+      }
+      if (onSample) {
+        onSample({ fps: finalFps, avgFps: avg, panning: false, zooming: false, modes: [] });
+      }
+    } else {
+      emitHud(now);
+    }
+    stopRafIfIdle();
+  }
+
   return {
-    start() {
-      if (!enabled || rafId) return;
-      frames = 0;
-      windowStart = performance.now();
-      lastHudAt = 0;
-      samples.length = 0;
-      rafId = requestAnimationFrame(tick);
-      onSample?.({ fps: 0, avgFps: 0, panning: true });
-      chartDebug("pan", "pan start");
-    },
-    stop() {
-      if (!rafId) return;
-      cancelAnimationFrame(rafId);
-      rafId = 0;
-      const now = performance.now();
-      const finalFps = panFpsNow(now);
-      const avg = samples.length ? Math.round(samples.reduce((a, b) => a + b, 0) / samples.length) : finalFps;
-      chartDebug("pan", "pan end", { lastFps: finalFps, avgFps: avg, samples: [...samples] });
-      if (onSample) onSample({ fps: finalFps, avgFps: avg, panning: false });
-    },
+    start,
+    stop,
+    activeModes: () => [...activeModes],
   };
 }
 

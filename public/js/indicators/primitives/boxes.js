@@ -1,5 +1,6 @@
 import { chartTimeToCoordinate, safePriceToY, safeTimeToX } from "../../chart/coords/timeScale.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
+import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
 
 const LABEL_FONT =
   `11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`;
@@ -107,7 +108,15 @@ class BoxesPaneRenderer {
 
     target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
       const rightX = mediaSize.width;
+      const pad = 4;
       for (const box of boxes) {
+        const x1 = timeToX(box.timeStart);
+        const x2End = box.extendRight ? null : timeToX(box.timeEnd);
+        const x2 = box.extendRight ? rightX : x2End;
+        if (x1 == null || x2 == null) continue;
+        const left = Math.min(x1, x2);
+        const right = Math.max(x1, x2);
+        if (right < -pad || left > rightX + pad) continue;
         drawBox(ctx, box, timeToX, priceToY, rightX);
       }
     });
@@ -208,16 +217,10 @@ class BoxesPrimitive {
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
-    const ts = this._chart.timeScale();
-    const handler = () => this._requestUpdate?.();
-    ts.subscribeVisibleLogicalRangeChange(handler);
-    this._unsub = () => {
-      try {
-        ts.unsubscribeVisibleLogicalRangeChange(handler);
-      } catch {
-        /* ignore */
-      }
-    };
+    this._unsub = subscribePrimitiveViewportRefresh(
+      this._chart.timeScale(),
+      () => this._requestUpdate?.(),
+    );
   }
 
   detached() {

@@ -3,10 +3,13 @@ import { getMarketStatusDetails } from "../../chart/market/status.js";
 import { precisionFromSettings } from "../../chart/timezone/list.js";
 import { formatDisplayPrice } from "../../chart/format.js";
 import { resolvePriceScalePlacement } from "../../chart/scale/settings.js";
-import { rafThrottle, trackChartPanning } from "../../chart/pan/perf.js";
+import { rafThrottle, trackChartPanning, trackChartZoom, viewportSnapshot } from "../../chart/pan/perf.js";
 import { timeToBarIndex } from "../../chart/coords/timeScale.js";
 import { nearestBarIndex, normalizeHoverBar, resolveUtcBarTime } from "../../chart/pane/hoverBar.js";
-import { SessionBackgroundPrimitive } from "../../primitives/session/background.js";
+import {
+  SessionBackgroundPrimitive,
+  createElectronicSessionHighlighter,
+} from "../../primitives/session/background.js";
 import { attachPriceLineLabelPrimitive } from "../../primitives/priceLineLabel/index.js";
 import { attachBidAskLinesPrimitive } from "../../primitives/bidAskLines/index.js";
 import { symbolLabelAnchorsForPane } from "../../chart/scale/symbolLabelAnchors.js";
@@ -14,16 +17,28 @@ import {
   priceLineBarForPane,
   resolvePriceLineColorForPane,
 } from "../symbol/lineStyle.js";
-import { chartDebugCount, chartDebugTime } from "../../debug/chart/index.js";
+import { chartDebugCount, chartDebugTime, chartDebug, chartDebugThrottle } from "../../debug/chart/index.js";
 import { resolvePaneBackgroundColor } from "../../chart/canvas/settings.js";
 import { syncStatusLineLayout, wireStatusLineLayout } from "../../chart/status/layout.js";
 import { isNearHistoryLeftEdge } from "../bar/loader.js";
 import {
   buildChartSeriesForPane,
-  ensureFutureWhitespace as growFutureWhitespace,
   applyLiveBarToPaneSeries,
+  updateFormingBarOnPaneSeries,
 } from "../../chart/pane/data.js";
-import { CHART_FUTURE_WHITESPACE_MIN, isFutureWhitespaceEnabled } from "../../chart/future/whitespace.js";
+
+/** Electronic session shading — off by default while perf-testing. `localStorage.setItem('bwc-session-bg','1')` or `?sessionBg=1` to enable. */
+function sessionBackgroundEnabled() {
+  if (typeof window === "undefined") return false;
+  try {
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.get("sessionBg") === "1" || sp.get("sessionBg") === "true") return true;
+    if (sp.get("noSessionBg") === "1" || sp.has("noSessionBg")) return false;
+    return localStorage.getItem("bwc-session-bg") === "1";
+  } catch {
+    return false;
+  }
+}
 
 /**
  * @param {object} deps
@@ -101,11 +116,11 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane @param {import("lightweight-charts").MouseEventParams | null | undefined} param */
   function isCrosshairOverFuture(pane, param) {
-    if (!param?.time || !param?.point) return false;
-    const chartBars = pane._chartView?.chartBars ?? [];
-    if (!chartBars.length) return false;
-    const lastRealChartTime = chartBars[chartBars.length - 1].time;
-    return param.time > lastRealChartTime;
+    if (!param?.point) return false;
+    const logical = param.logical;
+    if (logical == null || !Number.isFinite(logical)) return false;
+    const realCount = barsForPane(pane).length;
+    return logical >= realCount - 0.5;
   }
 
   /** Touch devices: only while finger is down; mouse/hover devices: active crosshair position. */
@@ -188,18 +203,17 @@ export function createPaneExtras(deps) {
 
   /** @param {object} pane */
   function attachSessionBackground(pane) {
-    const bg = new SessionBackgroundPrimitive();
-    bg.setSettingsProvider(() => settingsStore.get().symbol ?? {});
-    bg.setSymbolProvider(() => pane.symbolInfo ?? symbolInfo);
-    bg.setContextProvider(() => {
-      const view = pane._chartView;
-      const ta = view?.timeAdapter ?? pane.timeAdapter;
-      return {
-        bars: barsForPane(pane),
-        barSec: barSecForPane(pane),
-        timeAdapter: ta,
-      };
+    if (!sessionBackgroundEnabled()) {
+      pane.sessionBg = null;
+      chartDebug("session", "session background disabled (bwc-session-bg / ?sessionBg=1 to enable)");
+      return;
+    }
+    const highlighter = createElectronicSessionHighlighter({
+      getSettings: () => settingsStore.get().symbol ?? {},
+      getSymbolInfo: () => pane.symbolInfo ?? symbolInfo,
+      getTimeAdapter: () => pane._chartView?.timeAdapter ?? pane.timeAdapter ?? null,
     });
+    const bg = new SessionBackgroundPrimitive(highlighter);
     pane.series.attachPrimitive(bg);
     pane.sessionBg = bg;
   }
@@ -212,15 +226,18 @@ export function createPaneExtras(deps) {
       getState: () => {
         const sc = settingsStore.get().scales ?? {};
         const replayActive = getReplayActive?.() ?? false;
-        const enabled = Boolean(sc.countdownToBarClose);
-        const { close } = priceLineBarForPane(pane, settingsStore, symbolInfo);
-        const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
-        const placement = resolvePriceScalePlacement(sc.scalesPlacement);
         const marketOpen = replayActive
           ? false
           : getMarketStatusDetails(pane.symbolInfo ?? symbolInfo).open;
+        const symbolLabelActive = Boolean(
+          sc.symbolLabelValue || sc.symbolLabelLine || sc.symbolLabelName || sc.countdownToBarClose,
+        );
+        const { close } = priceLineBarForPane(pane, settingsStore, symbolInfo);
+        const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
+        const placement = resolvePriceScalePlacement(sc.scalesPlacement);
         return {
-          enabled,
+          symbolLabelActive,
+          countdownToBarClose: Boolean(sc.countdownToBarClose),
           marketOpen,
           scaleVisible: true,
           lineVisible: Boolean(sc.symbolLabelLine),
@@ -300,7 +317,17 @@ export function createPaneExtras(deps) {
   /** @param {object} pane @param {number} chartTime @param {boolean} isActive */
   function refreshHoverBarFromChartTime(pane, chartTime, isActive) {
     if (chartTime == null || !pane.timeAdapter) return;
-    applyCrosshairBar(pane, { time: chartTime, seriesData: new Map() }, isActive);
+    const ta = pane.timeAdapter;
+    const chartBars = pane._chartView?.chartBars ?? pane.shiftedBars ?? pane.bars ?? [];
+    const barSec = pane._chartView?.barSec ?? barSecForPane(pane, resolutions);
+    let idx = ta.index.chart(chartTime);
+    if ((idx == null || idx < 0) && chartBars.length) {
+      idx = timeToBarIndex(chartTime, chartBars, barSec);
+    }
+    if (idx == null || idx < 0) return;
+    const bar = ta.index.utcBar(idx);
+    if (!bar) return;
+    setPaneHoverBar(pane, bar, idx, isActive);
   }
 
   /** @param {object} pane */
@@ -335,7 +362,6 @@ export function createPaneExtras(deps) {
 
       if (ui.chartPanning) {
         chartDebugCount("crosshair", "skippedPan");
-        scheduleStatusLine(pane);
         return;
       }
       chartDebugCount("crosshair", "move");
@@ -372,6 +398,18 @@ export function createPaneExtras(deps) {
     });
   }
 
+  /** Flush chart updates deferred while the user was panning. */
+  function flushDeferredPaneInteraction(pane) {
+    pane._flushStatusLineLayout?.();
+    pane.sessionBg?.flushPendingRebuild?.();
+    if (pane._deferredLiveBar) {
+      const bar = pane._deferredLiveBar;
+      pane._deferredLiveBar = null;
+      updateFormingBarOnPaneSeries(pane, bar, settingsStore, symbolInfo, resolutions);
+      chartDebug("perf", "deferred live bar flushed", { pane: pane.index, time: bar.time });
+    }
+  }
+
   /** @param {object} pane */
   function wirePanePanPerf(pane) {
     /** @type {ReturnType<typeof setTimeout> | null} */
@@ -390,37 +428,31 @@ export function createPaneExtras(deps) {
         !r ||
         !isNearHistoryLeftEdge(r) ||
         pane._suppressHistoryPrefetch ||
-        !viewportDeps?.ensureHistoryNearEdge ||
-        pane._loadingHistory ||
-        pane._historyRestorePending
+        !viewportDeps?.resumeHistoryAfterPan
       ) {
         return;
       }
       cancelHistoryPrefetch();
       historyPrefetchTimer = setTimeout(() => {
         historyPrefetchTimer = null;
-        if (
-          ui.chartPanning ||
-          pane._suppressHistoryPrefetch ||
-          pane._loadingHistory ||
-          pane._historyRestorePending
-        ) {
-          return;
-        }
-        void viewportDeps.ensureHistoryNearEdge(pane);
+        if (ui.chartPanning || pane._suppressHistoryPrefetch) return;
+        void viewportDeps.resumeHistoryAfterPan(pane);
       }, HISTORY_PREFETCH_IDLE_MS);
     };
 
     trackChartPanning(pane.el, {
       onStart: () => {
         ui.chartPanning = true;
+        for (const p of getAllChartPanes()) p._deferSeriesUpdates = true;
         cancelHistoryPrefetch();
         viewportDeps?.onChartPanStart?.();
-        panFps.start();
+        panFps.start("pan");
       },
       onEnd: () => {
         ui.chartPanning = false;
-        panFps.stop();
+        for (const p of getAllChartPanes()) p._deferSeriesUpdates = false;
+        panFps.stop("pan");
+        for (const p of getAllChartPanes()) flushDeferredPaneInteraction(p);
         viewportDeps?.onChartPanEnd?.();
         if (pane.index === 0) viewportDeps?.maintainLockedRatio?.();
         const active = getActivePane();
@@ -432,117 +464,108 @@ export function createPaneExtras(deps) {
         }
         flushPendingStatusLines();
         if (active) scheduleStatusLine(active);
-        if (deferWhitespacePane) {
-          const p = deferWhitespacePane;
-          deferWhitespacePane = null;
-          ensurePaneFutureWhitespace(p);
-        }
         scheduleHistoryPrefetch();
       },
     });
-  }
 
-  /** @type {object | null} */
-  let deferWhitespacePane = null;
-
-  /** @param {object} pane */
-  function ensurePaneFutureWhitespace(pane) {
-    const sc = settingsStore.get().scales ?? {};
-    if (!isFutureWhitespaceEnabled(sc)) return;
-    const visible = barsForPane(pane);
-    growFutureWhitespace({
-      chart: pane.chart,
-      series: pane.series,
-      pane,
-      barSec: barSecForPane(pane, resolutions),
-      futureWhitespaceEnabled: isFutureWhitespaceEnabled(settingsStore.get().scales),
-      barsForChart: () => visible,
-      buildChartSeriesForDisplay: (vis) =>
-        buildChartSeriesForPane(pane, vis, settingsStore, resolutions),
-      getFutureWhitespaceBars: () => pane.futureWhitespaceBars,
-      setFutureWhitespaceBars: (n) => {
-        const all = getAllChartPanes();
-        const multi = all.length > 1;
-        if (multi) {
-          const maxN = Math.max(
-            n,
-            ...all.map((p) => p.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN),
-          );
-          for (const p of all) {
-            const prev = p.futureWhitespaceBars ?? CHART_FUTURE_WHITESPACE_MIN;
-            p.futureWhitespaceBars = maxN;
-            if (p.index === 0) viewportDeps?.setPrimaryFutureWhitespace?.(maxN);
-            if (p !== pane && p.bars.length && maxN > prev && !ui.barsLoading) {
-              applyLiveBarToPaneSeries(p, settingsStore, symbolInfo, resolutions);
-            }
-          }
-          return;
+    trackChartZoom(pane.el, {
+      getPane: () => pane,
+      panFps,
+      isPanning: () => ui.chartPanning,
+      onZoomStart: (detail) => chartDebug("zoom", "zoom start", detail),
+      onZoom: (detail) => {
+        chartDebugThrottle("zoom", `wheel-${pane.index}`, `zoom ${detail.dir}`, detail, 120);
+        if (detail.combinedPan) {
+          chartDebugThrottle("viewport", `panZoom-${pane.index}`, "pan+zoom", detail, 400);
         }
-        pane.futureWhitespaceBars = n;
-        if (pane.index === 0) viewportDeps?.setPrimaryFutureWhitespace?.(n);
       },
-      requestAllSessionBgRefresh: () => {
-        for (const p of getAllChartPanes()) p.sessionBg?.requestRefresh();
-      },
+      onZoomEnd: (detail) => chartDebug("zoom", "zoom end", detail),
     });
-  }
-
-  /** @param {object} pane */
-  function scheduleWhitespaceGrow(pane) {
-    const sc = settingsStore.get().scales ?? {};
-    if (!isFutureWhitespaceEnabled(sc)) return;
-    if (ui.barsLoading || ui.chartPanning) {
-      if (ui.chartPanning) deferWhitespacePane = pane;
-      return;
-    }
-    ensurePaneFutureWhitespace(pane);
   }
 
   /** @param {object} pane */
   function wirePaneViewportHandlers(pane) {
-    let growScheduled = false;
     let historyScheduled = false;
+    let lastSnap = viewportSnapshot(pane, ui);
 
     pane.chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
-      if (ui.barsLoading || pane._loadingHistory || pane._historyRestorePending || pane._suppressHistoryPrefetch) return;
-      if (!ui.chartPanning && pane.lastCrosshairChartTime != null) {
+      if (ui.barsLoading || pane._loadingHistory || pane._historyRestorePending || pane._suppressHistoryPrefetch) {
+        return;
+      }
+
+      if (ui.chartPanning) {
+        chartDebugCount("perf", "visibleRangeSkippedPan");
+        const r = pane.chart.timeScale().getVisibleLogicalRange();
+        if (
+          r &&
+          isNearHistoryLeftEdge(r) &&
+          !pane._historyFetchInFlight &&
+          !pane._suppressHistoryPrefetch &&
+          viewportDeps?.prependHistory
+        ) {
+          void viewportDeps.prependHistory(pane);
+        }
+        return;
+      }
+
+      const snap = viewportSnapshot(pane, ui);
+      const barSpacingDelta =
+        lastSnap.barSpacing != null && snap.barSpacing != null
+          ? snap.barSpacing - lastSnap.barSpacing
+          : 0;
+      const visibleBarsDelta =
+        lastSnap.visibleBars != null && snap.visibleBars != null
+          ? snap.visibleBars - lastSnap.visibleBars
+          : 0;
+      const zooming =
+        Math.abs(barSpacingDelta) > 0.05 || Math.abs(visibleBarsDelta) >= 1;
+      if (zooming) {
+        const dir =
+          barSpacingDelta > 0 || visibleBarsDelta < 0
+            ? "in"
+            : barSpacingDelta < 0 || visibleBarsDelta > 0
+              ? "out"
+              : "range";
+        chartDebugThrottle(
+          "zoom",
+          `range-${pane.index}`,
+          `visible range ${dir}`,
+          {
+            ...snap,
+            barSpacingDelta,
+            visibleBarsDelta,
+            combinedPan: ui.chartPanning,
+            modes: panFps.activeModes?.() ?? [],
+          },
+          ui.chartPanning ? 250 : 400,
+        );
+      }
+      lastSnap = snap;
+
+      if (!zooming && pane.lastCrosshairChartTime != null) {
         const isActive = pane.index === (getLayoutManager()?.getActivePaneIndex() ?? 0);
         refreshHoverBarFromChartTime(pane, pane.lastCrosshairChartTime, isActive);
         scheduleStatusLine(pane);
-      } else if (ui.chartPanning) {
-        chartDebugCount("perf", "visibleRangeSkippedPan");
       }
       chartDebugCount("perf", "visibleRange");
       chartDebugTime("perf", `visibleRangeHandler pane ${pane.index}`, () => {
-        if (pane.index === 0 && !pane._suppressHistoryPrefetch && !ui.chartPanning) {
+        if (pane.index === 0 && !pane._suppressHistoryPrefetch) {
           viewportDeps?.maintainLockedRatio?.();
         }
 
         const r = pane.chart.timeScale().getVisibleLogicalRange();
-        if (!r) return;
-        const realCount = barsForPane(pane).length;
+        if (!r || zooming) return;
 
-        if (isNearHistoryLeftEdge(r) && viewportDeps?.ensureHistoryNearEdge && !ui.chartPanning) {
+        if (isNearHistoryLeftEdge(r) && viewportDeps?.resumeHistoryAfterPan) {
           if (!historyScheduled) {
             historyScheduled = true;
             requestAnimationFrame(() => {
               historyScheduled = false;
               if (pane._suppressHistoryPrefetch || ui.chartPanning) return;
-              void viewportDeps.ensureHistoryNearEdge(pane);
+              void viewportDeps.resumeHistoryAfterPan(pane);
             });
           }
         }
-
-        if (r.to < realCount - 16) return;
-
-        if (growScheduled) return;
-        growScheduled = true;
-        requestAnimationFrame(() => {
-          growScheduled = false;
-          chartDebugTime("whitespace", `ensureFutureWhitespace pane ${pane.index}`, () =>
-            scheduleWhitespaceGrow(pane),
-          );
-        });
       });
     });
   }
@@ -560,23 +583,15 @@ export function createPaneExtras(deps) {
         if (!quote || quote.bid == null || quote.ask == null) return { enabled: false };
         const precision = precisionFromSettings(settingsStore.get(), pane.symbolInfo ?? symbolInfo);
         const fmt = (n) => formatDisplayPrice(n, precision);
-        const placement = resolvePriceScalePlacement(sc.scalesPlacement);
         const scaleVisible = true;
-        const cv = settingsStore.get().canvas ?? {};
         const lineWidth = Number(sc.bidAskLabelLineWidth) || 1;
         const lineStyle = Number(sc.bidAskLabelLineStyle ?? 1);
         const anyVisible =
           sc.bidLabelLine || sc.bidLabelValue || sc.askLabelLine || sc.askLabelValue;
         return {
           enabled: Boolean(anyVisible) && scaleVisible,
-          scaleVisible,
-          scaleId: placement.left ? "left" : "right",
-          fontSize: Number(cv.scalesFontSize) || 12,
-          paneBackground: resolvePaneBackgroundColor(cv),
           lineWidth,
           lineStyle,
-          noOverlappingLabels: sc.noOverlappingLabels !== false,
-          reservedAnchors: symbolLabelAnchorsForPane(pane, settingsStore, pane.symbolInfo ?? symbolInfo),
           bid: {
             price: quote.bid,
             color: sc.bidLabelLineColor ?? "#2962FF",
@@ -599,7 +614,9 @@ export function createPaneExtras(deps) {
   /** @param {object} pane @param {HTMLElement} [statusLineEl] */
   function setupPaneExtras(pane, statusLineEl) {
     if (statusLineEl) pane.statusEl = statusLineEl;
-    wireStatusLineLayout(pane, () => settingsStore.get());
+    wireStatusLineLayout(pane, () => settingsStore.get(), {
+      shouldDeferRangeUpdate: () => ui.chartPanning,
+    });
     attachSessionBackground(pane);
     attachPriceLineLabel(pane);
     attachBidAskLines(pane);

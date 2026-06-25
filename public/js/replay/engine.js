@@ -784,7 +784,6 @@ export function attachReplayEngine(ctx, replay) {
       cursorTime: cutTime,
       fullEndBarTime: cutTime,
       liveEndBarTime: liveEnd,
-      futureWhitespaceBars: 0,
       partial: cutTime != null && liveEnd != null && cutTime < liveEnd,
     };
   }
@@ -1045,7 +1044,6 @@ export function attachReplayEngine(ctx, replay) {
       delete pane.replayCursorEndIndex;
       pane.bars = [];
       pane._firstDataRequest = true;
-      pane.futureWhitespaceBars = null;
       invalidatePaneChartView(pane);
       pane.priceLineLabel?.requestRefresh();
       pane.sessionBg?.requestRefresh();

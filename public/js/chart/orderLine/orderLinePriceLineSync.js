@@ -1,10 +1,10 @@
 import { LineStyle } from "lightweight-charts";
 import {
-  attachCustomPriceLineHost,
-  customPriceLineLabelHeight,
-} from "../../primitives/priceLine/customPriceLine.js";
-import { symbolLabelAnchorsForPane } from "../scale/symbolLabelAnchors.js";
-import { formatOrderLinePrice } from "./rowLayout.js";
+  formatOrderLinePrice,
+  resolveOrderLineFontFamily,
+  resolveOrderLineFontSize,
+  resolveOrderLineFontWeight,
+} from "./rowLayout.js";
 
 /** @param {number} lineStyle */
 function mapOrderLineStyle(lineStyle) {
@@ -13,80 +13,91 @@ function mapOrderLineStyle(lineStyle) {
   return LineStyle.Solid;
 }
 
-/**
- * @param {object} pane
- * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} settingsStore
- * @param {object | null | undefined} symbolInfo
- */
-function reservedAnchorsForOrderLines(pane, settingsStore, symbolInfo) {
-  const anchors = [...symbolLabelAnchorsForPane(pane, settingsStore, symbolInfo)];
-  if (!pane?.chart) return anchors;
+/** @param {import("./types.js").OrderLineState} state */
+export function stateToOrderLineOptions(state) {
+  const color = state.lineColor || state.bodyBackgroundColor || "#089981";
+  const qtyText = state.quantity?.trim() ?? "";
 
-  const quote = pane.quote ?? null;
-  const sc = settingsStore?.get?.().scales ?? {};
-  const labelHeight = customPriceLineLabelHeight(pane.chart, false);
-
-  if (quote?.bid != null && Number.isFinite(quote.bid) && (sc.bidLabelLine || sc.bidLabelValue)) {
-    anchors.push({ price: quote.bid, labelHeight });
-  }
-  if (quote?.ask != null && Number.isFinite(quote.ask) && (sc.askLabelLine || sc.askLabelValue)) {
-    anchors.push({ price: quote.ask, labelHeight });
-  }
-  return anchors;
+  return {
+    id: state.id,
+    price: state.price,
+    color,
+    lineVisible: true,
+    axisLabelVisible: true,
+    axisLabelColor: color,
+    axisLabelTextColor: "#ffffff",
+    axisLabelText: formatOrderLinePrice(state.price),
+    lineWidth: 1,
+    lineStyle: mapOrderLineStyle(state.lineStyle),
+    pills: {
+      visible: true,
+      side: state.pillSide === "left" ? "left" : "right",
+      offset: Math.max(0, Number(state.pillOffset) || 20),
+      moving: Boolean(state.isMoving),
+      body: {
+        text: state.text ?? "",
+        backgroundColor: state.bodyBackgroundColor || color,
+        textColor: state.bodyTextColor || "#ffffff",
+        borderColor: state.bodyBorderColor || "transparent",
+        tooltip: state.bodyTooltip ?? "",
+        fontSize: resolveOrderLineFontSize(state.bodyFontSize),
+        fontWeight: resolveOrderLineFontWeight(state.bodyFontWeight),
+        fontFamily: resolveOrderLineFontFamily(state.bodyFontFamily),
+        visible: true,
+      },
+      quantity: {
+        text: qtyText,
+        backgroundColor: state.quantityBackgroundColor || color,
+        textColor: state.quantityTextColor || "#ffffff",
+        borderColor: state.quantityBorderColor || "#000000",
+        tooltip: state.quantityTooltip ?? "",
+        fontSize: resolveOrderLineFontSize(state.quantityFontSize),
+        fontWeight: resolveOrderLineFontWeight(state.quantityFontWeight),
+        fontFamily: resolveOrderLineFontFamily(state.quantityFontFamily),
+        visible: Boolean(qtyText),
+      },
+      cancel: {
+        visible: true,
+        backgroundColor: state.cancelButtonBackgroundColor ?? "rgba(255, 255, 255, 0.96)",
+        borderColor: state.cancelButtonBorderColor ?? "#000000",
+        iconColor: state.cancelButtonIconColor ?? "#000000",
+        tooltip: state.cancelTooltip ?? "",
+      },
+    },
+  };
 }
 
 /**
- * Sync TradingView order lines to custom price lines (same renderer as symbol / bid / ask).
+ * Sync TradingView order lines to native series.createOrderLine().
  * @param {() => object | null | undefined} getActivePane
- * @param {() => { useStacked?: boolean, getReservedAnchors?: () => object[] }} getAxisLabelConfig
- * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings> | null} settingsStore
- * @param {() => object | null | undefined} symbolInfo
  */
-export function createOrderLinePriceLineSync(
-  getActivePane,
-  getAxisLabelConfig,
-  settingsStore,
-  symbolInfo,
-) {
-  /** @type {ReturnType<typeof attachCustomPriceLineHost> | null} */
-  let host = null;
+export function createOrderLinePriceLineSync(getActivePane) {
   /** @type {import("lightweight-charts").ISeriesApi | null} */
   let seriesRef = null;
-  /** @type {Map<string, { applyOptions: Function, remove: Function }>} */
-  const handleIds = new Map();
+  /** @type {Map<string, import("lightweight-charts").IOrderLine>} */
+  const lines = new Map();
 
-  function ensureHost(pane) {
-    if (host && seriesRef === pane.series) return host;
-    destroy();
-    seriesRef = pane.series;
-    host = attachCustomPriceLineHost({
-      series: pane.series,
-      getContext: () => {
-        const cfg = getAxisLabelConfig();
-        const placement = settingsStore?.get?.().scales?.scalesPlacement ?? "right";
-        const scaleId = placement === "left" ? "left" : "right";
-        const paneChart = pane.chart;
-        const info = typeof symbolInfo === "function" ? symbolInfo() : symbolInfo;
-        return {
-          scaleId,
-          scaleVisible: paneChart?.priceScale?.(scaleId)?.width?.() > 0,
-          reservedAnchors:
-            cfg.getReservedAnchors?.() ?? reservedAnchorsForOrderLines(pane, settingsStore, info),
-          noOverlappingLabels: cfg.useStacked !== false,
-        };
-      },
-    });
-    return host;
-  }
-
-  /** @param {import("./types.js").OrderLineState[]} states */
-  function sync(states) {
+  /**
+   * @param {import("./types.js").OrderLineState[]} states
+   * @param {Map<string, ReturnType<import("./createOrderLineAdapter.js").createOrderLineAdapter>>} [adapters]
+   */
+  function sync(states, adapters) {
     const pane = getActivePane();
     if (!pane?.series) {
       destroy();
       return;
     }
-    const h = ensureHost(pane);
+
+    if (seriesRef !== pane.series) {
+      destroy();
+      seriesRef = pane.series;
+    }
+
+    if (!pane.series.createOrderLine) {
+      console.warn("[BWC:order-line] series.createOrderLine missing — run npm run vendor and hard refresh");
+      return;
+    }
+
     /** @type {Set<string>} */
     const activeIds = new Set();
 
@@ -94,49 +105,61 @@ export function createOrderLinePriceLineSync(
       if (state.removed || !Number.isFinite(state.price)) continue;
       activeIds.add(state.id);
 
-      const color = state.lineColor || state.bodyBackgroundColor || "#089981";
-      const options = {
-        id: state.id,
-        price: state.price,
-        color,
-        lineVisible: true,
-        axisLabelVisible: true,
-        axisLabelColor: color,
-        axisLabelTextColor: "#ffffff",
-        axisLabelText: formatOrderLinePrice(state.price),
-        axisSubtitleText: "",
-        title: "",
-        lineWidth: 1,
-        lineStyle: mapOrderLineStyle(state.lineStyle),
-      };
+      const options = stateToOrderLineOptions(state);
+      const existing = lines.get(state.id);
+      let handle = existing;
+      if (handle) {
+        handle.applyOptions(options);
+      } else {
+        handle = pane.series.createOrderLine(options);
+        lines.set(state.id, handle);
+      }
 
-      const existing = handleIds.get(state.id);
-      if (existing) existing.applyOptions(options);
-      else handleIds.set(state.id, h.createCustomPriceLine(options));
-    }
-
-    for (const [id, handle] of handleIds) {
-      if (!activeIds.has(id)) {
-        handle.remove();
-        handleIds.delete(id);
+      const adapter = adapters?.get(state.id);
+      if (adapter?._state) {
+        adapter._state._nativeLine = handle;
       }
     }
 
-    h.requestRefresh();
+    for (const [id, line] of lines) {
+      if (activeIds.has(id)) continue;
+      try {
+        pane.series.removeOrderLine(line);
+      } catch {
+        /* ignore */
+      }
+      lines.delete(id);
+      const adapter = adapters?.get(id);
+      if (adapter?._state) adapter._state._nativeLine = null;
+    }
   }
 
   function destroy() {
-    for (const handle of handleIds.values()) handle.remove();
-    handleIds.clear();
-    host?.destroy();
-    host = null;
+    if (seriesRef) {
+      for (const line of lines.values()) {
+        try {
+          seriesRef.removeOrderLine(line);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    lines.clear();
     seriesRef = null;
   }
 
   return { sync, destroy };
 }
 
-/** Overlay pills: PnL + qty + cancel on the line; axis chip is price only. */
+/** @param {import("./types.js").OrderLineState} state */
 export function orderLineOverlayState(state) {
   return state;
+}
+
+/** @param {import("./types.js").OrderLineState} state */
+export function applyNativeOrderLinePatch(state, patch) {
+  const native = state._nativeLine;
+  if (!native?.applyOptions) return false;
+  native.applyOptions(patch);
+  return true;
 }

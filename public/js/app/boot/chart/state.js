@@ -30,7 +30,6 @@ import { createFeatureFlags } from "../../../chart/features.js";
  * @property {object} ui
  * @property {boolean} barsLoading
  * @property {ReturnType<import("../../../chart/time/timeAdapter.js").createTimeAdapter> | null} timeAdapter
- * @property {number | null} futureWhitespaceBars
  * @property {HTMLElement | null} watermarkText
  * @property {HTMLElement} chartWrap
  * @property {HTMLElement | null} stageEl
@@ -129,6 +128,7 @@ export function createBootContext(overrides) {
       barsLoading = v;
     },
     chartPanning: false,
+    chartZooming: false,
     hoverBar: undefined,
     hoverPrev: undefined,
     crosshairPrice: null,
@@ -147,7 +147,6 @@ export function createBootContext(overrides) {
   let symbolInfo = null;
   let bars = [];
   let timeAdapter = null;
-  let futureWhitespaceBars = null;
 
   /** @type {BootContext} */
   const ctx = {
@@ -178,7 +177,6 @@ export function createBootContext(overrides) {
       barsLoading = v;
     },
     timeAdapter,
-    futureWhitespaceBars,
     watermarkText: document.getElementById("watermark"),
     chartWrap: el.closest(".tv-chart-wrap") ?? el,
     stageEl: document.querySelector(".tv-stage"),
@@ -288,12 +286,6 @@ export function createBootContext(overrides) {
       get: () => timeAdapter,
       set: (v) => {
         timeAdapter = v;
-      },
-    },
-    futureWhitespaceBars: {
-      get: () => futureWhitespaceBars,
-      set: (v) => {
-        futureWhitespaceBars = v;
       },
     },
   });

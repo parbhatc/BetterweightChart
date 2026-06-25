@@ -4,12 +4,18 @@ import {
   barsForPane,
   buildChartSeriesForPane,
   refreshPaneCandleData as refreshPaneCandles,
+  prependHistoryToPaneSeries as prependHistoryToPane,
 } from "../../../chart/pane/data.js";
-import { futureWhitespaceBarCount, withFutureWhitespace } from "../../../chart/future/whitespace.js";
 import { buildCandleSeriesData } from "../../../chart/bar/data.js";
 import { isElectronicSession } from "../../../primitives/session/background.js";
 import { resolveTimezone } from "../../../chart/timezone/list.js";
 import { createLayoutSync } from "../../layout/sync.js";
+import {
+  resetPaneChartViewport,
+  resetPaneTimeViewport,
+  resetPanePriceScale,
+  scrollPaneToLatest,
+} from "../../../chart/viewportReset.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -76,10 +82,7 @@ export function attachPaneHelpers(ctx) {
     const pane = getActivePane();
     if (pane) return buildChartSeriesForPaneLocal(pane, visible);
     const sym = ctx.settingsStore.get().symbol ?? {};
-    const sc = ctx.settingsStore.get().scales ?? {};
-    const candles = buildCandleSeriesData(visible, sym);
-    const ws = futureWhitespaceBarCount({ futureWhitespaceBars: ctx.futureWhitespaceBars }, sc);
-    return withFutureWhitespace(candles, barSec(), ws);
+    return buildCandleSeriesData(visible, sym);
   }
 
   function persistPaneSymbols() {
@@ -92,6 +95,17 @@ export function attachPaneHelpers(ctx) {
     }, opts);
   }
 
+  function prependHistoryToPaneSeries(pane, olderUtcBars, opts = {}) {
+    return prependHistoryToPane(
+      pane,
+      olderUtcBars,
+      ctx.settingsStore,
+      ctx.symbolInfo,
+      ctx.resolutions,
+      opts,
+    );
+  }
+
   function refreshCandleData() {
     for (const pane of getAllChartPanes()) {
       refreshPaneCandleData(pane);
@@ -100,28 +114,20 @@ export function attachPaneHelpers(ctx) {
     ctx.applySymbolLineStyleLocal();
   }
 
-  function scrollPaneToLatest(pane) {
-    const count = pane.bars.length;
-    if (!count) return;
-    const ts = pane.chart.timeScale();
-    const range = ts.getVisibleLogicalRange();
-    if (!range) return;
-    const width = range.to - range.from;
-    const offset = ts.options().rightOffset ?? 8;
-    ts.setVisibleLogicalRange({ from: count - width + offset * 0.35, to: count + offset });
+  function scrollPaneToLatestLocal(pane) {
+    scrollPaneToLatest(pane, ctx.settingsStore);
   }
 
   function resetPaneChartView(pane) {
-    pane.chart.priceScale(ctx.activePriceScaleId()).applyOptions({
-      autoScale: true,
-      scaleMargins: { top: 0.08, bottom: 0.12 },
-    });
-    scrollPaneToLatest(pane);
+    resetPaneChartViewport(pane, ctx.settingsStore, ctx.activePriceScaleId);
   }
 
   function resetPaneTimeScale(pane) {
-    pane.chart.timeScale().resetTimeScale();
-    scrollPaneToLatest(pane);
+    resetPaneTimeViewport(pane, ctx.settingsStore);
+  }
+
+  function resetPanePriceScaleLocal(pane) {
+    resetPanePriceScale(pane, ctx.settingsStore, ctx.activePriceScaleId);
   }
 
   function switchActivePane(index) {
@@ -132,7 +138,6 @@ export function attachPaneHelpers(ctx) {
     ctx.resolution = pane.resolution;
     ctx.symbolInfo = pane.symbolInfo;
     ctx.bars = pane.bars;
-    ctx.futureWhitespaceBars = pane.futureWhitespaceBars ?? ctx.futureWhitespaceBars;
 
     ctx.symbolSearchUi?.setSymbol(pane.symbol);
     ctx.tfPickerUi?.setResolution(pane.resolution);
@@ -175,10 +180,12 @@ export function attachPaneHelpers(ctx) {
     buildChartSeriesForDisplay,
     persistPaneSymbols,
     refreshPaneCandleData,
+    prependHistoryToPaneSeries,
     refreshCandleData,
-    scrollPaneToLatest,
+    scrollPaneToLatest: scrollPaneToLatestLocal,
     resetPaneChartView,
     resetPaneTimeScale,
+    resetPanePriceScale: resetPanePriceScaleLocal,
     switchActivePane,
     activatePaneIndex,
     getDrawingCountForPane,

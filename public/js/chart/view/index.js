@@ -11,7 +11,7 @@ import { lwcPaneIndexAtY } from "../pane/studyScale.js";
 import { patchChartPrimitiveLogging } from "../primitiveLogging.js";
 
 const DEFAULT_VISIBLE_BARS = 96;
-/** Empty bars of whitespace on the right for future time. */
+/** Right offset (bars) so the chart can scroll into empty future time. */
 export const FUTURE_RIGHT_OFFSET = 48;
 
 /**
@@ -117,8 +117,8 @@ export function createTvChart(el, themeColors) {
     wickUpColor: c.up,
     wickDownColor: c.down,
     borderVisible: false,
-    lastValueVisible: true,
-    priceLineVisible: true,
+    lastValueVisible: false,
+    priceLineVisible: false,
     priceFormat: { type: "price", precision: 2, minMove: 0.25 },
   });
 
@@ -209,13 +209,18 @@ export function createTvChart(el, themeColors) {
         wickDownColor: colors.down,
       });
     },
-    scrollToLatest(count = DEFAULT_VISIBLE_BARS) {
+    scrollToLatest(barCount) {
+      const count = barCount ?? DEFAULT_VISIBLE_BARS;
+      if (!count) return;
       const ts = chart.timeScale();
       const range = ts.getVisibleLogicalRange();
-      if (!range) return;
-      const width = range.to - range.from;
+      const width = range ? range.to - range.from : DEFAULT_VISIBLE_BARS;
       const offset = ts.options().rightOffset ?? FUTURE_RIGHT_OFFSET;
-      ts.setVisibleLogicalRange({ from: count - width + offset * 0.35, to: count + offset });
+      const lastIdx = count - 1;
+      ts.setVisibleLogicalRange({
+        from: lastIdx - width + offset * 0.35,
+        to: lastIdx + offset,
+      });
     },
   };
 }

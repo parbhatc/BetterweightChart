@@ -1,5 +1,4 @@
 import { getPaneChartView } from "../../chart/pane/viewCache.js";
-import { shiftBarsToChartTime, chartTimeZoneForPane } from "../../chart/timezone/chartTime.js";
 import { getResolutionCacheBars } from "./resolutionCache.js";
 import { getHtfBars } from "./htfBarCache.js";
 import { requestSecuritySeries } from "./requestSecurity.js";
@@ -48,9 +47,7 @@ export function lookupSymbolBars(opts) {
     .map((sym) => getResolutionCacheBars(sym, resolution))
     .find((bars) => bars?.length);
   if (cached?.length && settingsStore && pane) {
-    const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfoExtra);
-    const chartBars = shiftBarsToChartTime(cached, tz);
-    return { utcBars: cached, chartBars, source: "resolution-cache" };
+    return { utcBars: cached, chartBars: cached, source: "resolution-cache" };
   }
 
   const stored = symbolLookupKeys(symbol)

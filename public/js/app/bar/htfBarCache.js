@@ -1,6 +1,5 @@
 import { chartDebug } from "../../debug/chart/index.js";
 import { resolutionSec } from "../../chart/resolutions.js";
-import { shiftBarsToChartTime, chartTimeZoneForPane } from "../../chart/timezone/chartTime.js";
 import { buildInitialPeriodParams, buildPrependPeriodParams, alignBarTime } from "./periodParams.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
 
@@ -129,7 +128,6 @@ async function fetchHtfBars(opts) {
   } = opts;
   const key = htfCacheKey(symbol, resolution);
   const barSec = resolutionSec(resolution);
-  const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfoExtra ?? symbolInfo);
 
   let cacheSource = "datafeed";
   const warmed = lookupBarsForEnsure(
@@ -192,7 +190,7 @@ async function fetchHtfBars(opts) {
 
   if (!utcBars.length) return existing ?? null;
 
-  const chartBars = shiftBarsToChartTime(utcBars, tz);
+  const chartBars = utcBars;
   const entry = {
     utcBars,
     chartBars,
@@ -238,9 +236,8 @@ export async function prependHtfBars(opts) {
     return true;
   });
 
-  const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfoExtra ?? symbolInfo);
   entry.utcBars = merged;
-  entry.chartBars = shiftBarsToChartTime(merged, tz);
+  entry.chartBars = merged;
   entry.updatedAt = Date.now();
   store.set(key, entry);
   chartDebug("data", "htf cache prepend", { symbol, resolution, bars: merged.length, added: older.length });

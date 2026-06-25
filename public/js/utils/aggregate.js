@@ -114,19 +114,6 @@ export class Aggregate {
     return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close };
   }
 
-  /** @param {{ time: number; open?: number; high?: number; low?: number; close?: number }[]} chartBars @param {string} tfKey @param {number} count */
-  static futureWhitespace(chartBars, tfKey, count) {
-    if (!chartBars.length || count <= 0) return chartBars;
-    const tfSec = TF_MAP[tfKey] ?? 60;
-    const out = [...chartBars];
-    let t = chartBars[chartBars.length - 1].time;
-    for (let i = 0; i < count; i++) {
-      t += tfSec;
-      out.push({ time: t });
-    }
-    return out;
-  }
-
   static estimated1mWindow(aggBarCount, tfKey) {
     const mult = Math.max(1, TF_MAP[tfKey] / 60);
     const n = Math.ceil(Math.max(8, aggBarCount) * mult * ONE_M_BUFFER);

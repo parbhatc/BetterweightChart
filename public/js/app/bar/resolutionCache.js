@@ -23,7 +23,6 @@ function cacheTtlMs() {
  *   bars: object[],
  *   _historyExhausted: boolean,
  *   _firstDataRequest: boolean,
- *   futureWhitespaceBars: number | null,
  * }} ResolutionSnapshot
  */
 
@@ -56,7 +55,6 @@ function snapshotFromPane(pane) {
     bars: pane.bars.slice(),
     _historyExhausted: Boolean(pane._historyExhausted),
     _firstDataRequest: pane._firstDataRequest !== false,
-    futureWhitespaceBars: pane.futureWhitespaceBars ?? null,
   };
 }
 
@@ -68,7 +66,6 @@ function applySnapshotToPane(pane, snapshot) {
   pane.bars = snapshot.bars.slice();
   pane._historyExhausted = snapshot._historyExhausted;
   pane._firstDataRequest = snapshot._firstDataRequest;
-  pane.futureWhitespaceBars = snapshot.futureWhitespaceBars;
   invalidatePaneChartView(pane);
 }
 

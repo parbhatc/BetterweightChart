@@ -1,6 +1,7 @@
 import { chartTimeToCoordinate, safePriceToY, safeTimeToX } from "../../chart/coords/timeScale.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import { drawLabelCallout } from "./labelCallout.js";
+import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
 
 /** @param {object[]} seriesData @param {object[]} ctxMapBars */
 function resolveOverlayMapBars(seriesData, ctxMapBars) {
@@ -126,11 +127,20 @@ class LinesPaneRenderer {
 
   /** @param {import("fancy-canvas").CanvasRenderingTarget2D} target */
   draw(target) {
-    const { lines, timeToX, priceToY, paneW } = this._getData();
+    const { lines, timeToX, priceToY } = this._getData();
     if (!lines?.length) return;
 
-    target.useMediaCoordinateSpace(({ context: ctx }) => {
+    target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+      const paneW = mediaSize.width;
+      const pad = 4;
       for (const line of lines) {
+        const x1 = timeToX(line.timeStart);
+        const x2 = timeToX(line.timeEnd);
+        if (x1 != null && x2 != null) {
+          const lo = Math.min(x1, x2);
+          const hi = Math.max(x1, x2);
+          if (hi < -pad || lo > paneW + pad) continue;
+        }
         drawLine(ctx, line, timeToX, priceToY, paneW);
       }
     });
@@ -233,16 +243,10 @@ class LinesPrimitive {
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
-    const ts = this._chart.timeScale();
-    const handler = () => this._requestUpdate?.();
-    ts.subscribeVisibleLogicalRangeChange(handler);
-    this._unsub = () => {
-      try {
-        ts.unsubscribeVisibleLogicalRangeChange(handler);
-      } catch {
-        /* ignore */
-      }
-    };
+    this._unsub = subscribePrimitiveViewportRefresh(
+      this._chart.timeScale(),
+      () => this._requestUpdate?.(),
+    );
   }
 
   detached() {

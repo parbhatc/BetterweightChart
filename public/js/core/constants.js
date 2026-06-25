@@ -4,10 +4,6 @@ import settingsJson from "../../data/settings.json" with { type: "json" };
 export class Constants {
   static DEFAULT_VISIBLE_BARS = 96;
   static REPLAY_CHART_END_PAD = 3;
-  static CHART_FUTURE_WHITESPACE_MIN = 180;
-  static CHART_FUTURE_WHITESPACE_MARGIN = 64;
-  static CHART_FUTURE_WHITESPACE_CHUNK = 180;
-  static CHART_FUTURE_WHITESPACE_MAX = 2880;
   static MIN_1M_CHUNK = 150;
   static MAX_1M_CHUNK = 20000;
   static ONE_M_BUFFER = 1.22;
@@ -77,10 +73,6 @@ export class Constants {
 
 export const DEFAULT_VISIBLE_BARS = Constants.DEFAULT_VISIBLE_BARS;
 export const REPLAY_CHART_END_PAD = Constants.REPLAY_CHART_END_PAD;
-export const CHART_FUTURE_WHITESPACE_MIN = Constants.CHART_FUTURE_WHITESPACE_MIN;
-export const CHART_FUTURE_WHITESPACE_MARGIN = Constants.CHART_FUTURE_WHITESPACE_MARGIN;
-export const CHART_FUTURE_WHITESPACE_CHUNK = Constants.CHART_FUTURE_WHITESPACE_CHUNK;
-export const CHART_FUTURE_WHITESPACE_MAX = Constants.CHART_FUTURE_WHITESPACE_MAX;
 export const MIN_1M_CHUNK = Constants.MIN_1M_CHUNK;
 export const MAX_1M_CHUNK = Constants.MAX_1M_CHUNK;
 export const ONE_M_BUFFER = Constants.ONE_M_BUFFER;

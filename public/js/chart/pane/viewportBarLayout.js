@@ -26,7 +26,11 @@ function logicalToUtc(ta, mapBars, barSec, logical) {
  */
 function barLayoutLogicalRange(pane, realCount, layout) {
   const anchorIndex = viewportAnchorIndex(pane, realCount);
+  const lastBarIndex = Math.max(0, realCount - 1);
+  const minFutureBars = pane.chart?.timeScale?.()?.options?.()?.rightOffset ?? 10;
   let to = anchorIndex + layout.toBeyondAnchor;
+  // Keep empty future margin so crosshair / axis labels can extrapolate past the last bar.
+  to = Math.max(to, lastBarIndex + minFutureBars);
   let from = to - layout.width;
   if (from < 0) {
     to -= from;

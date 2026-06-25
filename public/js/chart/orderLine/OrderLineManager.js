@@ -1,14 +1,11 @@
 import { createOrderLineAdapter } from "./createOrderLineAdapter.js";
-import { createOrderLineControlsOverlay } from "./orderLineControlsOverlay.js";
 import {
+  applyNativeOrderLinePatch,
   createOrderLinePriceLineSync,
   orderLineOverlayState,
 } from "./orderLinePriceLineSync.js";
-import { OrderLinesPrimitive } from "./OrderLinesPrimitive.js";
-import { symbolLabelAnchorsForPane } from "../scale/symbolLabelAnchors.js";
 import {
   layoutOrderLineGeometry,
-  measureOrderLineRow,
   orderLineCenterY,
   ORDER_LINE_CANCEL_W,
   ORDER_LINE_ROW_H,
@@ -22,22 +19,18 @@ let nextId = 1;
 
 /**
  * Manages TradingView-style order lines on the active chart pane.
+ * Rendering + pills via native series.createOrderLine(); pointer handlers for drag/cancel.
  */
 export class OrderLineManager {
   /**
    * @param {() => object | null | undefined} getActivePane
    * @param {object} [opts]
-   * @param {ReturnType<import("../../ui/chart/settings.js").createChartSettings>} [opts.settingsStore]
-   * @param {() => object | null | undefined} [opts.symbolInfo]
    */
   constructor(getActivePane, opts = {}) {
     this._getActivePane = getActivePane;
     this._settingsStore = opts.settingsStore ?? null;
-    this._symbolInfo = opts.symbolInfo ?? (() => null);
     /** @type {Map<string, ReturnType<typeof createOrderLineAdapter>>} */
     this._adapters = new Map();
-    /** @type {import("./OrderLinesPrimitive.js").OrderLinesPrimitive | null} */
-    this._primitive = null;
     /** @type {object | null} */
     this._paneRef = null;
     /** @type {{ adapter: object, startY: number, startPrice: number } | null} */
@@ -47,46 +40,18 @@ export class OrderLineManager {
     this._listenersBound = false;
     /** @type {HTMLElement | null} */
     this._mountEl = null;
-    /** @type {ReturnType<typeof createOrderLineControlsOverlay> | null} */
-    this._overlay = null;
-    /** @type {object | null} */
-    this._overlayPane = null;
-    /** @type {number} */
-    this._overlayRaf = 0;
-    /** @type {(() => void) | null} */
-    this._rangeUnsub = null;
-    /** @type {ResizeObserver | null} */
-    this._resizeObs = null;
     /** @type {boolean} */
     this._scrollLocked = false;
+    /** @type {number} */
+    this._refreshRaf = 0;
     this._onPointerDown = this._onPointerDown.bind(this);
     this._onPointerMove = this._onPointerMove.bind(this);
     this._onPointerUp = this._onPointerUp.bind(this);
     this._onPointerLeave = this._onPointerLeave.bind(this);
     this._onContextMenu = this._onContextMenu.bind(this);
-    this._onOverlayPointerDown = this._onOverlayPointerDown.bind(this);
 
-    this._priceLineSync = createOrderLinePriceLineSync(
-      getActivePane,
-      () => this._axisLabelConfig(),
-      this._settingsStore,
-      this._symbolInfo,
-    );
-
+    this._priceLineSync = createOrderLinePriceLineSync(getActivePane);
     this._settingsStore?.onChange?.(() => this.requestRefresh());
-  }
-
-  _axisLabelConfig() {
-    const sc = this._settingsStore?.get?.().scales ?? {};
-    const pane = this._paneRef ?? this._getActivePane();
-    const symbolInfo = typeof this._symbolInfo === "function" ? this._symbolInfo() : this._symbolInfo;
-    return {
-      useStacked: sc.noOverlappingLabels !== false,
-      getReservedAnchors: () => {
-        if (!pane || !this._settingsStore) return [];
-        return symbolLabelAnchorsForPane(pane, this._settingsStore, symbolInfo);
-      },
-    };
   }
 
   /** @returns {import("./types.js").OrderLineState[]} */
@@ -100,56 +65,93 @@ export class OrderLineManager {
     return out;
   }
 
-  _ensurePrimitive(pane) {
-    if (this._paneRef === pane && this._primitive) return;
-    this._detachPrimitive();
+  /** @param {object} pane */
+  _bindPane(pane) {
+    if (this._paneRef === pane) return;
+    this._teardown();
     this._paneRef = pane;
-    this._primitive = new OrderLinesPrimitive(
-      () => this._activeStates(),
-      (layouts) => this._applyOverlayLayouts(layouts),
-    );
-    pane.series.attachPrimitive(this._primitive);
-    this._ensureOverlay(pane);
     this._ensureListeners(pane);
-    this._bindPaneSync(pane);
-    this._scheduleOverlaySync();
+  }
+
+  _teardown() {
+    this._unlockChartScroll();
+    this._removeListeners();
+    this._paneRef = null;
+    this._priceLineSync.destroy();
+  }
+
+  _removeListeners() {
+    if (!this._listenersBound || !(this._mountEl instanceof HTMLElement)) return;
+    const mount = this._mountEl;
+    mount.removeEventListener("pointerdown", this._onPointerDown, true);
+    mount.removeEventListener("pointermove", this._onPointerMove, true);
+    mount.removeEventListener("pointerup", this._onPointerUp, true);
+    mount.removeEventListener("pointercancel", this._onPointerUp, true);
+    mount.removeEventListener("pointerleave", this._onPointerLeave, true);
+    mount.removeEventListener("contextmenu", this._onContextMenu, true);
+    this._listenersBound = false;
+    this._mountEl = null;
   }
 
   /** @param {object} pane */
-  _bindPaneSync(pane) {
-    this._rangeUnsub?.();
-    this._resizeObs?.disconnect();
-    this._resizeObs = null;
+  _ensureListeners(pane) {
+    if (this._listenersBound) return;
+    const mount = pane.el?.closest(".tv-chart-wrap__stage") ?? pane.el;
+    if (!(mount instanceof HTMLElement)) return;
+    mount.addEventListener("pointerdown", this._onPointerDown, true);
+    mount.addEventListener("pointermove", this._onPointerMove, true);
+    mount.addEventListener("pointerup", this._onPointerUp, true);
+    mount.addEventListener("pointercancel", this._onPointerUp, true);
+    mount.addEventListener("pointerleave", this._onPointerLeave, true);
+    mount.addEventListener("contextmenu", this._onContextMenu, true);
+    this._listenersBound = true;
+    this._mountEl = mount;
+  }
 
-    const ts = pane.chart.timeScale();
-    const onRange = () => this._scheduleOverlaySync();
-    ts.subscribeVisibleLogicalRangeChange(onRange);
-    this._rangeUnsub = () => ts.unsubscribeVisibleLogicalRangeChange(onRange);
+  /** TradingView createOrderLine — async for Auren compatibility. */
+  createOrderLine() {
+    const pane = this._getActivePane();
+    if (!pane?.series) return Promise.resolve(null);
+    this._bindPane(pane);
+    const id = `ol-${nextId++}`;
+    const adapter = createOrderLineAdapter(this, id);
+    this._adapters.set(id, adapter);
+    this.requestRefresh();
+    return Promise.resolve(adapter);
+  }
 
-    if (pane.el instanceof HTMLElement && typeof ResizeObserver !== "undefined") {
-      this._resizeObs = new ResizeObserver(() => this._scheduleOverlaySync());
-      this._resizeObs.observe(pane.el);
+  /** @param {ReturnType<typeof createOrderLineAdapter>} adapter */
+  remove(adapter) {
+    const state = adapter._state;
+    if (state.removed) return;
+    state.removed = true;
+    this._adapters.delete(state.id);
+    adapter.target = null;
+    adapter.isMoving = false;
+    if (!this._adapters.size) {
+      this._teardown();
+    } else {
+      this.requestRefresh();
     }
   }
 
-  /** @param {object} pane */
-  _ensureOverlay(pane) {
-    if (this._overlayPane === pane && this._overlay) return;
-    this._destroyOverlay();
-    if (!(pane.el instanceof HTMLElement)) return;
-    this._overlayPane = pane;
-    this._overlay = createOrderLineControlsOverlay(pane.el);
-    this._overlay.root.addEventListener("pointerdown", this._onOverlayPointerDown, true);
+  requestRefresh() {
+    if (this._refreshRaf) return;
+    this._refreshRaf = requestAnimationFrame(() => {
+      this._refreshRaf = 0;
+      this._priceLineSync.sync(this._activeStates(), this._adapters);
+    });
   }
 
-  _destroyOverlay() {
-    this._overlay?.root.removeEventListener("pointerdown", this._onOverlayPointerDown, true);
-    this._overlay?.destroy();
-    this._overlay = null;
-    this._overlayPane = null;
+  _syncNow() {
+    if (this._refreshRaf) {
+      cancelAnimationFrame(this._refreshRaf);
+      this._refreshRaf = 0;
+    }
+    this._priceLineSync.sync(this._activeStates(), this._adapters);
   }
 
-  /** Block chart pan / kinetic scroll while dragging an order line (matches drawing tools). */
+  /** Block chart pan while dragging an order line. */
   _lockChartScroll() {
     if (this._scrollLocked) return;
     const pane = this._paneRef ?? this._getActivePane();
@@ -192,98 +194,6 @@ export class OrderLineManager {
     if (stage instanceof HTMLElement) stage.style.touchAction = "";
   }
 
-  _detachPrimitive() {
-    this._unlockChartScroll();
-    this._rangeUnsub?.();
-    this._rangeUnsub = null;
-    this._resizeObs?.disconnect();
-    this._resizeObs = null;
-    if (this._primitive && this._paneRef?.series) {
-      try {
-        this._paneRef.series.detachPrimitive(this._primitive);
-      } catch {
-        //
-      }
-    }
-    this._primitive = null;
-    this._paneRef = null;
-    this._destroyOverlay();
-    this._priceLineSync.destroy();
-  }
-
-  /** @param {object} pane */
-  _ensureListeners(pane) {
-    if (this._listenersBound) return;
-    const mount = pane.el?.closest(".tv-chart-wrap__stage") ?? pane.el;
-    if (!(mount instanceof HTMLElement)) return;
-    mount.addEventListener("pointerdown", this._onPointerDown, true);
-    mount.addEventListener("pointermove", this._onPointerMove, true);
-    mount.addEventListener("pointerup", this._onPointerUp, true);
-    mount.addEventListener("pointercancel", this._onPointerUp, true);
-    mount.addEventListener("pointerleave", this._onPointerLeave, true);
-    mount.addEventListener("contextmenu", this._onContextMenu, true);
-    this._listenersBound = true;
-    this._mountEl = mount;
-  }
-
-  /** TradingView createOrderLine — async for Auren compatibility. */
-  createOrderLine() {
-    const pane = this._getActivePane();
-    if (!pane?.series) return Promise.resolve(null);
-    this._ensurePrimitive(pane);
-    const id = `ol-${nextId++}`;
-    const adapter = createOrderLineAdapter(this, id);
-    this._adapters.set(id, adapter);
-    this.requestRefresh();
-    return Promise.resolve(adapter);
-  }
-
-  /** @param {ReturnType<typeof createOrderLineAdapter>} adapter */
-  remove(adapter) {
-    const state = adapter._state;
-    if (state.removed) return;
-    state.removed = true;
-    this._adapters.delete(state.id);
-    adapter.target = null;
-    adapter.isMoving = false;
-    if (!this._adapters.size) this._detachPrimitive();
-    this.requestRefresh();
-  }
-
-  requestRefresh() {
-    this._priceLineSync.sync(this._activeStates());
-    this._primitive?.requestRefresh();
-    this._scheduleOverlaySync();
-  }
-
-  _scheduleOverlaySync() {
-    if (this._overlayRaf) return;
-    this._overlayRaf = requestAnimationFrame(() => {
-      this._overlayRaf = 0;
-      this._syncOverlay();
-    });
-  }
-
-  /** @param {Array<{ state: import("./types.js").OrderLineState, rowLeft: number, y: number }>} layouts */
-  _applyOverlayLayouts(layouts) {
-    const overlay = this._overlay;
-    if (!overlay) return;
-    overlay.sync(
-      layouts.map((layout) => ({
-        id: layout.state.id,
-        left: layout.rowLeft,
-        y: layout.y,
-        state: orderLineOverlayState(layout.state),
-      })),
-    );
-  }
-
-  _syncOverlay() {
-    const primitive = this._primitive;
-    if (!primitive) return;
-    this._applyOverlayLayouts(primitive.layoutAll());
-  }
-
   /** @param {PointerEvent} ev */
   _clientToPane(ev) {
     const pane = this._paneRef ?? this._getActivePane();
@@ -306,11 +216,7 @@ export class OrderLineManager {
 
     const centerY = orderLineCenterY(y);
     const plotW = plotPaneWidth(pane.chart, pane.el);
-    const { totalW, rowLeft } = layoutOrderLineGeometry(
-      orderLineOverlayState(state),
-      plotW,
-      scaleW,
-    );
+    const { totalW, rowLeft } = layoutOrderLineGeometry(orderLineOverlayState(state), plotW, scaleW);
     const top = centerY - ORDER_LINE_ROW_H / 2;
     const cancelLeft = rowLeft + totalW - ORDER_LINE_CANCEL_W;
     const row = {
@@ -335,30 +241,8 @@ export class OrderLineManager {
   }
 
   /** @param {PointerEvent} ev */
-  _onOverlayPointerDown(ev) {
-    if (ev.button !== 0) return;
-    const part = ev.target instanceof Element ? ev.target.closest("[data-ol-part]") : null;
-    if (!part) return;
-    const id = part.closest("[data-ol-id]")?.getAttribute("data-ol-id");
-    if (!id) return;
-    const adapter = this._adapters.get(id);
-    if (!adapter) return;
-
-    ev.preventDefault();
-    ev.stopPropagation();
-    this._lockChartScroll();
-    this._pendingModify = {
-      adapter,
-      startX: ev.clientX,
-      startY: ev.clientY,
-      part: part.getAttribute("data-ol-part") || "body",
-    };
-  }
-
-  /** @param {PointerEvent} ev */
   _onPointerDown(ev) {
     if (ev.button !== 0) return;
-    if (ev.target instanceof Element && ev.target.closest(".order-line-control")) return;
 
     const hit = this._hitTest(ev);
     if (!hit?.adapter) return;
@@ -402,7 +286,7 @@ export class OrderLineManager {
     this._drag = { adapter, startY: ev.clientY, startPrice: adapter.getPrice() };
     adapter.isMoving = true;
     adapter._state.isMoving = true;
-    this._scheduleOverlaySync();
+    applyNativeOrderLinePatch(adapter._state, { pills: { moving: true } });
     try {
       (ev.target instanceof Element ? ev.target : this._mountEl)?.setPointerCapture?.(ev.pointerId);
     } catch {
@@ -412,6 +296,10 @@ export class OrderLineManager {
 
   /** @param {PointerEvent} ev */
   _onPointerMove(ev) {
+    if (!this._adapters.size && !this._drag && !this._pendingModify) return;
+    // Chart pan uses pressed mouse move — skip order-line hit tests while a button is down.
+    if (ev.buttons !== 0 && !this._drag && !this._pendingModify) return;
+
     if (this._pendingModify && !this._drag) {
       const dx = ev.clientX - this._pendingModify.startX;
       const dy = ev.clientY - this._pendingModify.startY;
@@ -457,7 +345,7 @@ export class OrderLineManager {
     adapter._state.isMoving = false;
     this._drag = null;
     this._unlockChartScroll();
-    this._scheduleOverlaySync();
+    applyNativeOrderLinePatch(adapter._state, { pills: { moving: false } });
     adapter._handlers.move?.();
   }
 
@@ -471,10 +359,6 @@ export class OrderLineManager {
   _updateHoverCursor(ev) {
     const mount = this._mountEl;
     if (!mount) return;
-    if (ev.target instanceof Element && ev.target.closest(".order-line-control")) {
-      mount.style.cursor = "default";
-      return;
-    }
     const hit = this._hitTest(ev);
     if (!hit) {
       mount.style.cursor = "";

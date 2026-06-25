@@ -36,7 +36,6 @@ export function createSecondaryPaneFactory(ctx) {
       resolution: ctx.resolution,
       symbolInfo: null,
       bars: [],
-      futureWhitespaceBars: null,
       statusEl: paneStatusEl,
       timeAdapter: null,
     };

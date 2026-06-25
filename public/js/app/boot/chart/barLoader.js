@@ -6,6 +6,7 @@ import {
 } from "../../../chart/pane/data.js";
 import { createBarLoader } from "../../bar/loader.js";
 import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
+import { chartDebug } from "../../../debug/chart/index.js";
 /**
  * @param {import("./state.js").BootContext} ctx
  */
@@ -50,6 +51,7 @@ export function attachBarLoader(ctx) {
     getAllChartPanes: ctx.getAllChartPanes,
     loader: ctx.loader,
     refreshPaneCandleData: ctx.refreshPaneCandleData,
+    prependHistoryToPaneSeries: ctx.prependHistoryToPaneSeries,
     applyLiveBarToPane: (pane) =>
       applyLiveBarToPaneSeries(pane, ctx.settingsStore, ctx.symbolInfo, ctx.resolutions),
     updateFormingBarOnPane: (pane, bar) =>
@@ -71,7 +73,6 @@ export function attachBarLoader(ctx) {
     },
     setPrimaryBars: (pane) => {
       ctx.bars = pane.bars;
-      ctx.futureWhitespaceBars = pane.futureWhitespaceBars;
     },
     onPaneBarUpdate: (pane, meta = {}) => {
       pane.priceLineLabel?.requestRefresh();
@@ -116,6 +117,7 @@ export function attachBarLoader(ctx) {
     finishPaneAfterLoad: (pane, opts) => ctx.finishPaneAfterLoad?.(pane, opts),
     isReplayLocked: () => ctx.replayEngine?.isReplayLocked?.() ?? false,
     isReplayHistoryBlocked: () => ctx.replayEngine?.isReplayHistoryBlocked?.() ?? false,
+    isChartPanning: () => Boolean(ctx.ui?.chartPanning),
     getReplayLoadCapTo: (pane) => replayLoadContextForPane(pane)?.capDisplay ?? null,
     getReplayLoadContext: replayLoadContextForPane,
   });
@@ -124,6 +126,21 @@ export function attachBarLoader(ctx) {
   ctx.viewportDeps.syncLayoutDateRangeFrom = ctx.syncLayoutDateRangeFrom;
   ctx.viewportDeps.prependHistory = barLoader.prependHistory;
   ctx.viewportDeps.ensureHistoryNearEdge = barLoader.ensureHistoryNearEdge;
+  ctx.viewportDeps.resumeHistoryAfterPan = barLoader.resumeHistoryAfterPan;
+  ctx.viewportDeps.flushDeferredHistory = barLoader.flushDeferredHistory;
+
+  const prevOnChartPanEnd = ctx.viewportDeps.onChartPanEnd;
+  ctx.viewportDeps.onChartPanEnd = () => {
+    prevOnChartPanEnd?.();
+    for (const pane of ctx.getAllChartPanes()) {
+      pane._flushStatusLineLayout?.();
+    }
+    requestAnimationFrame(() => {
+      for (const pane of ctx.getAllChartPanes()) {
+        void barLoader.resumeHistoryAfterPan(pane);
+      }
+    });
+  };
 
   Object.assign(ctx, {
     loadPaneBars: barLoader.loadPaneBars,
