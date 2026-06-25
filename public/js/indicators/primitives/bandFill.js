@@ -168,15 +168,43 @@ class IndicatorBandFillPaneRenderer {
  */
 export function attachIndicatorBandFillPrimitive(opts) {
   const primitive = new IndicatorBandFillPrimitive(opts.getConfig);
-  opts.series.attachPrimitive(primitive);
-  return {
-    requestRefresh: () => primitive.requestRefresh(),
-    destroy: () => {
+  let attached = false;
+
+  function fillsNeeded() {
+    const fills = opts.getConfig()?.getFills?.() ?? [];
+    return fills.some((fill) => fill.segments?.some((segment) => segment?.length >= 2));
+  }
+
+  function syncAttachment() {
+    const needed = fillsNeeded();
+    if (needed && !attached) {
+      opts.series.attachPrimitive(primitive);
+      attached = true;
+      return;
+    }
+    if (!needed && attached) {
       try {
         opts.series.detachPrimitive(primitive);
       } catch {
         /* ignore */
       }
+      attached = false;
+    }
+  }
+
+  return {
+    requestRefresh: () => {
+      syncAttachment();
+      if (attached) primitive.requestRefresh();
+    },
+    destroy: () => {
+      if (!attached) return;
+      try {
+        opts.series.detachPrimitive(primitive);
+      } catch {
+        /* ignore */
+      }
+      attached = false;
     },
   };
 }

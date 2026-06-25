@@ -39,6 +39,11 @@ export class UserDrawingsPrimitive {
 
   /** @param {UserDrawing[]} drawings @param {{ skipPriceLines?: boolean }} [opts] */
   setDrawings(drawings, opts = {}) {
+    console.log("[BWC] primitive.setDrawings", {
+      primitive: "UserDrawingsPrimitive",
+      count: drawings?.length ?? 0,
+      skipPriceLines: Boolean(opts.skipPriceLines),
+    });
     this._drawings = drawings ?? [];
     if (!opts.skipPriceLines) this._syncPriceLines();
     this._requestUpdate?.();
@@ -52,6 +57,11 @@ export class UserDrawingsPrimitive {
 
   /** @param {UserDrawing | null} preview */
   setPreview(preview) {
+    console.log("[BWC] primitive.setPreview", {
+      primitive: "UserDrawingsPrimitive",
+      type: preview?.type ?? null,
+      pointCount: preview?.points?.length ?? 0,
+    });
     this._preview = preview;
     this._requestUpdate?.();
   }
@@ -99,6 +109,7 @@ export class UserDrawingsPrimitive {
 
   /** @param {import("lightweight-charts").SeriesAttachedParameter} param */
   attached(param) {
+    console.log("[BWC] primitive.attached", { primitive: "UserDrawingsPrimitive" });
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
@@ -111,6 +122,7 @@ export class UserDrawingsPrimitive {
   }
 
   detached() {
+    console.log("[BWC] primitive.detached", { primitive: "UserDrawingsPrimitive" });
     this._unsub?.();
     this._unsub = null;
     this._priceLines.setSeries(null);

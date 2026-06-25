@@ -8,6 +8,7 @@ import {
 } from "lightweight-charts";
 import { dateTime12h, toDate } from "../format.js";
 import { lwcPaneIndexAtY } from "../pane/studyScale.js";
+import { patchChartPrimitiveLogging } from "../primitiveLogging.js";
 
 const DEFAULT_VISIBLE_BARS = 96;
 /** Empty bars of whitespace on the right for future time. */
@@ -106,6 +107,9 @@ export function createTvChart(el, themeColors) {
       timeFormatter: (t) => dateTime12h(toDate(t)),
     },
   });
+
+  const chartContext = el.id || "chart";
+  patchChartPrimitiveLogging(chart, chartContext);
 
   const series = chart.addSeries(CandlestickSeries, {
     upColor: c.up,

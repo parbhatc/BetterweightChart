@@ -489,7 +489,39 @@ function resolveAxisLabelCenters(primitive, lines, ro) {
 export function attachCustomPriceLineHost(opts) {
   const primitive = new CustomPriceLinesPrimitive();
   primitive.setContextProvider(opts.getContext);
-  opts.series.attachPrimitive(primitive);
+  let attached = false;
+
+  function syncAttachment() {
+    const needed = primitive._lines.size > 0;
+    if (needed && !attached) {
+      opts.series.attachPrimitive(primitive);
+      attached = true;
+      return;
+    }
+    if (!needed && attached) {
+      try {
+        opts.series.detachPrimitive(primitive);
+      } catch {
+        /* ignore */
+      }
+      attached = false;
+    }
+  }
+
+  const upsertLine = primitive.upsertLine.bind(primitive);
+  const removeLine = primitive.removeLine.bind(primitive);
+  primitive.upsertLine = (id, options) => {
+    upsertLine(id, options);
+    syncAttachment();
+  };
+  primitive.removeLine = (id) => {
+    removeLine(id);
+    syncAttachment();
+  };
+  primitive.clear = () => {
+    primitive._lines.clear();
+    syncAttachment();
+  };
 
   /** @type {Map<string, CustomPriceLineHandle>} */
   const handles = new Map();
@@ -526,14 +558,21 @@ export function attachCustomPriceLineHost(opts) {
     createCustomPriceLine,
     /** @deprecated use createCustomPriceLine */
     createPriceLine: createCustomPriceLine,
-    requestRefresh: () => primitive.requestRefresh(),
+    requestRefresh: () => {
+      syncAttachment();
+      if (attached) primitive.requestRefresh();
+    },
     destroy: () => {
       for (const handle of handles.values()) handle.remove();
       handles.clear();
-      try {
-        opts.series.detachPrimitive(primitive);
-      } catch {
-        //
+      primitive.clear();
+      if (attached) {
+        try {
+          opts.series.detachPrimitive(primitive);
+        } catch {
+          /* ignore */
+        }
+        attached = false;
       }
     },
   };

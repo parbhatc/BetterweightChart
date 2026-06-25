@@ -291,7 +291,7 @@ class ReplayFutureDimPaneRenderer {
  * @param {ReturnType<import("./mode.js").mountReplayMode>} replay
  */
 export function attachReplayFutureDim(ctx, replay) {
-  /** @type {Map<number, ReplayFutureDimPrimitive>} */
+  /** @type {Map<number, { primitive: ReplayFutureDimPrimitive, attached: boolean }>} */
   const primitives = new Map();
 
   function resolveFill() {
@@ -305,87 +305,120 @@ export function attachReplayFutureDim(ctx, replay) {
   }
 
   /** @param {object} pane */
-  function ensurePane(pane) {
+  function getOrCreatePrimitive(pane) {
     if (!pane?.series) return null;
 
-    let primitive = primitives.get(pane.index);
-    if (!primitive) {
-      primitive = new ReplayFutureDimPrimitive();
-      primitive.setContextProvider(() => {
-        const view = pane._chartView;
-        const ta = view?.timeAdapter ?? pane.timeAdapter;
-        return {
-          bars: pane.bars ?? [],
-          barSec: view?.barSec ?? pane.barSec ?? 60,
-          timeAdapter: ta ?? null,
-        };
-      });
-      primitive.setCutBarIndexProvider(() => {
-        const state = replay.getState();
-        if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
-        return pane.replayHoverBarIndex ?? null;
-      });
-      primitive.setDimBarIndexProvider(() => {
-        const state = replay.getState();
-        if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
-        return pane.replayHoverBarIndex ?? null;
-      });
-      primitive.setScissorsYProvider(() => {
-        const state = replay.getState();
-        if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
-        return pane.replayHoverLocalY ?? null;
-      });
-      primitive.setShowCutLineProvider(() => {
-        const state = replay.getState();
-        return Boolean(
-          state.active &&
-            state.selectingBar &&
-            state.selectMode === "bar" &&
-            pane.replayHoverBarIndex != null,
-        );
-      });
-      primitive.setTimeLabelProvider(() => {
-        const state = replay.getState();
-        if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
+    let entry = primitives.get(pane.index);
+    if (entry) return entry;
 
-        const cutIndex = pane.replayHoverBarIndex ?? null;
-        if (cutIndex == null) return null;
+    const primitive = new ReplayFutureDimPrimitive();
+    primitive.setContextProvider(() => {
+      const view = pane._chartView;
+      const ta = view?.timeAdapter ?? pane.timeAdapter;
+      return {
+        bars: pane.bars ?? [],
+        barSec: view?.barSec ?? pane.barSec ?? 60,
+        timeAdapter: ta ?? null,
+      };
+    });
+    primitive.setCutBarIndexProvider(() => {
+      const state = replay.getState();
+      if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
+      return pane.replayHoverBarIndex ?? null;
+    });
+    primitive.setDimBarIndexProvider(() => {
+      const state = replay.getState();
+      if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
+      return pane.replayHoverBarIndex ?? null;
+    });
+    primitive.setScissorsYProvider(() => {
+      const state = replay.getState();
+      if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
+      return pane.replayHoverLocalY ?? null;
+    });
+    primitive.setShowCutLineProvider(() => {
+      const state = replay.getState();
+      return Boolean(
+        state.active &&
+          state.selectingBar &&
+          state.selectMode === "bar" &&
+          pane.replayHoverBarIndex != null,
+      );
+    });
+    primitive.setTimeLabelProvider(() => {
+      const state = replay.getState();
+      if (!state.active || !state.selectingBar || state.selectMode !== "bar") return null;
 
-        const bars = pane.bars ?? [];
-        const bar = bars[cutIndex];
-        if (!bar) return null;
+      const cutIndex = pane.replayHoverBarIndex ?? null;
+      if (cutIndex == null) return null;
 
-        const sym = ctx.settingsStore.get().symbol ?? {};
-        const tz = resolveTimezone(sym.timezone, pane.symbolInfo ?? ctx.symbolInfo);
-        return formatReplayCutTimeLabel(bar.time, tz);
-      });
-      primitive.setShowScissorsProvider(() => {
-        const state = replay.getState();
-        return Boolean(
-          state.active &&
-            state.selectingBar &&
-            state.selectMode === "bar" &&
-            pane.replayHoverBarIndex != null,
-        );
-      });
-      primitive.setFillProvider(resolveFill);
-      pane.series.attachPrimitive(primitive);
-      pane.replayFutureDim = primitive;
-      primitives.set(pane.index, primitive);
+      const bars = pane.bars ?? [];
+      const bar = bars[cutIndex];
+      if (!bar) return null;
+
+      const sym = ctx.settingsStore.get().symbol ?? {};
+      const tz = resolveTimezone(sym.timezone, pane.symbolInfo ?? ctx.symbolInfo);
+      return formatReplayCutTimeLabel(bar.time, tz);
+    });
+    primitive.setShowScissorsProvider(() => {
+      const state = replay.getState();
+      return Boolean(
+        state.active &&
+          state.selectingBar &&
+          state.selectMode === "bar" &&
+          pane.replayHoverBarIndex != null,
+      );
+    });
+    primitive.setFillProvider(resolveFill);
+    entry = { primitive, attached: false };
+    primitives.set(pane.index, entry);
+    return entry;
+  }
+
+  /** @param {object} pane */
+  function attachPane(pane) {
+    const entry = getOrCreatePrimitive(pane);
+    if (!entry || entry.attached) return entry?.primitive ?? null;
+    pane.series.attachPrimitive(entry.primitive);
+    pane.replayFutureDim = entry.primitive;
+    entry.attached = true;
+    return entry.primitive;
+  }
+
+  /** @param {object} pane */
+  function detachPane(pane) {
+    const entry = primitives.get(pane?.index);
+    if (!entry?.attached || !pane?.series) return;
+    pane.series.detachPrimitive(entry.primitive);
+    entry.attached = false;
+    delete pane.replayFutureDim;
+  }
+
+  /** @param {boolean} replayActive */
+  function syncAttachment(replayActive) {
+    for (const pane of ctx.getAllChartPanes()) {
+      if (replayActive) attachPane(pane);
+      else detachPane(pane);
     }
+  }
 
-    return primitive;
+  /** @param {object} pane */
+  function ensurePane(pane) {
+    return attachPane(pane);
   }
 
   function refreshAll() {
-    for (const pane of ctx.getAllChartPanes()) {
-      ensurePane(pane)?.requestRefresh();
+    for (const entry of primitives.values()) {
+      if (entry.attached) entry.primitive.requestRefresh();
     }
   }
 
-  replay.subscribe(() => refreshAll());
+  replay.subscribe((state) => {
+    syncAttachment(Boolean(state.active));
+    refreshAll();
+  });
 
-  return { ensurePane, refreshAll };
+  return { ensurePane, attachPane, detachPane, syncAttachment, refreshAll };
 }
 
 /** @param {object} pane @param {number} selectedIndex */

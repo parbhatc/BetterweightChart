@@ -128,7 +128,10 @@ export function wireController(ctx) {
     isCursorTool: (...args) => ctx.isCursorTool(...args),
     swallowChartPointer: (...args) => ctx.swallowChartPointer(...args),
     findAnchorHit: (...args) => ctx.findAnchorHit(...args),
-    setRegressionGuideDrawingId: (id) => ctx.primitive.setRegressionGuideDrawingId(id),
+    setRegressionGuideDrawingId: (id) => {
+      if (!ctx._primitiveAttached) return;
+      ctx.primitive.setRegressionGuideDrawingId(id);
+    },
     getContext: () => ctx.getContext(),
     getContainer: () => ctx.container,
     recordHistorySnapshot: () => ctx.recordHistory(),
@@ -150,7 +153,10 @@ export function setControllerTarget(ctx, next) {
   ctx.drag.forceEnd();
   ctx.unbindChartListeners();
   ctx.unsubDrawCrosshairDotSync();
-  ctx.series.detachPrimitive(ctx.primitive);
+  if (ctx._primitiveAttached) {
+    ctx.series.detachPrimitive(ctx.primitive);
+    ctx._primitiveAttached = false;
+  }
 
   ctx.chart = next.chart;
   ctx.series = next.series;
@@ -172,11 +178,11 @@ export function setControllerTarget(ctx, next) {
   ctx.pointerApi.overlayRoot = ctx.overlayRoot;
   ctx.pointerApi.chart = ctx.chart;
 
-  ctx.series.attachPrimitive(ctx.primitive);
+  ctx.syncDrawingPrimitiveAttachment?.();
   ctx.bindChartListeners();
   ctx.bindDrawCrosshairDotSync();
   ctx.syncChartPointerHandling();
-  ctx.primitive.setDrawings(ctx.drawings);
+  ctx.syncDrawingsToPrimitive?.({ skipPriceLines: true });
 }
 
 /** @param {import("./state.js").ControllerState} ctx */
@@ -199,7 +205,10 @@ export function destroyController(ctx) {
       axisPressedMouseMove: { time: true, price: true },
     },
   });
-  ctx.series.detachPrimitive(ctx.primitive);
+  if (ctx._primitiveAttached) {
+    ctx.series.detachPrimitive(ctx.primitive);
+    ctx._primitiveAttached = false;
+  }
   ctx.cursorMark.remove();
   ctx.drawCrosshairDot.remove();
   ctx.valuesTooltip.remove();

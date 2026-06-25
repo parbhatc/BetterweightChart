@@ -33,9 +33,12 @@ export function attachMutations(ctx) {
     ctx.drawings = structuredClone(next);
     if (ctx.selectedId !== selId) {
       ctx.selectedId = selId ?? null;
-      ctx.primitive.setSelectedId(ctx.selectedId, { skipPriceLines: true });
+      ctx.syncDrawingPrimitiveAttachment?.();
+      if (ctx._primitiveAttached) {
+        ctx.primitive.setSelectedId(ctx.selectedId, { skipPriceLines: true });
+      }
     }
-    ctx.primitive.setDrawings(ctx.drawings, { skipPriceLines: true });
+    ctx.syncDrawingsToPrimitive({ skipPriceLines: true });
   }
 
   function clearAll() {
@@ -156,7 +159,7 @@ export function attachMutations(ctx) {
       saveToolDefaults(updated.type, extractToolDefaults(updated));
     }
     const skipPriceLines = Boolean(opts.silent && ctx.draggingDrawing);
-    ctx.primitive.setDrawings(ctx.drawings, { skipPriceLines });
+    ctx.syncDrawingsToPrimitive({ skipPriceLines });
     if (!opts.silent) ctx.emit("change");
     else if (ctx.draggingDrawing) ctx.emit("dragSync");
   }

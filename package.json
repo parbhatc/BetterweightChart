@@ -27,7 +27,7 @@
     "dev:testing": "npm run dev"
   },
   "dependencies": {
-    "lightweight-charts": "^5.0.3",
+    "lightweight-charts": "file:../lightweightchart",
     "ws": "^8.21.0"
   },
   "devDependencies": {

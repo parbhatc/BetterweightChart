@@ -291,7 +291,6 @@ export function attachReplaySelection(ctx, replay) {
     }
     if (crosshairSelecting) attachCrosshairClamp(pane);
     if (crosshairSelecting) attachPointerClamp(pane);
-    ctx.replayFutureDim?.ensurePane?.(pane);
     attachCutLineSync(pane);
   }
 
@@ -331,12 +330,10 @@ export function attachReplaySelection(ctx, replay) {
       if (crosshairSelecting) syncSelectBarCrosshair(false);
       detachAllCutLineSync();
       for (const pane of ctx.getAllChartPanes()) clearReplayHover(pane);
-      ctx.replayFutureDim?.refreshAll?.();
-      return;
-    }
-    attachAllPanes();
-
     ctx.replayFutureDim?.refreshAll?.();
+    return;
+  }
+  attachAllPanes();
 
     prevSelecting = state.selectingBar;
     prevMode = state.selectMode;

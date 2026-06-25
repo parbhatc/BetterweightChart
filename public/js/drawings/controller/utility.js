@@ -28,6 +28,7 @@ export function attachUtility(ctx) {
     }
     ctx.emit("utilityChange");
     ctx.syncChartPointerHandling();
+    ctx.syncDrawingPrimitiveAttachment?.();
   }
 
   function setDrawingsHidden(hidden) {
@@ -111,6 +112,7 @@ export function attachUtility(ctx) {
     ctx.syncChartPointerHandling();
     ctx.emit("toolChange");
     ctx.emit("cursorOverlay");
+    ctx.syncDrawingPrimitiveAttachment?.();
     if (!ctx.isCursorTool(ctx.activeTool)) {
       requestAnimationFrame(() => ctx.syncChartPointerHandling());
     }

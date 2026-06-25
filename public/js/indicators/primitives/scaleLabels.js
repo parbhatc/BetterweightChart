@@ -239,15 +239,44 @@ class StudyScaleLabelsAxisPaneRenderer {
  */
 export function attachStudyScaleLabelsPrimitive(opts) {
   const primitive = new StudyScaleLabelsPrimitive(opts.getConfig);
-  opts.series.attachPrimitive(primitive);
-  return {
-    requestRefresh: () => primitive.requestRefresh(),
-    destroy: () => {
+  let attached = false;
+
+  function labelsNeeded() {
+    const config = opts.getConfig();
+    if (!config?.enabled) return false;
+    return (config.getLabels?.() ?? []).length > 0;
+  }
+
+  function syncAttachment() {
+    const needed = labelsNeeded();
+    if (needed && !attached) {
+      opts.series.attachPrimitive(primitive);
+      attached = true;
+      return;
+    }
+    if (!needed && attached) {
       try {
         opts.series.detachPrimitive(primitive);
       } catch {
         /* ignore */
       }
+      attached = false;
+    }
+  }
+
+  return {
+    requestRefresh: () => {
+      syncAttachment();
+      if (attached) primitive.requestRefresh();
+    },
+    destroy: () => {
+      if (!attached) return;
+      try {
+        opts.series.detachPrimitive(primitive);
+      } catch {
+        /* ignore */
+      }
+      attached = false;
     },
   };
 }

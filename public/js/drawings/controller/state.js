@@ -1,6 +1,7 @@
 import { UserDrawingsPrimitive } from "../primitives/userDrawings/index.js";
 import { DRAWING_UI_SELECTOR } from "../constants.js";
 import { createDrawingHistory } from "../history/index.js";
+import { syncDrawingPrimitiveAttachment } from "./primitiveAttachment.js";
 import {
   loadDrawingsVisibility,
   loadShowMobilePlacementBar,
@@ -32,6 +33,7 @@ export function createControllerState(opts) {
     getIndicatorCount: opts.getIndicatorCount ?? (() => 0),
     removeIndicators: opts.removeIndicators ?? (() => {}),
     primitive,
+    _primitiveAttached: false,
 
     drawings: /** @type {import("../types.js").UserDrawing[]} */ ([]),
     history: createDrawingHistory(),
@@ -127,8 +129,6 @@ export function createControllerState(opts) {
   overlayRoot.appendChild(valuesTooltip);
   state.valuesTooltip = valuesTooltip;
 
-  state.series.attachPrimitive(primitive);
-
   window.addEventListener(
     "touchend",
     () => {
@@ -144,5 +144,6 @@ export function createControllerState(opts) {
   state.showMobilePlacementBar = loadShowMobilePlacementBar();
 
   primitive.setContextProvider(() => state.getContext());
+  state.syncDrawingPrimitiveAttachment = () => syncDrawingPrimitiveAttachment(state);
   return state;
 }

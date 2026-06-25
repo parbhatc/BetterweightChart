@@ -19,8 +19,8 @@ export function attachCommit(ctx) {
   function restoreSnapshot(snap) {
     ctx.drawings = structuredClone(snap.drawings);
     ctx.selectedId = snap.selectedId;
-    ctx.primitive.setSelectedId(ctx.selectedId);
     ctx.syncDrawingsToPrimitive();
+    if (ctx._primitiveAttached) ctx.primitive.setSelectedId(ctx.selectedId);
     ctx.emit("change");
     ctx.emit("selectionChange");
   }
