@@ -1,6 +1,7 @@
 import { getIndicatorClass } from "../../../indicators/catalog.js";
 import {
   collectPaneDataNeeds,
+  instanceUsesCompareSymbols,
   paneDataNeedsEmpty,
 } from "../../../indicators/security/indicatorDataNeeds.js";
 import { ensureHtfBars, getHtfBars, prependHtfBars } from "../../bar/htfBarCache.js";
@@ -298,6 +299,9 @@ export function createIndicatorDataLoader({
         compareSymbols: new Set(needs.compareChart.keys()),
       });
       requestOverlayRefresh(pane.index);
+      for (const sym of needs.compareChart.keys()) {
+        refreshPanesUsingCompareSymbol(sym);
+      }
     } finally {
       paneInFlight.delete(pane.index);
     }
@@ -316,6 +320,24 @@ export function createIndicatorDataLoader({
         void ensurePaneData(pane);
       }
     }, delayMs);
+  }
+
+  /** @param {string} compareSymbol */
+  function refreshPanesUsingCompareSymbol(compareSymbol) {
+    if (!compareSymbol) return;
+    const compareSet = new Set([compareSymbol]);
+    for (const pane of ctx.getAllChartPanes()) {
+      controller.invalidateOverlayCacheForPane(pane.index, { compareSymbols: compareSet });
+      const instances = controller.indicatorsForPane(pane.index) ?? [];
+      const paneCtx = { symbol: pane.symbol, bars: pane.bars };
+      if (
+        instances.some((inst) =>
+          instanceUsesCompareSymbols(inst, paneCtx, getIndicatorClass, compareSet),
+        )
+      ) {
+        requestOverlayRefresh(pane.index);
+      }
+    }
   }
 
   /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack */
@@ -360,10 +382,7 @@ export function createIndicatorDataLoader({
       )
       .then(() => {
         if (htfStoreBarCount(symbol, resolution) <= beforeLen) return;
-        controller.invalidateOverlayCacheForPane(pane.index, {
-          compareSymbols: new Set([symbol]),
-        });
-        requestOverlayRefresh(pane.index);
+        refreshPanesUsingCompareSymbol(symbol);
       })
       .finally(() => compareFetchInFlight.delete(key));
   }

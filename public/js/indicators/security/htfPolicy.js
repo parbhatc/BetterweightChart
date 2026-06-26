@@ -12,6 +12,17 @@ export function requiredChartBarsWhenNoHtf(enabledHtfs, inputs, fallback = 300) 
 }
 
 /**
+ * Chart bars needed for session-style levels that scan the pane series (not HTF security).
+ * @param {object} inputs
+ * @param {boolean} [sessionsEnabled]
+ * @param {number} [fallback]
+ */
+export function requiredChartBarsForSessions(inputs, sessionsEnabled, fallback = 300) {
+  if (!sessionsEnabled) return 0;
+  return requiredHtfBars(inputs, fallback);
+}
+
+/**
  * @param {object} ctx
  * @param {string} symbol
  * @param {string[]} tfIds

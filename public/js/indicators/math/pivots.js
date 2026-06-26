@@ -57,20 +57,29 @@ export function pivotLens(inputs, leftKey, rightKey, def = 10) {
 }
 
 /**
- * Map compare OHLCV onto primary chart bar times (same length as primaryChart).
- * Missing bars are null — pivot helpers skip windows with gaps.
+ * Map compare OHLCV onto primary bars (same length as primaryChart).
+ * Prefer UTC timestamp match, then chart display time. Missing bars are null.
  * @param {object[]} primaryChart
+ * @param {object[]} primaryUtc
  * @param {object[]} cmpUtc
  * @param {object[]} cmpChart
  */
-export function alignUtcBarsByChartTime(primaryChart, cmpUtc, cmpChart) {
+export function alignUtcBarsByChartTime(primaryChart, primaryUtc, cmpUtc, cmpChart) {
   /** @type {Map<number, object>} */
-  const byTime = new Map();
+  const byUtc = new Map();
+  /** @type {Map<number, object>} */
+  const byChart = new Map();
   for (let i = 0; i < cmpUtc.length; i++) {
-    const t = cmpChart[i]?.time;
-    if (t != null) byTime.set(t, cmpUtc[i]);
+    const utcT = cmpUtc[i]?.time;
+    if (utcT != null) byUtc.set(utcT, cmpUtc[i]);
+    const chartT = cmpChart[i]?.time;
+    if (chartT != null) byChart.set(chartT, cmpUtc[i]);
   }
-  return primaryChart.map((b) => byTime.get(b.time) ?? null);
+  return primaryChart.map((b, i) => {
+    const utcT = primaryUtc[i]?.time;
+    if (utcT != null && byUtc.has(utcT)) return byUtc.get(utcT);
+    return byChart.get(b.time) ?? null;
+  });
 }
 
 /** @param {({ high: number } | null)[]} bars @param {number} i @param {number} left @param {number} right */

@@ -23,6 +23,7 @@ import {
   DEFAULT_HISTORY_CHUNK,
   estimateCountBackFromViewport,
   estimateHistoryCountBack,
+  estimateInitialCountBack,
 } from "./periodParams.js";
 import {
   barsCoverReplayAnchor,
@@ -115,6 +116,7 @@ export function createBarLoader(opts) {
     getReplayLoadCapTo,
     getReplayLoadContext,
     isChartPanning,
+    getRequiredChartBarsForPane,
   } = opts;
 
   /** @type {Map<number, string>} */
@@ -618,6 +620,19 @@ export function createBarLoader(opts) {
     return pending;
   }
 
+  async function ensureIndicatorChartHistory(pane) {
+    const want = Math.max(0, Number(getRequiredChartBarsForPane?.(pane)) || 0);
+    if (!want || pane.bars.length >= want) return;
+    if (pane._historyExhausted || pane._suppressHistoryPrefetch) return;
+    let guard = 0;
+    while (pane.bars.length < want && !pane._historyExhausted && guard < 16) {
+      if (isPanning()) return;
+      const got = await prependHistory(pane);
+      if (!got) break;
+      guard += 1;
+    }
+  }
+
   function clearPaneBarState(pane) {
     pane._historyExhausted = false;
     pane._firstDataRequest = true;
@@ -725,7 +740,8 @@ export function createBarLoader(opts) {
 
       if (!pane.symbolInfo) pane.symbolInfo = await datafeed.resolveSymbol(pane.symbol);
       const barSec = getBarSecForPane?.(pane) ?? 60;
-      let requestCountBack = estimateCountBackFromViewport(pane, countBack);
+      const indicatorBars = getRequiredChartBarsForPane?.(pane) ?? 0;
+      let requestCountBack = estimateInitialCountBack(pane, countBack, indicatorBars);
       let loadTo = replayCapTo ?? undefined;
       if (replayCtx) {
         const end =
@@ -781,6 +797,9 @@ export function createBarLoader(opts) {
         syncPaneEmptyState?.(pane, { show: false });
       }
       chartDebug("data", "history loaded", { pane: pane.index, bars: pane.bars.length });
+      if (wasFirstRequest && pane.bars.length && !opts.deferChartRefresh) {
+        await ensureIndicatorChartHistory(pane);
+      }
       return await finishPaneAfterBarsLoaded(pane, loadOpts);
     });
 
@@ -865,5 +884,6 @@ export function createBarLoader(opts) {
     flushDeferredHistory,
     setOverlayLoaderEnabled,
     stashPaneResolutionCache,
+    ensureIndicatorChartHistory,
   };
 }

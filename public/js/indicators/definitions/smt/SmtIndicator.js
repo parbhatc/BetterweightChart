@@ -84,7 +84,7 @@ class SmtIndicator extends BarScriptIndicator {
 
   /** @param {object} instance @param {object} ctx */
   overlayRecomputeExtra(instance, ctx) {
-    const compareKey = compareBarsRecomputeKey(ctx, instance.inputs);
+    const compareKey = compareBarsRecomputeKey(ctx, instance.inputs, { ohlc: true });
     const style = instance.style ?? {};
     const colors = [
       styleColor(style, "highColor", ""),
@@ -123,6 +123,7 @@ class SmtIndicator extends BarScriptIndicator {
       this.chartBars,
       this.bars.length,
       left + right + 1,
+      this.bars,
     );
     if (!cmp.ready) {
       if (cmp.covered != null) {
@@ -243,10 +244,6 @@ class SmtIndicator extends BarScriptIndicator {
       this.state.lastPh = ph;
       this.state.lastSymPh = symPh;
       this.state.lastPhBarIdx = pivotBarIndex(this.index, right);
-    } else if (ph != null && (this.state.lastPh == null || ph > this.state.lastPh)) {
-      this.state.lastPh = ph;
-      this.state.lastSymPh = null;
-      this.state.lastPhBarIdx = pivotBarIndex(this.index, right);
     }
 
     const pl = this.math.pivotLow(left, right);
@@ -289,10 +286,6 @@ class SmtIndicator extends BarScriptIndicator {
       }
       this.state.lastPl = pl;
       this.state.lastSymPl = symPl;
-      this.state.lastPlBarIdx = pivotBarIndex(this.index, right);
-    } else if (pl != null && (this.state.lastPl == null || pl < this.state.lastPl)) {
-      this.state.lastPl = pl;
-      this.state.lastSymPl = null;
       this.state.lastPlBarIdx = pivotBarIndex(this.index, right);
     }
   }

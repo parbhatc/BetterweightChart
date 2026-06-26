@@ -65,7 +65,7 @@ export function buildChartSeriesForPane(pane, _visible, settingsStore, resolutio
  * @param {object | null} symbolInfo
  * @param {{ id: string, sec?: number }[]} resolutions
  * @param {(pane: object) => void} [onPrimaryPane]
- * @param {{ deferSessionBg?: boolean, logicalRange?: { from: number, to: number } }} [opts]
+ * @param {{ deferSessionBg?: boolean, logicalRange?: { from: number, to: number }, avoidPreserveViewport?: boolean }} [opts]
  */
 export function refreshPaneCandleData(pane, settingsStore, symbolInfo, resolutions, onPrimaryPane, opts = {}) {
   chartDebugTime("data", `refreshPaneCandleData pane ${pane.index}`, () => {
@@ -161,6 +161,8 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
         from: logicalRange.from,
         to: logicalRange.to,
       });
+    } else if (opts.avoidPreserveViewport) {
+      setData();
     } else {
       withPreservedViewport(pane.chart, setData, { followUpFrames: 1 });
     }

@@ -24,6 +24,19 @@ export function estimateCountBackFromViewport(pane, fallback = DEFAULT_INITIAL_C
 }
 
 /**
+ * Initial load countBack: viewport estimate, configured default, and indicator lookback.
+ * @param {object} pane
+ * @param {number} [configuredCountBack]
+ * @param {number} [indicatorBars]
+ */
+export function estimateInitialCountBack(pane, configuredCountBack, indicatorBars = 0) {
+  const configured = Math.max(0, Number(configuredCountBack) || DEFAULT_INITIAL_COUNT_BACK);
+  const indicatorNeed = Math.max(0, Number(indicatorBars) || 0);
+  const viewportNeed = estimateCountBackFromViewport(pane, configured);
+  return Math.min(COUNT_BACK_MAX, Math.max(COUNT_BACK_MIN, configured, viewportNeed, indicatorNeed));
+}
+
+/**
  * countBack for scrolling left — visible window + edge margin, capped by historyChunk.
  * @param {import("lightweight-charts").IChartApi | undefined} chart
  * @param {number} maxChunk

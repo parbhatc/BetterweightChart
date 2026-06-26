@@ -6,7 +6,7 @@ import { compareBarsRecomputeKey } from "/js/indicators/security/compareBars.js"
 import { overlayRecomputeKey } from "/js/indicators/overlayCache.js";
 import { createBarScriptContext } from "/js/indicators/pineRuntime.js";
 import { getSecuritySeries } from "/js/indicators/security/htfAccess.js";
-import { FvgEngine } from "./FvgEngine.js";
+import { FvgEngine, fvgAtBar } from "./FvgEngine.js";
 import { fvgHtf } from "./htf.js";
 import { buildInputs } from "./inputs.js";
 
@@ -22,7 +22,7 @@ function htfRecomputeKey(instance, ctx) {
   return parts.join(";");
 }
 
-/** Live-tick key — only fields that can change boxes on the forming bar (not every close tick). */
+/** Live-tick key — fields that can change forming FVG on the same candle. */
 function formingLiveKey(instance, ctx) {
   const b = ctx.formingBar;
   if (!b) return "";
@@ -31,6 +31,15 @@ function formingLiveKey(instance, ctx) {
   const boxesVisible = instance.style?.graphicBoxes !== false;
   if (inputs.showLiveForming !== false && inputs.showFvg !== false && boxesVisible) {
     parts.push(`hl:${b.high}|${b.low}`);
+    if (inputs.sizeFilterOn === true) {
+      parts.push(`cls:${b.close}`);
+    }
+    const utcBars = ctx.utcBars;
+    const barSec = Number(ctx.barSec) || 60;
+    if (utcBars?.length >= 3) {
+      const hit = fvgAtBar(utcBars, utcBars.length - 1, barSec);
+      parts.push(hit ? `fvg:${hit.kind}|${hit.top}|${hit.bottom}` : "fvg:none");
+    }
   }
   const fillType = inputs.filledType === "wick" ? "wick" : "close";
   const liveFill = inputs.deleteOnFill !== false || inputs.showPartial === true;
@@ -304,7 +313,7 @@ class FvgIndicator extends BarScriptIndicator {
   static shouldRefreshOverlayOnCacheHit(instance, ctx) {
     const liveKey = formingLiveKey(instance, ctx);
     const rt = instance._fvgRuntime;
-    if (!rt?.snapshot) return false;
+    if (!rt?.snapshot) return Boolean(ctx.formingBar);
     return rt.liveKey !== liveKey;
   }
 

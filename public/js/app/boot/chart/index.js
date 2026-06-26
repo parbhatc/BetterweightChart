@@ -221,6 +221,13 @@ export async function bootChart(overrides = {}) {
       setViewportRestorePending: (v) => {
         ctx._viewportRestorePending = v;
       },
+      refreshPaneCandleData: ctx.refreshPaneCandleData,
+      indicatorController: ctx.indicatorController,
+      ensureIndicatorData: ctx.ensureIndicatorData,
+      refreshIndicatorsImmediate: ctx.refreshIndicatorsImmediate,
+      refreshIndicatorLegends: ctx.refreshIndicatorLegends,
+      replayEngine: ctx.replayEngine,
+      ensureIndicatorChartHistory: ctx.ensureIndicatorChartHistory,
       ui: ctx.ui,
       liveBarListeners: ctx.liveBarListeners,
     });

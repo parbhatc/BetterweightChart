@@ -1,7 +1,7 @@
 import { resolutionSec } from "/js/chart/resolutions.js";
 import { normalizeResolutionId } from "/js/chart/resolutionFormat.js";
-import { resolveTimeLevels } from "../ui/levelsLayersPanel.js";
-import { htfPendingForLayers, requiredChartBarsWhenNoHtf, requiredHtfBars } from "/js/indicators/security/htfPolicy.js";
+import { resolveTimeLevels, resolveSessionLevels } from "../ui/levelsLayersPanel.js";
+import { htfPendingForLayers, requiredChartBarsForSessions, requiredChartBarsWhenNoHtf, requiredHtfBars } from "/js/indicators/security/htfPolicy.js";
 
 export class LevelsHtf {
   /** @param {object} inputs @param {string} [chartResolution] */
@@ -39,7 +39,12 @@ export class LevelsHtf {
 
   /** @param {object} inputs @param {string} [chartResolution] */
   requiredChartBars(inputs, chartResolution) {
-    return requiredChartBarsWhenNoHtf(this.enabledResolutions(inputs, chartResolution), inputs);
+    const htf = this.enabledResolutions(inputs, chartResolution);
+    const sessions = resolveSessionLevels(inputs).some((r) => r.enabled);
+    return Math.max(
+      requiredChartBarsWhenNoHtf(htf, inputs),
+      requiredChartBarsForSessions(inputs, sessions),
+    );
   }
 }
 

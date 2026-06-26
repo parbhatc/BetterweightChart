@@ -3,6 +3,50 @@ import { ICON_CLOSE } from "/js/indicators/ui/icons.js";
 import { normalizeResolutionId, resolutionDisplayTitle } from "/js/chart/resolutionFormat.js";
 import { resolutionSec } from "/js/chart/resolutions.js";
 
+const LEGACY_TF_ALIASES = {
+  "1m": "1",
+  "3m": "3",
+  "5m": "5",
+  "10m": "10",
+  "15m": "15",
+  "30m": "30",
+  "45m": "45",
+  "1h": "60",
+  "2h": "120",
+  "3h": "180",
+  "4h": "240",
+  "1d": "D",
+  "1w": "W",
+};
+
+/** @param {string} id */
+export function coerceFvgResolutionId(id) {
+  const s = String(id ?? "").trim();
+  if (!s || s === "chart") return s;
+  const alias = LEGACY_TF_ALIASES[s] ?? LEGACY_TF_ALIASES[s.toLowerCase()];
+  return normalizeResolutionId(alias ?? s);
+}
+
+/** @param {string} id */
+function resolutionSecForFvg(id) {
+  if (!id || id === "chart") return null;
+  return resolutionSec(coerceFvgResolutionId(id));
+}
+
+/**
+ * @param {{ tfSec: number, tfId: string }} layer
+ * @param {string | null | undefined} chartResolution
+ * @param {number} chartSec
+ */
+function fvgLayerMatchesChartResolution(layer, chartResolution, chartSec) {
+  if (layer.tfId === "chart") return false;
+  const chartSecResolved = chartSec || resolutionSecForFvg(chartResolution ?? "") || 0;
+  const layerSec = layer.tfSec || resolutionSecForFvg(layer.tfId) || 0;
+  if (chartSecResolved > 0 && layerSec === chartSecResolved) return true;
+  if (!chartResolution) return false;
+  return coerceFvgResolutionId(layer.tfId) === coerceFvgResolutionId(chartResolution);
+}
+
 /** @typedef {{ enabled: boolean, label: string, timeframe: string }} FvgTimeframeRow */
 
 /** @type {FvgTimeframeRow[]} */
@@ -74,7 +118,7 @@ export function resolveFvgLayers(inputs, chartSec) {
     const label = String(row.label ?? "").trim();
     if (!label) continue;
     const tfRaw = row.timeframe ?? "chart";
-    const tfId = tfRaw === "chart" ? "chart" : normalizeResolutionId(tfRaw);
+    const tfId = tfRaw === "chart" ? "chart" : coerceFvgResolutionId(tfRaw);
     const tfSec = tfId === "chart" ? chartSec : resolutionSec(tfId);
     if (!tfSec) continue;
     layers.push({ tfSec, tfId, label });
@@ -84,7 +128,8 @@ export function resolveFvgLayers(inputs, chartSec) {
 
 /**
  * When hideLowerTf is on, drop lower-TF layers only if the chart timeframe row is not enabled.
- * If the user explicitly enabled chart + HTF rows, keep both.
+ * If the user explicitly enabled chart + HTF rows, keep both (chart may still be removed when it
+ * duplicates an explicit row at the same resolution — see dedupeRedundantChartLayer).
  * @param {{ tfSec: number, tfId: string, label: string }[]} layers
  * @param {object} inputs
  * @param {number} chartSec
@@ -97,6 +142,22 @@ export function applyHideLowerTfFilter(layers, inputs, chartSec) {
   if (chartRowEnabled) return layers;
   const maxSec = Math.max(...layers.map((l) => l.tfSec));
   return layers.filter((l) => l.tfSec === maxSec);
+}
+
+/**
+ * When an explicit timeframe row matches the chart resolution, drop the generic "chart" row.
+ * Works for any TF (1m, 15m, 1h, 4h, D, …) — chart + matching explicit row → explicit only.
+ * @param {{ tfSec: number, tfId: string, label: string }[]} layers
+ * @param {number} chartSec
+ * @param {string | null | undefined} [chartResolution]
+ */
+export function dedupeRedundantChartLayer(layers, chartSec, chartResolution = null) {
+  if (!layers.length) return layers;
+  const hasExplicitChartTf = layers.some((l) =>
+    fvgLayerMatchesChartResolution(l, chartResolution, chartSec),
+  );
+  if (!hasExplicitChartTf) return layers;
+  return layers.filter((l) => l.tfId !== "chart");
 }
 
 /** @param {string} tfId @param {{ id: string, label: string }[]} options */

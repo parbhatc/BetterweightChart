@@ -7,6 +7,8 @@ import {
 import { createBarLoader } from "../../bar/loader.js";
 import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
 import { chartDebug } from "../../../debug/chart/index.js";
+import { collectPaneRequiredChartBars, instanceUsesCompareSymbols } from "../../../indicators/security/indicatorDataNeeds.js";
+import { getIndicatorClass } from "../../../indicators/catalog.js";
 /**
  * @param {import("./state.js").BootContext} ctx
  */
@@ -41,6 +43,26 @@ export function attachBarLoader(ctx) {
       loadTo: snap?.liveEndBarTime ?? ctx.replayLiveEndUtc ?? undefined,
       capDisplay: null,
     };
+  }
+
+  /** @param {object} sourcePane */
+  function refreshCompareDependentOverlays(sourcePane) {
+    const sym = sourcePane?.symbol;
+    if (!sym || !ctx.indicatorController) return;
+    const compareSet = new Set([sym]);
+    for (const pane of ctx.getAllChartPanes()) {
+      if (pane.index === sourcePane.index) continue;
+      const instances = ctx.indicatorController.indicatorsForPane(pane.index) ?? [];
+      const paneCtx = { symbol: pane.symbol, bars: pane.bars };
+      const usesCompare = instances.some((inst) =>
+        instanceUsesCompareSymbols(inst, paneCtx, getIndicatorClass, compareSet),
+      );
+      if (!usesCompare) continue;
+      ctx.indicatorController.invalidateOverlayCacheForPane(pane.index, {
+        compareSymbols: compareSet,
+      });
+      ctx.indicatorController.refreshOverlaysForPane(pane.index);
+    }
   }
 
   const barLoader = createBarLoader({
@@ -81,6 +103,7 @@ export function attachBarLoader(ctx) {
         const bar = pane.bars?.at(-1);
         if (bar) ctx.notifyLiveBar?.(bar, meta);
       }
+      refreshCompareDependentOverlays(pane);
       if (meta.isNewBar) {
         if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
           ctx.refreshIndicatorsImmediate?.(pane.index);
@@ -95,6 +118,7 @@ export function attachBarLoader(ctx) {
       const added = ctx.replayEngine?.mergeHistoryIntoSnapshot?.(pane) ?? 0;
       if (added > 0) ctx.replayFutureDim?.refreshAll?.();
       ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
+      refreshCompareDependentOverlays(pane);
       ctx.ensureIndicatorData?.();
       pane.priceLineLabel?.requestRefresh();
       if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
@@ -110,6 +134,7 @@ export function attachBarLoader(ctx) {
     onPaneHistoryDataUpdated: (pane) => {
       if (pane._historyRestorePending || pane._loadingHistory) return;
       ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
+      refreshCompareDependentOverlays(pane);
       if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
         ctx.refreshIndicatorsImmediate?.(pane.index);
       } else {
@@ -128,6 +153,10 @@ export function attachBarLoader(ctx) {
     isChartPanning: () => Boolean(ctx.ui?.chartPanning),
     getReplayLoadCapTo: (pane) => replayLoadContextForPane(pane)?.capDisplay ?? null,
     getReplayLoadContext: replayLoadContextForPane,
+    getRequiredChartBarsForPane: (pane) => {
+      const instances = ctx.indicatorController?.indicatorsForPane?.(pane.index) ?? [];
+      return collectPaneRequiredChartBars(instances, pane, getIndicatorClass);
+    },
   });
 
   ctx.viewportDeps.maintainLockedRatio = ctx.maintainLockedRatio;
@@ -157,6 +186,7 @@ export function attachBarLoader(ctx) {
     upsertLiveBar: barLoader.upsertLiveBar,
     prependHistory: barLoader.prependHistory,
     ensureHistoryNearEdge: barLoader.ensureHistoryNearEdge,
+    ensureIndicatorChartHistory: barLoader.ensureIndicatorChartHistory,
     setOverlayLoaderEnabled: barLoader.setOverlayLoaderEnabled,
     stashPaneResolutionCache: barLoader.stashPaneResolutionCache,
     loadBars: () =>

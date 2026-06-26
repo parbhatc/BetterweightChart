@@ -65,6 +65,7 @@ export function rebuildPaneChartView(pane, settingsStore, symbolInfo, resolution
 
   const view = {
     timezone: tz,
+    resolution: pane.resolution ?? null,
     utcKey: key,
     session,
     utcBars,
@@ -103,7 +104,13 @@ export function getPaneChartView(pane, settingsStore, symbolInfo, resolutions) {
   const view = pane._chartView;
   const viewAheadOfPane =
     Boolean(pane._historyRestorePending && view?.utcBars?.length && view.utcBars.length > utcBars.length);
-  if (view && view.timezone === tz && (view.utcKey === key || viewAheadOfPane)) {
+  const resolution = pane.resolution ?? null;
+  if (
+    view &&
+    view.timezone === tz &&
+    view.resolution === resolution &&
+    (view.utcKey === key || viewAheadOfPane)
+  ) {
     logChartViewResolve(pane, viewAheadOfPane ? "keep-ahead" : "hit", {
       paneBars: utcBars.length,
       viewBars: view.utcBars.length,

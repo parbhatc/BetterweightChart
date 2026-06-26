@@ -16,6 +16,12 @@ import {
   hideChartPendingOverlay,
 } from "../../ui/loader/chartPendingOverlay.js";
 import { clearResolutionCache } from "../bar/resolutionCache.js";
+import {
+  finishSeriesReload,
+  paintPaneAfterTimeframeLoad,
+  preparePanesForSeriesReload,
+  seedPaneResolutionAsHtf,
+} from "./chart/pickers.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -63,7 +69,26 @@ export function createChartWidgetApi(ctx) {
     opts,
     afterTimeframeChange,
     setViewportRestorePending,
+    refreshPaneCandleData,
+    indicatorController,
+    ensureIndicatorData,
+    refreshIndicatorsImmediate,
+    refreshIndicatorLegends,
+    ensureIndicatorChartHistory,
   } = ctx;
+
+  const tfSwitchCtx = {
+    refreshPaneCandleData,
+    indicatorController,
+    ensureIndicatorData,
+    refreshIndicatorsImmediate,
+    refreshIndicatorLegends,
+    ensureIndicatorChartHistory,
+    settingsStore,
+    resolutions,
+    activePriceScaleId,
+    replayEngine,
+  };
 
   const orderLines = createOrderLineManager(getActivePane, {
     settingsStore,
@@ -316,10 +341,13 @@ export function createChartWidgetApi(ctx) {
       const sync = layoutManager?.getSync();
       if (layoutManager && sync?.interval) {
         const panes = getAllChartPanes();
+        preparePanesForSeriesReload(tfSwitchCtx, panes);
         const savedLayouts = panes.map((p) =>
           captureViewportBarLayout(p, settingsStore, resolutions),
         );
         for (const pane of panes) {
+          seedPaneResolutionAsHtf(tfSwitchCtx, pane);
+          replayEngine?.beforeResolutionChange?.(pane);
           stashPaneResolutionCache(pane, pane.resolution);
           pane.resolution = res;
         }
@@ -332,21 +360,26 @@ export function createChartWidgetApi(ctx) {
             deferChartRefresh: true,
             skipPriceScaleMargins: true,
           });
-          setViewportRestorePending?.(true);
-          try {
-            await afterTimeframeChange?.();
-            for (let i = 0; i < panes.length; i += 1) {
-              restoreViewportBarLayout(
-                panes[i],
-                savedLayouts[i],
-                settingsStore,
-                resolutions,
-                "timeframe",
-                activePriceScaleId,
-              );
+          const replayLocked = replayEngine?.isReplayLocked?.() ?? false;
+          if (replayLocked) {
+            setViewportRestorePending?.(true);
+            try {
+              await afterTimeframeChange?.();
+            } finally {
+              setViewportRestorePending?.(false);
             }
-          } finally {
-            setViewportRestorePending?.(false);
+            await finishSeriesReload(tfSwitchCtx, panes);
+          } else {
+            for (let i = 0; i < panes.length; i += 1) {
+              paintPaneAfterTimeframeLoad(tfSwitchCtx, panes[i], savedLayouts[i]);
+            }
+            await finishSeriesReload(tfSwitchCtx, panes);
+            setViewportRestorePending?.(true);
+            try {
+              await afterTimeframeChange?.();
+            } finally {
+              setViewportRestorePending?.(false);
+            }
           }
         } finally {
           await hideChartPendingOverlay({ chartOverlayLoader });
@@ -356,6 +389,9 @@ export function createChartWidgetApi(ctx) {
       const pane = getActivePane();
       if (!pane) return;
       const savedLayout = captureViewportBarLayout(pane, settingsStore, resolutions);
+      preparePanesForSeriesReload(tfSwitchCtx, [pane]);
+      seedPaneResolutionAsHtf(tfSwitchCtx, pane);
+      replayEngine?.beforeResolutionChange?.(pane);
       stashPaneResolutionCache(pane, pane.resolution);
       pane.resolution = res;
       refreshWatermark();
@@ -367,19 +403,24 @@ export function createChartWidgetApi(ctx) {
           deferChartRefresh: true,
           skipPriceScaleMargins: true,
         });
-        setViewportRestorePending?.(true);
-        try {
-          await afterTimeframeChange?.();
-          restoreViewportBarLayout(
-            pane,
-            savedLayout,
-            settingsStore,
-            resolutions,
-            "timeframe",
-            activePriceScaleId,
-          );
-        } finally {
-          setViewportRestorePending?.(false);
+        const replayLocked = replayEngine?.isReplayLocked?.() ?? false;
+        if (replayLocked) {
+          setViewportRestorePending?.(true);
+          try {
+            await afterTimeframeChange?.();
+          } finally {
+            setViewportRestorePending?.(false);
+          }
+          await finishSeriesReload(tfSwitchCtx, [pane]);
+        } else {
+          paintPaneAfterTimeframeLoad(tfSwitchCtx, pane, savedLayout);
+          await finishSeriesReload(tfSwitchCtx, [pane]);
+          setViewportRestorePending?.(true);
+          try {
+            await afterTimeframeChange?.();
+          } finally {
+            setViewportRestorePending?.(false);
+          }
         }
       } finally {
         await hideChartPendingOverlay({ chartOverlayLoader });

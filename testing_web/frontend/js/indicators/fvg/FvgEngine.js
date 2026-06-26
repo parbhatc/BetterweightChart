@@ -10,7 +10,7 @@ import {
   fvgZonePassesSizeFilter,
   resolveFvgSizeFilterLimits,
 } from "../ui/symbolSizeRulesPanel.js";
-import { resolveFvgLayers, applyHideLowerTfFilter } from "../ui/fvgTimeframesPanel.js";
+import { resolveFvgLayers, applyHideLowerTfFilter, dedupeRedundantChartLayer } from "../ui/fvgTimeframesPanel.js";
 import { resolveLayerExtend } from "../ui/fvgExtendBoxesPanel.js";
 import { resolveLayerBoxFills } from "../ui/fvgBoxColorsPanel.js";
 import { mapUtcTimeToChartTime } from "/js/indicators/math/barTimeMap.js";
@@ -24,11 +24,20 @@ import {
   debugFvgZoneEvent,
 } from "./fvgDebug.js";
 import { overlayGeometryEqual } from "/js/indicators/overlayCache.js";
+import { aggregateReplayFormingBar } from "/js/replay/formingBar.js";
 
 const LABEL_DISTANCE_BARS = 10;
 
+/** @param {object[]} boxes */
+function formingBoxesSignature(boxes) {
+  return boxes
+    .filter((b) => b.isForming)
+    .map((b) => `${b.timeStart}|${b.timeEnd}|${b.priceTop}|${b.priceBottom}|${b.fillColor ?? ""}`)
+    .join(";") || "none";
+}
+
 /** @param {object[]} bars @param {number} i confirmation bar (third candle) @param {number} [tfSec] HTF period in seconds */
-function fvgAtBar(bars, i, tfSec = 900) {
+export function fvgAtBar(bars, i, tfSec = 900) {
   if (i < 2 || i >= bars.length) return null;
   const b0 = bars[i - 2];
   const b1 = bars[i - 1];
@@ -173,6 +182,7 @@ export class FvgEngine {
     }
 
     const chartSec = ctx.barSec ?? resolutionSec(ctx.chartResolution ?? "1");
+    const chartResolution = ctx.chartResolution ?? null;
     const maxBack = Math.max(10, Number(inputs.maxBarsBack) || 300);
     const deleteOnFill = inputs.deleteOnFill !== false;
     const boxLen = Math.max(1, Number(inputs.boxLength) || 20);
@@ -222,6 +232,7 @@ export class FvgEngine {
     }
 
     layers = applyHideLowerTfFilter(layers, inputs, chartSec);
+    layers = dedupeRedundantChartLayer(layers, chartSec, chartResolution);
     if (!layers.length) {
       this.script.state.skip = true;
       debugFvgInitSkip("no layers after hideLowerTf");
@@ -444,13 +455,10 @@ export class FvgEngine {
     this.restoreSnapshotState(snapshot, utcBars, chartBars);
     const maxBack = snapshot.cfg.maxBack ?? 300;
     this.script.state.chartLayers = snapshot.chartLayers.map((entry) => {
-      const series = entry.series.map((bar, i) => {
-        if (!bar || i !== entry.series.length - 1) return bar ? { ...bar } : bar;
-        const ub = utcBars[i];
-        const cb = chartBars[i];
-        if (!ub) return bar ? { ...bar } : bar;
-        return this.chartBarPoint(ub, cb, i);
-      });
+      const series =
+        utcBars.length > 0
+          ? utcBars.map((ub, i) => this.chartBarPoint(ub, chartBars[i], i))
+          : entry.series.map((bar) => (bar ? { ...bar } : bar));
       return {
         layer: entry.layer,
         series,
@@ -462,13 +470,18 @@ export class FvgEngine {
       return null;
     }
 
+    const lastChartTime = chartBars.at(-1)?.time;
+    if (lastChartTime != null && this.script.state.cfg) {
+      this.script.state.cfg.lastChartTime = lastChartTime;
+    }
+
     for (const entry of this.script.state.chartLayers) {
       const lastIdx = entry.series.length - 1;
       if (lastIdx < entry.startIdx) continue;
       this.onBarLayer(entry.layer, entry.series, entry.startIdx, lastIdx);
     }
 
-    this.refreshHtfLayersForReplay(snapshot, "tick");
+    this.refreshHtfLayersForLive(snapshot, "tick");
 
     return this.finishIncrementalEmit(previousBoxes);
   }
@@ -534,7 +547,7 @@ export class FvgEngine {
       }
     }
 
-    this.refreshHtfLayersForReplay(snapshot, "append");
+    this.refreshHtfLayersForLive(snapshot, "append");
 
     const result = this.finishIncrementalEmit(previousBoxes);
     if (result) result.snapshot.barLen = newLen;
@@ -542,19 +555,19 @@ export class FvgEngine {
   }
 
   /**
-   * During replay on a lower-TF chart, HTF layers are not fed by security fetches.
-   * Re-aggregate chart bars into HTF series so forming FVG can update step-by-step.
+   * Re-aggregate HTF layers on live/replay ticks so forming FVG tracks the forming candle OHLC.
    * @param {object} snapshot
    * @param {"tick" | "append"} mode
    */
-  refreshHtfLayersForReplay(snapshot, mode = "tick") {
-    if (!this.script.overlayCtx?.isReplayLocked?.()) return;
+  refreshHtfLayersForLive(snapshot, mode = "tick") {
     const htfEntries = snapshot.htfLayers;
     if (!htfEntries?.length) return;
 
-    const chartSec = snapshot.cfg?.chartSec;
+    const chartSec = snapshot.cfg?.chartSec ?? this.script.state.cfg?.chartSec;
     const maxBack = snapshot.cfg?.maxBack ?? 300;
     if (!chartSec) return;
+
+    const overlayCtx = this.script.overlayCtx ?? {};
 
     /** @type {{ layer: { tfSec: number, tfId: string, label: string }, series: object[] }[]} */
     const newHtfLayers = [];
@@ -568,20 +581,26 @@ export class FvgEngine {
         continue;
       }
 
-      const series = aggregateBars(
-        this.script.bars,
-        layer.tfSec,
-        chartSec,
-        (_, i) => this.script.chartBars[i]?.time ?? this.script.bars[i].time,
-      ).map((b) => ({
-        ...b,
-        chartTime:
-          this.script.chartBars[b.startSourceIndex]?.time
-          ?? mapUtcTimeToChartTime(b.time, this.script.bars, this.script.chartBars),
-        confirmChartTime:
-          this.script.chartBars[b.startSourceIndex]?.time
-          ?? mapUtcTimeToChartTime(b.time, this.script.bars, this.script.chartBars),
-      }));
+      let series;
+      const htf = getSecuritySeries(overlayCtx, undefined, layer.tfId);
+      if (htf?.utcBars?.length) {
+        series = this.patchFormingHtfBarFromChart(mapHtfBarsToSeries(htf), layer, chartSec);
+      } else {
+        series = aggregateBars(
+          this.script.bars,
+          layer.tfSec,
+          chartSec,
+          (_, i) => this.script.chartBars[i]?.time ?? this.script.bars[i].time,
+        ).map((b) => ({
+          ...b,
+          chartTime:
+            this.script.chartBars[b.startSourceIndex]?.time
+            ?? mapUtcTimeToChartTime(b.time, this.script.bars, this.script.chartBars),
+          confirmChartTime:
+            this.script.chartBars[b.startSourceIndex]?.time
+            ?? mapUtcTimeToChartTime(b.time, this.script.bars, this.script.chartBars),
+        }));
+      }
 
       const startIdx = Math.max(2, series.length - maxBack);
       const lastIdx = series.length - 1;
@@ -600,6 +619,52 @@ export class FvgEngine {
   }
 
   /**
+   * Patch the open HTF bucket with OHLC aggregated from chart bars through the forming bar.
+   * @param {object[]} series
+   * @param {{ tfSec: number }} layer
+   * @param {number} chartSec
+   */
+  patchFormingHtfBarFromChart(series, layer, chartSec) {
+    if (!series?.length || !this.script.bars?.length || layer.tfSec <= chartSec) {
+      return series;
+    }
+    const lastIdx = series.length - 1;
+    const htfOpen = series[lastIdx]?.time;
+    const chartTail = this.script.bars.at(-1)?.time;
+    if (htfOpen == null || chartTail == null) return series;
+    if (chartTail >= htfOpen + layer.tfSec) return series;
+
+    const agg = aggregateReplayFormingBar(this.script.bars, htfOpen, chartTail);
+    if (!agg) return series;
+
+    const out = series.map((bar) => (bar ? { ...bar } : bar));
+    const prev = out[lastIdx];
+    const startIdx = prev.startSourceIndex ?? prev.sourceIndex ?? lastIdx;
+    const confirmIdx = prev.sourceIndex ?? lastIdx;
+    out[lastIdx] = {
+      ...prev,
+      open: agg.open,
+      high: agg.high,
+      low: agg.low,
+      close: agg.close,
+      volume: agg.volume,
+      time: htfOpen,
+      chartTime: prev.chartTime ?? this.script.chartBars[startIdx]?.time ?? agg.time,
+      confirmChartTime: prev.confirmChartTime ?? this.script.chartBars[confirmIdx]?.time ?? agg.time,
+      sourceIndex: confirmIdx,
+      startSourceIndex: startIdx,
+    };
+    return out;
+  }
+
+  /**
+   * @deprecated use refreshHtfLayersForLive
+   */
+  refreshHtfLayersForReplay(snapshot, mode = "tick") {
+    this.refreshHtfLayersForLive(snapshot, mode);
+  }
+
+  /**
    * Emit overlay boxes silently and only return new geometry when it changed.
    * @param {object[]} previousBoxes
    */
@@ -609,6 +674,16 @@ export class FvgEngine {
     const boxes = [...this.script.boxes];
     const nextSnapshot = this.captureSnapshot();
     nextSnapshot.barLen = this.script.bars.length;
+
+    const prevForming = formingBoxesSignature(previousBoxes);
+    const nextForming = formingBoxesSignature(boxes);
+    if (prevForming !== nextForming) {
+      return { boxes, snapshot: nextSnapshot };
+    }
+
+    if (boxes.some((b) => b.isForming)) {
+      return { boxes, snapshot: nextSnapshot };
+    }
 
     if (previousBoxes.length && overlayGeometryEqual(previousBoxes, boxes)) {
       return { boxes: previousBoxes, snapshot: nextSnapshot };
@@ -658,7 +733,7 @@ export class FvgEngine {
     }
 
     if (this.script.overlayCtx?.isReplayLocked?.()) {
-      this.refreshHtfLayersForReplay(snapshot, "tick");
+      this.refreshHtfLayersForLive(snapshot, "tick");
       return this.finishIncrementalEmit(previousBoxes);
     }
 
@@ -674,7 +749,11 @@ export class FvgEngine {
         });
         continue;
       }
-      const series = mapHtfBarsToSeries(htf);
+      const chartSec = snapshot.cfg?.chartSec ?? 60;
+      let series = mapHtfBarsToSeries(htf);
+      if (layer.tfSec > chartSec) {
+        series = this.patchFormingHtfBarFromChart(series, layer, chartSec);
+      }
       const startIdx = Math.max(2, series.length - maxBack);
       this.scanLayerSeries(layer, series, startIdx);
       newHtfLayers.push({ layer, series });
@@ -875,6 +954,24 @@ export class FvgEngine {
     this.script.state.layerIfvg.set(layer.label, ifvgActive);
   }
 
+  /** @param {{ tfSec: number }} layer @param {object[]} series @param {number} lastIdx */
+  formingSeriesForLayer(layer, series, lastIdx) {
+    const chartSec = this.script.state.cfg?.chartSec;
+    if (
+      chartSec == null ||
+      layer.tfSec > chartSec ||
+      lastIdx < 0 ||
+      series.length !== this.script.bars.length
+    ) {
+      return series;
+    }
+    const ub = this.script.bars[lastIdx];
+    if (!ub) return series;
+    const out = series.slice();
+    out[lastIdx] = this.chartBarPoint(ub, this.script.chartBars[lastIdx], lastIdx);
+    return out;
+  }
+
   /** @param {import("../../pineRuntime.js").BarScriptContext} script @param {{ tfSec: number, tfId: string, label: string }} layer @param {object} zone @param {object[]} series @param {{ isIfvg?: boolean, layerLabel?: string, silent?: boolean }} opts */
   emitZoneBox(layer, series, zone, opts = {}) {
     const cfg = this.script.state.cfg;
@@ -1038,8 +1135,9 @@ export class FvgEngine {
         });
       }
       if (cfg.showLiveForming && cfg.showFvg && series.length >= 3) {
-        const hit = fvgAtBar(series, lastIdx, layer.tfSec);
-        const formingZone = hit ? zoneFromFvgHit(hit, series, lastIdx, this.script) : null;
+        const formingSeries = this.formingSeriesForLayer(layer, series, lastIdx);
+        const hit = fvgAtBar(formingSeries, lastIdx, layer.tfSec);
+        const formingZone = hit ? zoneFromFvgHit(hit, formingSeries, lastIdx, this.script) : null;
         if (formingZone) {
           formingZone.forming = true;
           if (!this.passesCorrelatedFilter(layer, series, formingZone)) {

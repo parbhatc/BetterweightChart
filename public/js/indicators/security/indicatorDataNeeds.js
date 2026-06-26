@@ -1,3 +1,5 @@
+import { symbolsMatch } from "../../app/bar/symbolBarCache.js";
+
 /**
  * @typedef {{ symbol: string, resolution: string, countBack: number }} HtfNeed
  * @typedef {{ resolution: string, countBack: number }} CompareHtfNeed
@@ -79,6 +81,24 @@ export function paneDataNeedsEmpty(needs) {
 }
 
 /**
+ * Minimum chart bars the pane should load for active indicators (maxBarsBack, sessions, etc.).
+ * @param {import("../types.js").IndicatorInstance[]} instances
+ * @param {{ resolution?: string }} pane
+ * @param {(id: string) => typeof import("../BaseIndicator.js").BaseIndicator | null} getIndicatorClass
+ */
+export function collectPaneRequiredChartBars(instances, pane, getIndicatorClass) {
+  let max = 0;
+  const resolution = pane.resolution ?? "1";
+  for (const inst of instances) {
+    const Indicator = getIndicatorClass(inst.defId);
+    if (!Indicator || typeof Indicator.requiredChartBars !== "function") continue;
+    const want = Number(Indicator.requiredChartBars(inst.inputs, resolution)) || 0;
+    if (want > max) max = want;
+  }
+  return max;
+}
+
+/**
  * Whether an indicator instance depends on HTF bars for any of the given cache keys.
  * @param {import("../types.js").IndicatorInstance} instance
  * @param {{ symbol?: string, resolution?: string, bars?: object[] }} pane
@@ -118,7 +138,10 @@ export function instanceUsesCompareSymbols(instance, pane, getIndicatorClass, co
   if (typeof Indicator?.collectDataNeeds !== "function") return true;
   const needs = Indicator.collectDataNeeds(instance, pane);
   for (const item of needs.compare ?? []) {
-    if (item?.symbol && compareSymbols.has(item.symbol)) return true;
+    if (!item?.symbol) continue;
+    for (const sym of compareSymbols) {
+      if (symbolsMatch(item.symbol, sym)) return true;
+    }
   }
   return false;
 }

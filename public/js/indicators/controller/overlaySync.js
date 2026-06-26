@@ -17,6 +17,7 @@ import {
 function overlayTimeCtxKey(timeCtx) {
   const bars = timeCtx.mapBars;
   return [
+    timeCtx.resolution ?? "",
     bars?.length ?? 0,
     bars?.[0]?.time ?? "",
     bars?.at?.(-1)?.time ?? "",
@@ -135,6 +136,7 @@ export function createOverlaySync(deps) {
       primarySymbol: pane.symbol ?? null,
       symbol: pane.symbol ?? null,
       formingBar: utcBars.at(-1) ?? null,
+      utcBars,
       ...(getOverlayContext?.(pane) ?? {}),
     };
 
@@ -205,6 +207,7 @@ export function createOverlaySync(deps) {
 
     const view = pane._chartView;
     const timeCtx = {
+      resolution: pane.resolution ?? null,
       mapBars: view?.mapBars ?? chartBars,
       barSec: view?.barSec ?? null,
       lastRealChartTime: chartBars.at(-1)?.time,
@@ -219,6 +222,7 @@ export function createOverlaySync(deps) {
     instance._overlayLastSyncToken = syncToken;
 
     const geometryUnchanged =
+      !refreshLiveOnCacheHit &&
       instance._overlayAppliedGeomKey === geomKey &&
       instance._overlayAppliedGeomKey != null &&
       instance._overlayAppliedTimeCtxKey === timeCtxKey;
@@ -297,6 +301,7 @@ export function createOverlaySync(deps) {
 
     const view = pane._chartView;
     const timeCtx = {
+      resolution: pane.resolution ?? null,
       mapBars: view?.mapBars ?? chartBars,
       barSec: view?.barSec ?? null,
       lastRealChartTime: chartBars.at(-1)?.time,

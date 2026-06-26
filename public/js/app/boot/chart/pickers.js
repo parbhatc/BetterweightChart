@@ -2,7 +2,6 @@ import { mountSymbolSearch } from "../../../ui/symbol/search.js";
 import { mountTimeframePicker } from "../../../ui/timeframe/picker.js";
 import { debugSymbolChange, debugTimeframeChange } from "../../../debug/chart/symbolTimeframe.js";
 import { captureVisibleViewport, restoreVisibleViewport } from "../../../chart/pane/viewport.js";
-import { resolutionSec } from "../../../chart/resolutions.js";
 import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
@@ -53,14 +52,6 @@ function capturePaneBarLayouts(ctx, panes) {
   return panes.map((p) => captureViewportBarLayout(p, ctx.settingsStore, ctx.resolutions));
 }
 
-/** @param {string | null | undefined} fromRes @param {string | null | undefined} toRes */
-function viewportResolutionJumpRatio(fromRes, toRes) {
-  const fromSec = resolutionSec(fromRes);
-  const toSec = resolutionSec(toRes);
-  if (!fromSec || !toSec) return 1;
-  return Math.max(fromSec, toSec) / Math.min(fromSec, toSec);
-}
-
 /**
  * @param {object} pane
  * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
@@ -70,10 +61,7 @@ function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
   if (!layout || !pane?.bars?.length) return null;
   const barLogical = computeViewportBarLayoutLogical(pane, layout);
   if (barLogical) return barLogical;
-  if (viewportResolutionJumpRatio(layout.resolution, pane.resolution) <= 12) {
-    return computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
-  }
-  return null;
+  return computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
 }
 
 /**
@@ -82,12 +70,14 @@ function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
  * @param {object} pane
  * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} savedLayout
  */
-function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
+export function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
   const logicalRange = resolveTimeframeSwitchLogicalRange(pane, savedLayout, ctx);
   ctx.refreshPaneCandleData?.(pane, {
     logicalRange: logicalRange ?? undefined,
+    avoidPreserveViewport: !logicalRange,
     deferSessionBg: true,
   });
+  ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
   if (!savedLayout) return;
   restoreViewportBarLayout(
     pane,
@@ -154,7 +144,7 @@ async function afterTimeframeChangeThenRestoreViewport(ctx, restoreLayout) {
  * @param {import("./state.js").BootContext} ctx
  * @param {object[]} panes
  */
-function preparePanesForSeriesReload(ctx, panes) {
+export function preparePanesForSeriesReload(ctx, panes) {
   for (const pane of panes) {
     ctx.indicatorController?.clearOverlaysForPane?.(pane.index);
   }
@@ -166,7 +156,7 @@ function preparePanesForSeriesReload(ctx, panes) {
  * @param {import("./state.js").BootContext} ctx
  * @param {object} pane
  */
-function seedPaneResolutionAsHtf(ctx, pane) {
+export function seedPaneResolutionAsHtf(ctx, pane) {
   if (!pane?.symbol || !pane?.resolution) return;
   const view = getPaneChartView(
     pane,
@@ -188,7 +178,13 @@ function seedPaneResolutionAsHtf(ctx, pane) {
  * @param {import("./state.js").BootContext} ctx
  * @param {object[]} panes
  */
-function finishSeriesReload(ctx, panes) {
+export async function finishSeriesReload(ctx, panes) {
+  for (const pane of panes) {
+    ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
+  }
+  for (const pane of panes) {
+    await ctx.ensureIndicatorChartHistory?.(pane);
+  }
   ctx.ensureIndicatorData?.();
   ctx.refreshIndicatorsImmediate?.();
   for (const pane of panes) {
@@ -238,7 +234,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             ctx.refreshPaneCandleData?.(pane);
           }
           restorePaneViewports(panes, saved);
-          finishSeriesReload(ctx, panes);
+          await finishSeriesReload(ctx, panes);
           const active = ctx.getActivePane();
           if (active) {
             ctx.symbolInfo = active.symbolInfo;
@@ -281,7 +277,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         await ctx.loadPaneBars(pane, { force: true, deferChartRefresh: true });
         ctx.refreshPaneCandleData?.(pane);
         restorePaneViewports([pane], saved);
-        finishSeriesReload(ctx, [pane]);
+        await finishSeriesReload(ctx, [pane]);
         ctx.refreshStatusLine();
         ctx.persistPaneSymbols();
         notifyHostSymbolChange(ctx, sym);
@@ -346,12 +342,12 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             if (gen !== tfChangeGen) return;
             if (replayLocked) {
               await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
-              finishSeriesReload(ctx, panes);
+              await finishSeriesReload(ctx, panes);
             } else {
               for (let i = 0; i < panes.length; i += 1) {
                 paintPaneAfterTimeframeLoad(ctx, panes[i], savedLayouts[i]);
               }
-              finishSeriesReload(ctx, panes);
+              await finishSeriesReload(ctx, panes);
               await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
             }
           } finally {
@@ -393,10 +389,10 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           if (gen !== tfChangeGen) return;
           if (replayLocked) {
             await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
-            finishSeriesReload(ctx, [pane]);
+            await finishSeriesReload(ctx, [pane]);
           } else {
             paintPaneAfterTimeframeLoad(ctx, pane, savedLayout);
-            finishSeriesReload(ctx, [pane]);
+            await finishSeriesReload(ctx, [pane]);
             await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
           }
         } finally {

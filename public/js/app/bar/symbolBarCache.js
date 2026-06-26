@@ -12,7 +12,7 @@ function symbolLookupKeys(symbol) {
 }
 
 /** @param {string} a @param {string} b */
-function symbolsMatch(a, b) {
+export function symbolsMatch(a, b) {
   if (a === b) return true;
   const bare = (s) => (s.includes(":") ? s.slice(s.indexOf(":") + 1) : s);
   return bare(a).toUpperCase() === bare(b).toUpperCase();

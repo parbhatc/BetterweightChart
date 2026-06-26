@@ -30,14 +30,15 @@ function countAligned(aligned) {
  * @param {number} barCount
  * @param {number} minCovered
  */
-export function ensureCompareAligned(ctx, inputs, chartBars, barCount, minCovered) {
+export function ensureCompareAligned(ctx, inputs, chartBars, barCount, minCovered, utcBars) {
   const compare = compareSymbol.resolve(inputs, ctx.primarySymbol ?? ctx.symbol);
   const cmp = ctx.getCompareBars?.(compare, ctx.chartResolution);
   if (!cmp?.utcBars?.length || cmp.utcBars.length !== cmp.chartBars?.length) {
     ctx.requestCompareBars?.(compare, barCount);
     return { ready: false, compare };
   }
-  const aligned = alignUtcBarsByChartTime(chartBars, cmp.utcBars, cmp.chartBars);
+  const primaryUtc = utcBars ?? ctx.utcBars ?? chartBars;
+  const aligned = alignUtcBarsByChartTime(chartBars, primaryUtc, cmp.utcBars, cmp.chartBars);
   const covered = countAligned(aligned);
   if (covered < minCovered) {
     ctx.requestCompareBars?.(compare, barCount);
