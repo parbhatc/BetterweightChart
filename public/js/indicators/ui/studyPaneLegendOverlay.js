@@ -8,10 +8,13 @@ import { lwcPaneTops } from "../../chart/pane/studyScale.js";
  * @param {import("lightweight-charts").IChartApi} opts.chart
  * @param {(lwcPaneIndex: number) => object[]} opts.getStudiesForLwcPane
  * @param {object} opts.actions
+ * @param {() => boolean} [opts.getLegendCollapsed]
+ * @param {(collapsed: boolean) => void} [opts.setLegendCollapsed]
  * @param {() => void} [opts.onLayout]
  */
 export function attachStudyPaneLegendOverlay(opts) {
-  const { stageEl, chart, getStudiesForLwcPane, actions, onLayout } = opts;
+  const { stageEl, chart, getStudiesForLwcPane, actions, getLegendCollapsed, setLegendCollapsed, onLayout } =
+    opts;
 
   const root = document.createElement("div");
   root.className = "study-pane-legends";
@@ -35,9 +38,12 @@ export function attachStudyPaneLegendOverlay(opts) {
       const legend = mountIndicatorLegend(statusEl, {
         getStudies: () => getStudiesForLwcPane(lwcPaneIndex),
         onSelect: actions.onSelect,
+        onDeselect: actions.onDeselect,
         onToggleHidden: actions.onToggleHidden,
         onOpenSettings: actions.onOpenSettings,
         onRemove: actions.onRemove,
+        getLegendCollapsed,
+        setLegendCollapsed,
       });
       entry = { wrap, legend };
       byPane.set(lwcPaneIndex, entry);

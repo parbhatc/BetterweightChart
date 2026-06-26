@@ -84,6 +84,7 @@ export function flattenInputFields(inputs) {
     else if (input.type === "symbolSizeRules") continue;
     else if (input.type === "fvgTimeframes") continue;
     else if (input.type === "fvgExtendBoxes") continue;
+    else if (input.type === "fvgBoxColors") continue;
     else if (input.type === "levelsLayers") continue;
     else if (input.type === "timeLevels") continue;
     else if (input.type === "sessionLevels") continue;
@@ -111,6 +112,8 @@ export function defaultInputsFromSchema(inputs) {
     } else if (input.type === "fvgTimeframes") {
       out[input.id] = input.defval ?? [];
     } else if (input.type === "fvgExtendBoxes") {
+      out[input.id] = input.defval ?? {};
+    } else if (input.type === "fvgBoxColors") {
       out[input.id] = input.defval ?? {};
     } else if (input.type === "levelsLayers") {
       out[input.id] = input.defval ?? [];

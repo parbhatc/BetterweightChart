@@ -101,6 +101,16 @@
  */
 
 /**
+ * @typedef {object} FvgBoxColorsInputDef
+ * @property {"fvgBoxColors"} type
+ * @property {string} id
+ * @property {string} [title]
+ * @property {string} [section]
+ * @property {Record<string, { bullColor?: string, bullOpacity?: number, bearColor?: string, bearOpacity?: number }>} [defval]
+ * @property {(inputs: object) => boolean} [disabled]
+ */
+
+/**
  * @typedef {object} FvgTimeframesInputDef
  * @property {"fvgTimeframes"} type
  * @property {string} id
@@ -151,7 +161,7 @@
  */
 
 /**
- * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | FvgExtendBoxesInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef | NewsLevelsInputDef} InputDef
+ * @typedef {InputFieldDef | InputRowDef | InputInlinePairDef | SymbolSizeRulesInputDef | FvgTimeframesInputDef | FvgExtendBoxesInputDef | FvgBoxColorsInputDef | LevelsLayersInputDef | TimeLevelsInputDef | SessionLevelsInputDef | NewsLevelsInputDef} InputDef
  */
 
 /**

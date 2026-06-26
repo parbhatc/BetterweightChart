@@ -12,8 +12,9 @@ import {
 } from "../ui/symbolSizeRulesPanel.js";
 import { resolveFvgLayers, applyHideLowerTfFilter } from "../ui/fvgTimeframesPanel.js";
 import { resolveLayerExtend } from "../ui/fvgExtendBoxesPanel.js";
+import { resolveLayerBoxFills } from "../ui/fvgBoxColorsPanel.js";
 import { mapUtcTimeToChartTime } from "/js/indicators/math/barTimeMap.js";
-import { inputColorWithOpacity } from "/js/indicators/styleColor.js";
+import { inputsColorWithOpacity } from "/js/indicators/styleColor.js";
 import {
   debugFvgDrawBox,
   debugFvgEmitResult,
@@ -200,17 +201,10 @@ export class FvgEngine {
     const borderDash =
       borderStyle === "dotted" ? [2, 2] : borderStyle === "dashed" ? [6, 4] : [];
 
-    const bullFillOp = inputs.bullBoxOpacity !== undefined ? Number(inputs.bullBoxOpacity) : 10;
-    const bearFillOp = inputs.bearBoxOpacity !== undefined ? Number(inputs.bearBoxOpacity) : 10;
-    const bullBorderOp = inputs.bullBorderOpacity !== undefined ? Number(inputs.bullBorderOpacity) : 0;
-    const bearBorderOp = inputs.bearBorderOpacity !== undefined ? Number(inputs.bearBorderOpacity) : 0;
-    const ifvgOp = inputs.ifvgBoxOpacity !== undefined ? Number(inputs.ifvgBoxOpacity) : 20;
-    const partialOp =
-      inputs.partialCloseOpacity !== undefined ? Number(inputs.partialCloseOpacity) : 20;
-    const formingBullOp =
-      inputs.formingBullOpacity !== undefined ? Number(inputs.formingBullOpacity) : 25;
-    const formingBearOp =
-      inputs.formingBearOpacity !== undefined ? Number(inputs.formingBearOpacity) : 25;
+    const bullBorderOp =
+      inputs.bullBorderColorOpacity !== undefined ? Number(inputs.bullBorderColorOpacity) : 0;
+    const bearBorderOp =
+      inputs.bearBorderColorOpacity !== undefined ? Number(inputs.bearBorderColorOpacity) : 0;
 
     const lastChartTime = this.script.chartBars.at(-1)?.time;
     if (lastChartTime == null) {
@@ -290,14 +284,16 @@ export class FvgEngine {
       ifvgLabel: String(inputs.ifvgLabel ?? "IFVG"),
       borderWidth,
       borderDash,
-      bullFill: inputColorWithOpacity(inputs.bullBoxColor, "#00e676", bullFillOp),
-      bearFill: inputColorWithOpacity(inputs.bearBoxColor, "#f23645", bearFillOp),
-      bullBorder: bullBorderOp > 0 ? inputColorWithOpacity(inputs.bullBorderColor, "#00e676", bullBorderOp) : null,
-      bearBorder: bearBorderOp > 0 ? inputColorWithOpacity(inputs.bearBorderColor, "#f23645", bearBorderOp) : null,
-      ifvgColor: inputColorWithOpacity(inputs.ifvgBoxColor, "#ffff00", ifvgOp),
-      partialFill: inputColorWithOpacity(inputs.partialCloseColor, "#ff9800", partialOp),
-      formingBullFill: inputColorWithOpacity(inputs.formingBullColor, "#00bcd4", formingBullOp),
-      formingBearFill: inputColorWithOpacity(inputs.formingBearColor, "#ab47bc", formingBearOp),
+      bullFill: inputsColorWithOpacity(inputs, "bullBoxColor", "#00e676", 10),
+      bearFill: inputsColorWithOpacity(inputs, "bearBoxColor", "#f23645", 10),
+      bullBorder:
+        bullBorderOp > 0 ? inputsColorWithOpacity(inputs, "bullBorderColor", "#00e676", bullBorderOp) : null,
+      bearBorder:
+        bearBorderOp > 0 ? inputsColorWithOpacity(inputs, "bearBorderColor", "#f23645", bearBorderOp) : null,
+      ifvgColor: inputsColorWithOpacity(inputs, "ifvgBoxColor", "#ffff00", 20),
+      partialFill: inputsColorWithOpacity(inputs, "partialCloseColor", "#ff9800", 20),
+      formingBullFill: inputsColorWithOpacity(inputs, "formingBullColor", "#00bcd4", 25),
+      formingBearFill: inputsColorWithOpacity(inputs, "formingBearColor", "#ab47bc", 25),
       requireCorrelatedFvg,
       correlatedFvgTf: String(inputs.correlatedFvgTf ?? "all"),
       sizeFilterLimits: resolveFvgSizeFilterLimits(ctx.primarySymbol ?? ctx.symbol, inputs),
@@ -944,7 +940,10 @@ export class FvgEngine {
       label = opts.layerLabel ?? layer.label;
       textColor = this.script.inputs.partialCloseColor ?? "#ff9800";
     } else {
-      fillColor = isBull ? cfg.bullFill : cfg.bearFill;
+      const layerFills = resolveLayerBoxFills(layer, this.script.inputs);
+      fillColor = isBull
+        ? (layerFills?.bullFill ?? cfg.bullFill)
+        : (layerFills?.bearFill ?? cfg.bearFill);
       borderColor = isBull ? cfg.bullBorder : cfg.bearBorder;
       borderWidth = borderColor ? cfg.borderWidth : 0;
       label = opts.layerLabel ?? layer.label;

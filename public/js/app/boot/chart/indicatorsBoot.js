@@ -104,6 +104,7 @@ export function attachIndicatorsBoot(ctx) {
     onApplied: (inst) => {
       const Indicator = getIndicatorClass(inst.defId);
       if (Indicator?.useBottomPane) ctx.openBottomPane?.(inst.instanceId);
+      if (Indicator?.overlayPrimitive) controller.refreshOverlaysImmediate(inst.paneIndex);
     },
   });
 
@@ -140,12 +141,35 @@ export function attachIndicatorsBoot(ctx) {
   function studyLegendActions() {
     return {
       onSelect: onStudySelect,
+      onDeselect: () => {
+        const prev = controller.getSelectedId();
+        if (!prev) return;
+        controller.setSelected(null);
+        settings.closeIfInstance(prev);
+      },
       onToggleHidden: (id) => {
         const inst = controller.getInstance(id);
         if (inst) controller.setHidden(id, !inst.hidden);
       },
       onOpenSettings: onStudyOpenSettings,
       onRemove: onStudyRemove,
+    };
+  }
+
+  function getLegendCollapsed() {
+    return Boolean(ctx.settingsStore.get().statusLine?.legendCollapsed);
+  }
+
+  function setLegendCollapsed(collapsed) {
+    ctx.settingsStore.set("statusLine", "legendCollapsed", collapsed);
+    ctx.scheduleAutosaveLayout?.();
+  }
+
+  function legendCollapseOpts() {
+    return {
+      getLegendCollapsed,
+      setLegendCollapsed,
+      onLegendCollapsedChange: () => refreshIndicatorUi(),
     };
   }
 
@@ -231,6 +255,7 @@ export function attachIndicatorsBoot(ctx) {
           return controller.legendStateForPane(pane, bar, precision);
         },
         ...studyLegendActions(),
+        ...legendCollapseOpts(),
       });
       legends.set(pane.index, legend);
     }
@@ -399,6 +424,7 @@ export function attachIndicatorsBoot(ctx) {
         return controller.studyLegendStateForLwcPane(pane, lwcPaneIndex, bar, precision);
       },
       actions: studyLegendActions(),
+      ...legendCollapseOpts(),
     });
     controller.attachStudyLegendOverlay(pane, overlay);
     if (!pane._studyScaleGuards) {

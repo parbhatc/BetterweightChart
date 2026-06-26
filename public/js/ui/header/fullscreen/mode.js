@@ -57,6 +57,21 @@ export function mountFullscreenMode(opts) {
   };
 }
 
+function ensureBottomBarLeftMount(mountEl) {
+  const bar =
+    mountEl.closest?.(".tv-chart-bottom-bar") ??
+    document.querySelector(".tv-chart-bottom-bar");
+  if (!(bar instanceof HTMLElement)) return mountEl;
+
+  let left = bar.querySelector(".tv-chart-bottom-bar__left");
+  if (!(left instanceof HTMLElement)) {
+    left = document.createElement("div");
+    left.className = "tv-chart-bottom-bar__left";
+    bar.insertBefore(left, bar.firstChild);
+  }
+  return left;
+}
+
 /**
  * Mobile exit control for chart fullscreen (no Escape key on touch devices).
  * @param {object} opts
@@ -65,6 +80,7 @@ export function mountFullscreenMode(opts) {
  */
 export function mountBottomFullscreenExit(opts) {
   const { mountEl, fullscreen } = opts;
+  const target = ensureBottomBarLeftMount(mountEl);
 
   const btn = document.createElement("button");
   btn.type = "button";
@@ -74,7 +90,7 @@ export function mountBottomFullscreenExit(opts) {
   btn.title = "Exit fullscreen";
   btn.innerHTML = `<span class="tv-fullscreen-exit__icon" aria-hidden="true">${FULLSCREEN_EXIT}</span><span class="tv-fullscreen-exit__label">Exit</span>`;
   btn.addEventListener("click", () => fullscreen.exit());
-  mountEl.prepend(btn);
+  target.prepend(btn);
 
   function sync(active) {
     btn.hidden = !active;

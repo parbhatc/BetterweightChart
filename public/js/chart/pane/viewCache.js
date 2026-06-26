@@ -160,6 +160,7 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
   const sym = settingsStore.get().symbol ?? {};
   const session = sym.session ?? "electronic";
   const tz = chartTimeZoneForPane(pane, settingsStore, symbolInfo);
+  ensurePaneChartViewStackAligned(pane, settingsStore, symbolInfo, resolutions);
   const allUtc = utcBarsForPane(pane, settingsStore, symbolInfo);
   if (allUtc.at(-1)?.time !== utcBar.time) return null;
 
@@ -205,11 +206,31 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
 }
 
 /**
+ * Rebuild cached chart view when utc/map/series stacks diverge or drift from pane.bars.
+ * @returns {boolean} true when the view was rebuilt
+ */
+export function ensurePaneChartViewStackAligned(pane, settingsStore, symbolInfo, resolutions) {
+  const view = pane._chartView;
+  if (!view?.utcBars?.length) return false;
+
+  const n = view.utcBars.length;
+  const stacksMatch = view.mapBars?.length === n && view.seriesData?.length === n;
+  const paneLen = utcBarsForPane(pane, settingsStore, symbolInfo).length;
+  if (stacksMatch && paneLen === n) return false;
+
+  invalidatePaneChartView(pane);
+  rebuildPaneChartView(pane, settingsStore, symbolInfo, resolutions);
+  return true;
+}
+
+/**
  * Extend cached view at the head with older UTC bars (O(n) on prepended chunk only).
  * @returns {{ candles: object[], added: number } | null}
  */
 export function prependBarsInView(pane, olderUtcBars, settingsStore, symbolInfo, resolutions) {
   if (!olderUtcBars.length) return null;
+
+  ensurePaneChartViewStackAligned(pane, settingsStore, symbolInfo, resolutions);
 
   const view = getPaneChartView(pane, settingsStore, symbolInfo, resolutions);
   if (!view.utcBars.length) return null;

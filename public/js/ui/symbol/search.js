@@ -7,11 +7,19 @@
  * @param {(symbol: string, meta: object) => void} opts.onSelect
  */
 
+import {
+  addRecentSymbol,
+  loadRecentSymbols,
+  loadSearchTab,
+  saveSearchTab,
+} from "./recent.js";
+
 const ICON_SEARCH = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 28 28" width="22" height="22" fill="none" aria-hidden="true"><path fill="currentColor" d="M12.182 4a8.18 8.18 0 0 1 6.29 13.412l5.526 5.525-1.06 1.06-5.527-5.525A8.182 8.182 0 1 1 12.181 4m0 1.5a6.681 6.681 0 1 0 0 13.363 6.681 6.681 0 0 0 0-13.363"/></svg>`;
 const ICON_CLOSE = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><path stroke="currentColor" stroke-width="1.2" fill="none" d="m1.5 1.5 15 15m0-15-15 15"/></svg>`;
 const ICON_CLEAR = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 18 18" width="18" height="18" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M9 17A8 8 0 1 0 9 1a8 8 0 0 0 0 16Zm0-9.04L6.04 5 5 6.04 7.96 9 5 11.96 6.04 13 9 10.04 11.96 13 13 11.96 10.04 9 13 6.04 11.96 5 9 7.96Z"/></svg>`;
 
 const TYPE_TABS = [
+  { id: "recent", label: "Recent" },
   { id: "", label: "All" },
   { id: "stock", label: "Stocks" },
   { id: "etf", label: "Funds" },
@@ -92,7 +100,7 @@ export function mountSymbolSearch(opts) {
   const metaBySymbol = new Map();
   let open = false;
   let activeSymbol = initialSymbol;
-  let activeTab = "";
+  let activeTab = loadSearchTab("");
   let searchSeq = 0;
 
   function renderTabs() {
@@ -174,7 +182,7 @@ export function mountSymbolSearch(opts) {
 
   function openDropdown() {
     open = true;
-    activeTab = "";
+    activeTab = loadSearchTab("");
     renderTabs();
     modal.hidden = false;
     document.body.classList.add("tv-symbol-modal-open");
@@ -187,42 +195,67 @@ export function mountSymbolSearch(opts) {
 
   /** @param {object[]} results */
   function applyTabFilter(results) {
+    if (activeTab === "recent") return results;
     if (!activeTab) return results;
     return results.filter((r) => normalizeType(r.type) === activeTab);
   }
 
+  /** @param {string} query */
+  function recentResults(query) {
+    const q = query.trim().toLowerCase();
+    return loadRecentSymbols()
+      .map((row) => row.meta)
+      .filter((meta) => {
+        if (!q) return true;
+        const sym = String(meta.symbol || "").toLowerCase();
+        const ticker = String(meta.ticker || "").toLowerCase();
+        const name = String(meta.name || meta.description || "").toLowerCase();
+        return sym.includes(q) || ticker.includes(q) || name.includes(q);
+      });
+  }
+
+  function renderResultList(filtered) {
+    if (!filtered.length) {
+      listEl.innerHTML = `<li class="tv-symbol-modal__empty">${activeTab === "recent" ? "No recent symbols" : "No symbols found"}</li>`;
+      return;
+    }
+    listEl.innerHTML = filtered
+      .map((r) => {
+        const active = matchesActiveSymbol(r.symbol, r, activeSymbol) ? " is-active" : "";
+        const ticker = listItemTicker(r.symbol, r);
+        const logo = r.logoUrl
+          ? `<img class="tv-symbol-modal__item-logo" src="${r.logoUrl}" alt="" loading="lazy" />`
+          : `<span class="tv-symbol-modal__item-logo tv-symbol-modal__item-logo--letter" aria-hidden="true">${ticker.charAt(0) || "?"}</span>`;
+        const label = resultLabel(r);
+        const marketType = normalizeType(r.type) || "—";
+        return `<li role="option" class="tv-symbol-modal__item${active}" data-symbol="${r.symbol}" aria-selected="${matchesActiveSymbol(r.symbol, r, activeSymbol)}">
+          <div class="tv-symbol-modal__item-main">
+            <div class="tv-symbol-modal__item-logo-wrap">${logo}</div>
+            <div class="tv-symbol-modal__item-ticker">${ticker}</div>
+          </div>
+          <div class="tv-symbol-modal__item-desc">${label}</div>
+          <div class="tv-symbol-modal__item-meta">
+            <span class="tv-symbol-modal__item-type">${marketType}</span>
+            <span class="tv-symbol-modal__item-exchange">${r.exchange ?? ""}</span>
+          </div>
+        </li>`;
+      })
+      .join("");
+  }
+
   function renderList(query) {
+    if (activeTab === "recent") {
+      const filtered = recentResults(query);
+      filtered.forEach((r) => metaBySymbol.set(r.symbol, r));
+      renderResultList(filtered);
+      return Promise.resolve();
+    }
     const seq = ++searchSeq;
     return datafeed.searchSymbols(query, "", activeTab, 50).then((results) => {
       if (seq !== searchSeq) return;
       results.forEach((r) => metaBySymbol.set(r.symbol, r));
       const filtered = applyTabFilter(results);
-      if (!filtered.length) {
-        listEl.innerHTML = `<li class="tv-symbol-modal__empty">No symbols found</li>`;
-        return;
-      }
-      listEl.innerHTML = filtered
-        .map((r) => {
-          const active = matchesActiveSymbol(r.symbol, r, activeSymbol) ? " is-active" : "";
-          const ticker = listItemTicker(r.symbol, r);
-          const logo = r.logoUrl
-            ? `<img class="tv-symbol-modal__item-logo" src="${r.logoUrl}" alt="" loading="lazy" />`
-            : `<span class="tv-symbol-modal__item-logo tv-symbol-modal__item-logo--letter" aria-hidden="true">${ticker.charAt(0) || "?"}</span>`;
-          const label = resultLabel(r);
-          const marketType = normalizeType(r.type) || "—";
-          return `<li role="option" class="tv-symbol-modal__item${active}" data-symbol="${r.symbol}" aria-selected="${matchesActiveSymbol(r.symbol, r, activeSymbol)}">
-            <div class="tv-symbol-modal__item-main">
-              <div class="tv-symbol-modal__item-logo-wrap">${logo}</div>
-              <div class="tv-symbol-modal__item-ticker">${ticker}</div>
-            </div>
-            <div class="tv-symbol-modal__item-desc">${label}</div>
-            <div class="tv-symbol-modal__item-meta">
-              <span class="tv-symbol-modal__item-type">${marketType}</span>
-              <span class="tv-symbol-modal__item-exchange">${r.exchange ?? ""}</span>
-            </div>
-          </li>`;
-        })
-        .join("");
+      renderResultList(filtered);
     });
   }
 
@@ -250,6 +283,7 @@ export function mountSymbolSearch(opts) {
     const next = tab.dataset.tab ?? "";
     if (next === activeTab) return;
     activeTab = next;
+    saveSearchTab(activeTab);
     renderTabs();
     void renderList(searchInput.value);
   });
@@ -276,6 +310,7 @@ export function mountSymbolSearch(opts) {
     const sym = item.dataset.symbol;
     if (!sym) return;
     const meta = metaBySymbol.get(sym) ?? { symbol: sym };
+    addRecentSymbol(sym, meta);
     close();
     trigger?.focus();
     if (matchesActiveSymbol(sym, meta, activeSymbol)) return;

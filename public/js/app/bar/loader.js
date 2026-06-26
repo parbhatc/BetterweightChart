@@ -361,7 +361,9 @@ export function createBarLoader(opts) {
     // Prepend while pane.bars is still the old tail — otherwise getPaneChartView
     // rebuilds with merged data and prependBarsInView finds nothing to inject.
     const prepended = prependHistoryToPaneSeries?.(pane, relevant, { deferSessionBg: true });
-    pane.bars = mergeBarsDeduped(relevant, pane.bars);
+    if (!prepended) {
+      pane.bars = mergeBarsDeduped(relevant, pane.bars);
+    }
     const added = pane.bars.length - beforeLen;
     if (added <= 0) {
       pane._historyRestorePending = false;
@@ -378,6 +380,18 @@ export function createBarLoader(opts) {
 
     const finishPrepend = () => {
       pane._historyRestorePending = false;
+      const view = pane._chartView;
+      const viewLen = view?.utcBars?.length ?? 0;
+      const paneLen = pane.bars.length;
+      const stacksMisaligned =
+        viewLen > 0 &&
+        (viewLen !== paneLen ||
+          viewLen !== (view?.mapBars?.length ?? 0) ||
+          viewLen !== (view?.seriesData?.length ?? 0));
+      if (stacksMisaligned) {
+        invalidatePaneChartView(pane);
+        refreshPaneCandleData(pane, { deferSessionBg: true });
+      }
       pane.sessionBg?.requestRefresh();
       logBarStackSnapshot(pane, "prepend-finish", { added });
       onPaneHistoryDataUpdated?.(pane);

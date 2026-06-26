@@ -175,11 +175,15 @@ export function fetchTradingViewBars(tvSymbol, resolution, countBack = 300, rang
     }
 
     function emptyResult(metaExtra = {}) {
+      const meta = { ...metaExtra };
+      if (meta.reason === "unsupported_resolution") {
+        meta.invalidResolution = resolution;
+      }
       finish(null, {
         bars: [],
         symbolInfo: symbolInfoFromResolved(tvSymbol, symbolMeta ?? {}),
         noData: true,
-        meta: { invalidResolution: resolution, ...metaExtra },
+        meta,
       });
     }
 

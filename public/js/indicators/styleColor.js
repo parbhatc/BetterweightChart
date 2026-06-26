@@ -37,3 +37,19 @@ export function inputColorWithOpacity(input, fallback, defaultOpacity = 100) {
   const hex = inputColorStr(input, fallback);
   return applyColorOpacity(hex, defaultOpacity);
 }
+
+/**
+ * Read a split color input (`colorKey` + `${colorKey}Opacity`) from indicator inputs.
+ * @param {object} inputs
+ * @param {string} colorKey
+ * @param {string} fallback
+ * @param {number} [defaultOpacity]
+ */
+export function inputsColorWithOpacity(inputs, colorKey, fallback, defaultOpacity = 100) {
+  const opacityKey = `${colorKey}Opacity`;
+  const storedOpacity =
+    inputs[opacityKey] !== undefined && inputs[opacityKey] !== null
+      ? Number(inputs[opacityKey])
+      : defaultOpacity;
+  return inputColorWithOpacity(inputs[colorKey], fallback, storedOpacity);
+}

@@ -100,13 +100,11 @@
   color: var(--tv-muted);
   cursor: pointer;
   padding: 0;
-  opacity: 0;
-  transition: opacity var(--duration-fast) var(--ease-out), var(--transition-colors);
-}
-
-.draw-tools__flyout-item:hover .draw-tools__fav-btn,
-.draw-tools__fav-btn.is-fav {
   opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: var(--transition-colors);
 }
 
 .draw-tools__fav-btn:hover {

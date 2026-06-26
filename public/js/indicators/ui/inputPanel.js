@@ -144,7 +144,7 @@ function renderInputField(input, draftInputs, draftStyle, helpers) {
     case "timeframe":
       return propSelect(input.id, input.title, value, helpers.timeframeOptions(), input.store);
     case "bool":
-      return propCheck(input.id, input.title, value, input.store);
+      return propCheck(input.id, input.title, value !== undefined ? value : input.defval, input.store);
     case "text":
       return propText(input.id, input.title, value, disabled, input.store);
     case "symbol":

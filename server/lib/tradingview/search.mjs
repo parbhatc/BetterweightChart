@@ -63,7 +63,10 @@ export async function searchTradingViewSymbols(query, limit = 50) {
     promo: "true",
   });
 
-  const res = await fetch(`${SEARCH_BASE}?${q}`, { headers: TV_HEADERS });
+  const res = await fetch(`${SEARCH_BASE}?${q}`, {
+    headers: TV_HEADERS,
+    signal: AbortSignal.timeout(15000),
+  });
   if (!res.ok) throw new Error(`TradingView search failed: HTTP ${res.status}`);
   const data = await res.json();
   const rows = Array.isArray(data.symbols) ? data.symbols : [];

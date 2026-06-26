@@ -1,5 +1,6 @@
 import { fetchTradingViewBars } from "./client.mjs";
 import { logoUrlFor, searchTradingViewSymbols } from "./search.mjs";
+import { normalizeTradingViewSymbol } from "./symbols.mjs";
 import { chartConfig } from "../fakeBars.mjs";
 import { CHART_RESOLUTIONS, isSymbolResolutionSupported, resolutionSec } from "../resolutions.mjs";
 import { csvHistoryBars } from "../csv/history.mjs";
@@ -32,7 +33,7 @@ export async function tradingViewSearch(query, limit = 50) {
 
 /** @param {string} symbol */
 export async function tradingViewResolve(symbol) {
-  const sym = String(symbol || "").trim();
+  const sym = normalizeTradingViewSymbol(symbol);
   if (symbolCache.has(sym)) return symbolCache.get(sym);
 
   const { symbolInfo } = await fetchTradingViewBars(sym, "D", 5);
@@ -50,9 +51,10 @@ export async function tradingViewResolve(symbol) {
  * @param {number} [opts.to]
  */
 export async function tradingViewHistory(opts) {
+  const symbol = normalizeTradingViewSymbol(opts.symbol);
   const countBack = opts.countback ?? 500;
   const resSec = resolutionSec(opts.resolution);
-  const cached = symbolCache.get(opts.symbol);
+  const cached = symbolCache.get(symbol);
   if (cached && !isSymbolResolutionSupported(cached, opts.resolution)) {
     return {
       s: "no_data",
@@ -74,12 +76,12 @@ export async function tradingViewHistory(opts) {
 
   try {
     const { bars, symbolInfo, noData, meta } = await fetchTradingViewBars(
-      opts.symbol,
+      symbol,
       opts.resolution,
       countBack,
       range,
     );
-    symbolCache.set(opts.symbol, symbolInfo);
+    symbolCache.set(symbol, symbolInfo);
 
     if (bars.length) {
       return {
@@ -95,7 +97,7 @@ export async function tradingViewHistory(opts) {
     }
 
     const csv = csvHistoryBars({
-      symbol: opts.symbol,
+      symbol,
       resolution: opts.resolution,
       countback: countBack,
       from: range?.from,
@@ -123,7 +125,7 @@ export async function tradingViewHistory(opts) {
     return { s: "no_data", bars: [], meta: meta ?? {} };
   } catch (err) {
     const csv = csvHistoryBars({
-      symbol: opts.symbol,
+      symbol,
       resolution: opts.resolution,
       countback: countBack,
       from: range?.from,

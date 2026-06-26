@@ -265,6 +265,32 @@
   flex-shrink: 0;
 }
 
+.status-line__meta {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: var(--space-1) var(--space-2);
+  flex-shrink: 0;
+  min-width: 0;
+}
+
+.status-line__flow {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.status-line__flow .status-line__pair,
+.status-line__flow .status-line__chg {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 #chart {
   position: absolute;
   inset: 0;
@@ -476,6 +502,14 @@
 @media (max-width: 768px) {
   .tv-app--chart-fullscreen .tv-fullscreen-exit:not([hidden]) {
     display: inline-flex;
+    min-height: var(--touch-min);
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
+  .tv-fullscreen-exit__icon {
+    width: 1.25rem;
+    height: 1.25rem;
   }
 }
 

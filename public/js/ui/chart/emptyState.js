@@ -13,7 +13,7 @@ export function emptyStateCopy(meta, pane) {
   const symbol = pane.symbol?.split(":").pop() ?? pane.symbol ?? "this symbol";
   const interval = resolutionShortLabel(pane.resolution ?? "");
 
-  if (meta?.reason === "unsupported_resolution" || meta?.invalidResolution) {
+  if (meta?.reason === "unsupported_resolution") {
     return {
       title: "Interval not supported",
       text: `${interval} isn't available for ${symbol}. Choose a supported interval or try another symbol.`,

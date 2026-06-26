@@ -24,6 +24,7 @@ function fmtVol(n) {
 
 /** @param {string} symbol @param {object} [symbolInfo] */
 function statusLineTicker(symbol, symbolInfo) {
+  if (symbolInfo?.name) return String(symbolInfo.name);
   if (symbolInfo?.ticker) {
     const t = String(symbolInfo.ticker);
     const colon = t.lastIndexOf(":");
@@ -145,9 +146,9 @@ export function renderStatusLine(el, opts) {
     }
   }
 
-  const titleRowParts = [];
-  if (head) titleRowParts.push(`<span class="status-line__head">${head}</span>`);
-  if (sl.showMarketStatus) titleRowParts.push(renderMarketStatusIcons(market));
+  const metaParts = [];
+  if (head) metaParts.push(`<span class="status-line__head">${head}</span>`);
+  if (sl.showMarketStatus) metaParts.push(renderMarketStatusIcons(market));
 
   const sym = settings.symbol ?? {};
   const colorOnPrev = Boolean(sym.colorBarsOnPrevClose);
@@ -191,11 +192,12 @@ export function renderStatusLine(el, opts) {
     valueParts.push(pair("Vol", fmtVol(bar.volume), { colored: true, extraPairCls: "status-line__vol" }));
   }
 
-  const leadParts = [...titleRowParts];
-  if (leadParts.length || valueParts.length) {
-    const lead = leadParts.length ? `<div class="status-line__lead">${leadParts.join("")}</div>` : "";
-    const values = valueParts.length ? `<div class="status-line__values">${valueParts.join("")}</div>` : "";
-    parts.push(`<div class="status-line__item status-line__item--series">${lead}${values}</div>`);
+  if (metaParts.length || valueParts.length) {
+    const meta = metaParts.length ? `<span class="status-line__meta">${metaParts.join("")}</span>` : "";
+    const flow = `${meta}${valueParts.join("")}`;
+    parts.push(
+      `<div class="status-line__item status-line__item--series"><div class="status-line__flow">${flow}</div></div>`,
+    );
   }
 
   mainEl.innerHTML = parts.join("");

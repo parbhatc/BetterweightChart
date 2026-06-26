@@ -81,6 +81,15 @@ export function createIndicatorsLibraryDialog(opts) {
     );
   }
 
+  /** @param {HTMLElement} favBtn */
+  function toggleFavoriteFromButton(favBtn) {
+    const id = favBtn.dataset.id;
+    if (!id) return;
+    favorites = toggleIndicatorFavorite(favorites, id);
+    renderList();
+    onFavoritesChange?.();
+  }
+
   function renderList() {
     const q = query.trim().toLowerCase();
     const items = listIndicators().filter((d) => {
@@ -182,11 +191,7 @@ export function createIndicatorsLibraryDialog(opts) {
     const favBtn = target.closest("[data-fav-toggle]");
     if (favBtn instanceof HTMLElement) {
       ev.stopPropagation();
-      const id = favBtn.dataset.id;
-      if (!id) return;
-      favorites = toggleIndicatorFavorite(favorites, id);
-      renderList();
-      onFavoritesChange?.();
+      toggleFavoriteFromButton(favBtn);
       return;
     }
 
@@ -196,6 +201,19 @@ export function createIndicatorsLibraryDialog(opts) {
       close();
     }
   });
+
+  listEl.addEventListener(
+    "pointerup",
+    (ev) => {
+      const favBtn = ev.target instanceof Element ? ev.target.closest("[data-fav-toggle]") : null;
+      if (!(favBtn instanceof HTMLElement)) return;
+      if (ev.pointerType === "mouse") return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      toggleFavoriteFromButton(favBtn);
+    },
+    true,
+  );
 
   listEl.addEventListener("keydown", (ev) => {
     if (ev.key !== "Enter" && ev.key !== " ") return;

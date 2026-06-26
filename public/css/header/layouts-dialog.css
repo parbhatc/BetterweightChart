@@ -102,12 +102,16 @@ body.tv-layouts-modal-open {
   font-size: clamp(1rem, 2.4vw, 1.125rem);
   font-weight: var(--weight-medium);
   outline: none;
-  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+  box-shadow: none;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
-.tv-layouts-modal__search:focus {
-  border-color: var(--tv-accent);
-  background: var(--tv-surface);
+.tv-layouts-modal__search:focus,
+.tv-layouts-modal__search:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--tv-border);
+  background: var(--tv-bg-elevated);
 }
 
 .tv-layouts-modal__search::placeholder {

@@ -30,13 +30,14 @@ export const DEFAULT_SETTINGS = {
   },
   statusLine: {
     showTitle: true,
-    titleSource: "name",
+    titleSource: "symbol",
     showMarketStatus: true,
     showOHLC: true,
     showBarChange: true,
     showVolume: true,
     showBackground: true,
     backgroundOpacity: 80,
+    legendCollapsed: false,
   },
   scales: {
     autoScale: false,

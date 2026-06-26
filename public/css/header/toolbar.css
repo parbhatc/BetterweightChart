@@ -506,6 +506,7 @@
     100% - var(--status-line-inset-start, var(--space-2)) - var(--status-line-inset-end, 4.75rem)
   );
   z-index: 15;
+  touch-action: manipulation;
 }
 
 .tv-layout-grid--multi .tv-chart-wrap {

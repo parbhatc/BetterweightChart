@@ -36,7 +36,7 @@
 
 .tv-symbol__trigger[aria-expanded="true"] {
   background: var(--tv-surface);
-  border-color: var(--tv-border);
+  border-color: transparent;
 }
 
 .tv-symbol__ticker {
@@ -187,12 +187,16 @@ body.tv-symbol-modal-open {
   letter-spacing: 0.02em;
   text-transform: uppercase;
   outline: none;
-  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+  box-shadow: none;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 
-.tv-symbol-modal__search:focus {
-  border-color: var(--tv-accent);
-  background: var(--tv-surface);
+.tv-symbol-modal__search:focus,
+.tv-symbol-modal__search:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-color: var(--tv-border);
+  background: var(--tv-bg-elevated);
 }
 
 .tv-symbol-modal__search::placeholder {

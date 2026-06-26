@@ -16,7 +16,7 @@ import { renderDefaultStyleSections, renderGraphicStudyStyleSections } from "./d
 import { renderInputsPanelHtml, renderInputColorField } from "./inputPanel.js";
 import { appendSizeRuleRow, readSizeFilterRulesFromPanel } from "./symbolSizeRulesPanel.js";
 import { readCustomInput, runCustomSettingsClickHandlers } from "./customInputPanels.js";
-import { flattenInputFields } from "../schema.js";
+import { flattenInputFields, defaultInputsFromSchema } from "../schema.js";
 import { openSymbolSearchPopover } from "../../ui/symbol/popover.js";
 import { symbolTicker } from "../../app/symbol/ticker.js";
 
@@ -169,6 +169,16 @@ export function createIndicatorSettingsDialog(opts) {
       timeframeOptions,
     });
     syncInputSwatches();
+    syncFvgBoxColorSwatches();
+  }
+
+  function syncFvgBoxColorSwatches() {
+    inputsPanel.querySelectorAll("[data-fvg-box-swatch]").forEach((el) => {
+      if (!(el instanceof HTMLElement)) return;
+      const color = el.dataset.color ?? "#2962ff";
+      const opacity = el.dataset.opacity != null ? Number(el.dataset.opacity) : 10;
+      el.style.background = applyColorOpacity(color, opacity);
+    });
   }
 
   function syncInputSwatches() {
@@ -479,6 +489,29 @@ export function createIndicatorSettingsDialog(opts) {
     });
   }
 
+  /** @param {HTMLInputElement} el */
+  function uintMinForInput(el) {
+    const min = el.dataset.min != null ? Number(el.dataset.min) : null;
+    return min != null && Number.isFinite(min) ? min : null;
+  }
+
+  /** @param {HTMLInputElement} el */
+  function commitUintInput(el) {
+    const digits = el.value.replace(/\D/g, "");
+    const min = uintMinForInput(el);
+    let n = digits === "" ? NaN : Number(digits);
+    if (!Number.isFinite(n)) n = min ?? 0;
+    if (min != null) n = Math.max(min, n);
+    el.value = String(n);
+    return n;
+  }
+
+  function commitAllUintInputs() {
+    root.querySelectorAll('.tv-drawing-settings__input[data-field][data-uint="1"]').forEach((el) => {
+      if (el instanceof HTMLInputElement) commitUintInput(el);
+    });
+  }
+
   /** @param {HTMLElement} panel @param {Record<string, unknown>} target */
   function readFieldsFromPanel(panel, target) {
     panel.querySelectorAll("[data-field]").forEach((el) => {
@@ -494,12 +527,17 @@ export function createIndicatorSettingsDialog(opts) {
         const isNumeric = el.getAttribute("inputmode") === "numeric";
         if (isNumeric && el.dataset.uint === "1") {
           const digits = el.value.replace(/\D/g, "");
+          const editing = document.activeElement === el;
+          if (editing && digits === "") return;
+
           let n = digits === "" ? 0 : Number(digits);
           if (!Number.isFinite(n)) n = 0;
-          const min = el.dataset.min != null ? Number(el.dataset.min) : 0;
-          if (Number.isFinite(min)) n = Math.max(min, n);
+          const min = uintMinForInput(el);
+          if (!editing && min != null) {
+            n = Math.max(min, n);
+            if (el.value !== String(n)) el.value = String(n);
+          }
           dest[key] = n;
-          if (el.value !== String(n)) el.value = String(n);
           return;
         }
         const n = Number(el.value);
@@ -546,8 +584,11 @@ export function createIndicatorSettingsDialog(opts) {
     const Indicator = inst ? getIndicatorClass(inst.defId) : null;
     if (!inst || !Indicator) return;
     instanceId = id;
+    const chartResolution = getPaneResolution?.(inst) ?? "1";
+    const schema = Indicator.inputSchema(inst.inputs, chartResolution);
+    const inputDefaults = defaultInputsFromSchema(schema);
     draft = {
-      inputs: { ...inst.inputs },
+      inputs: { ...inputDefaults, ...inst.inputs },
       style: { ...inst.style },
       visibility: { ...inst.visibility },
     };
@@ -734,6 +775,18 @@ export function createIndicatorSettingsDialog(opts) {
     applyDraft();
   });
 
+  root.addEventListener(
+    "blur",
+    (ev) => {
+      const target = ev.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (!target.matches('.tv-drawing-settings__input[data-field][data-uint="1"]')) return;
+      commitUintInput(target);
+      applyDraft();
+    },
+    true,
+  );
+
   root.addEventListener("click", (ev) => {
     const target = ev.target;
     if (!(target instanceof Element)) return;
@@ -752,6 +805,8 @@ export function createIndicatorSettingsDialog(opts) {
       return;
     }
     if (target.closest("[data-close]") || target.closest("[data-submit]")) {
+      commitAllUintInputs();
+      applyDraft();
       close();
       return;
     }
@@ -773,7 +828,7 @@ export function createIndicatorSettingsDialog(opts) {
       return;
     }
     const checkRow = target.closest(".tv-set__check-row");
-    if (checkRow instanceof HTMLElement && !target.closest("[data-color-pick], [data-plot-type-pick], [data-fill-pick], [data-input-fill-pick]")) {
+    if (checkRow instanceof HTMLElement && !target.closest("[data-color-pick], [data-plot-type-pick], [data-fill-pick], [data-input-fill-pick], [data-fvg-box-color-pick]")) {
       const fieldCheck = checkRow.querySelector("[data-field].tv-set__check");
       if (fieldCheck instanceof HTMLElement) {
         setTvCheck(fieldCheck, !fieldCheck.classList.contains("tv-set__check--on"));
@@ -885,6 +940,55 @@ export function createIndicatorSettingsDialog(opts) {
       });
       return;
     }
+    const fvgBoxColorPick = target.closest("[data-fvg-box-color-pick]");
+    if (fvgBoxColorPick instanceof HTMLElement && fvgBoxColorPick.dataset.fvgBoxColorPick) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const [tfKey, side] = fvgBoxColorPick.dataset.fvgBoxColorPick.split("|");
+      if (!tfKey || (side !== "bull" && side !== "bear")) return;
+      if (fvgBoxColorPick.hasAttribute("disabled")) return;
+      const colorKey = side === "bull" ? "bullColor" : "bearColor";
+      const opacityKey = side === "bull" ? "bullOpacity" : "bearOpacity";
+      const globalColorKey = side === "bull" ? "bullBoxColor" : "bearBoxColor";
+      const globalOpacityKey = side === "bull" ? "bullBoxColorOpacity" : "bearBoxColorOpacity";
+      const stored =
+        draft.inputs.fvgBoxColorsByTf &&
+        typeof draft.inputs.fvgBoxColorsByTf === "object" &&
+        !Array.isArray(draft.inputs.fvgBoxColorsByTf)
+          ? draft.inputs.fvgBoxColorsByTf[tfKey]
+          : null;
+      const fallbackColor = side === "bull" ? "#00e676" : "#f23645";
+      const currentColor = String(stored?.[colorKey] ?? draft.inputs[globalColorKey] ?? fallbackColor);
+      const currentOpacity =
+        stored?.[opacityKey] !== undefined && stored?.[opacityKey] !== null
+          ? Number(stored[opacityKey])
+          : draft.inputs[globalOpacityKey] !== undefined && draft.inputs[globalOpacityKey] !== null
+            ? Number(draft.inputs[globalOpacityKey])
+            : 10;
+      colorPicker.openSwatch(
+        fvgBoxColorPick,
+        { color: currentColor, opacity: currentOpacity },
+        {
+          onChange: ({ color, opacity }) => {
+            if (!draft.inputs.fvgBoxColorsByTf || typeof draft.inputs.fvgBoxColorsByTf !== "object") {
+              draft.inputs.fvgBoxColorsByTf = {};
+            }
+            const entry = { ...(draft.inputs.fvgBoxColorsByTf[tfKey] ?? {}) };
+            entry[colorKey] = color;
+            entry[opacityKey] = opacity;
+            draft.inputs.fvgBoxColorsByTf[tfKey] = entry;
+            const swatch = inputsPanel.querySelector(`[data-fvg-box-swatch="${tfKey}|${side}"]`);
+            if (swatch instanceof HTMLElement) {
+              swatch.dataset.color = color;
+              swatch.dataset.opacity = String(opacity);
+              swatch.style.background = applyColorOpacity(color, opacity);
+            }
+            applyDraft();
+          },
+        },
+      );
+      return;
+    }
     const fillPick = target.closest("[data-fill-pick], [data-input-fill-pick]");
     if (fillPick instanceof HTMLElement) {
       const pickAttr = fillPick.dataset.fillPick ?? fillPick.dataset.inputFillPick ?? "";
@@ -905,6 +1009,7 @@ export function createIndicatorSettingsDialog(opts) {
             storeKey[opacityKey] = opacity;
             syncStyleSwatches();
             syncInputSwatches();
+            syncFvgBoxColorSwatches();
             applyDraft();
           },
         },

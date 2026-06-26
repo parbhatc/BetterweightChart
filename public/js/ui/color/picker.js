@@ -427,7 +427,7 @@ export function createColorPicker() {
 
   function applyLinePanelMode() {
     const swatch = swatchOnlyMode;
-    const hideColor = swatch || !showLineColor;
+    const hideColor = !swatch && !showLineColor;
     tvSwatchesEl.hidden = hideColor;
     lineColorSep.hidden = hideColor;
     customColorBtn.hidden = hideColor;

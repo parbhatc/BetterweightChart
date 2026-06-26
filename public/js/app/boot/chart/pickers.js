@@ -205,98 +205,100 @@ export async function wireSymbolAndTimeframePickers(ctx) {
   let tfChangeGen = 0;
 
   if (ctx.symbolPicker) {
+    ctx.changeSymbolFromPicker = async (sym) => {
+      const sync = ctx.layoutManager?.getSync();
+      const panes = ctx.getAllChartPanes();
+      const activePane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
+      if (ctx.layoutManager && sync?.symbol) {
+        if (ctx.symbol === sym && panes.every((p) => p.symbol === sym)) return;
+      } else if (activePane?.symbol === sym) {
+        return;
+      }
+      if (ctx.layoutManager && sync?.symbol) {
+        const from = ctx.symbol;
+        const panes = ctx.getAllChartPanes();
+        debugSymbolChange({
+          symbol: sym,
+          from,
+          sync: true,
+          paneCount: panes.length,
+        });
+        const saved = capturePaneViewports(panes);
+        preparePanesForSeriesReload(ctx, panes);
+        const prevSymbols = panes.map((p) => p.symbol);
+        for (const pane of panes) {
+          pane.symbol = sym;
+        }
+        ctx.symbol = sym;
+        ctx.refreshWatermark();
+        await showChartPendingOverlay(ctx, panes);
+        try {
+          await ctx.loadBarsForPanes(panes, { force: true, deferChartRefresh: true });
+          for (const pane of panes) {
+            ctx.refreshPaneCandleData?.(pane);
+          }
+          restorePaneViewports(panes, saved);
+          finishSeriesReload(ctx, panes);
+          const active = ctx.getActivePane();
+          if (active) {
+            ctx.symbolInfo = active.symbolInfo;
+            ctx.applySymbolFormat(ctx.symbolInfo);
+          }
+          ctx.persistPaneSymbols();
+          notifyHostSymbolChange(ctx, sym);
+          for (const pane of panes) {
+            const prev = prevSymbols[pane.index];
+            if (prev && prev !== pane.symbol) {
+              ctx.unsubscribeQuotesForPane?.({ symbol: prev });
+            }
+            ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
+          }
+        } finally {
+          await hideChartPendingOverlay(ctx);
+        }
+        return;
+      }
+      const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
+      if (!pane) return;
+      const from = pane.symbol;
+      debugSymbolChange({
+        symbol: sym,
+        from,
+        paneIndex: pane.index,
+        sync: false,
+      });
+      const saved = capturePaneViewports([pane]);
+      preparePanesForSeriesReload(ctx, [pane]);
+      pane.symbol = sym;
+      if (pane.index === 0) ctx.chartPanes.get(0).symbol = sym;
+      ctx.symbol = sym;
+      ctx.refreshWatermark();
+      await showChartPendingOverlay(ctx, pane);
+      try {
+        pane.symbolInfo = await ctx.datafeed.resolveSymbol(sym);
+        ctx.symbolInfo = pane.symbolInfo;
+        ctx.applySymbolFormat(ctx.symbolInfo);
+        await ctx.loadPaneBars(pane, { force: true, deferChartRefresh: true });
+        ctx.refreshPaneCandleData?.(pane);
+        restorePaneViewports([pane], saved);
+        finishSeriesReload(ctx, [pane]);
+        ctx.refreshStatusLine();
+        ctx.persistPaneSymbols();
+        notifyHostSymbolChange(ctx, sym);
+        if (from && from !== sym) {
+          ctx.unsubscribeQuotesForPane?.({ symbol: from });
+        }
+        ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
+      } finally {
+        await hideChartPendingOverlay(ctx);
+      }
+    };
+
     ctx.symbolSearchUi = mountSymbolSearch({
       root: ctx.symbolPicker,
       datafeed: ctx.datafeed,
       initialSymbol: ctx.symbol,
-      onSelect: async (sym) => {
-        const sync = ctx.layoutManager?.getSync();
-        const panes = ctx.getAllChartPanes();
-        const activePane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
-        if (ctx.layoutManager && sync?.symbol) {
-          if (ctx.symbol === sym && panes.every((p) => p.symbol === sym)) return;
-        } else if (activePane?.symbol === sym) {
-          return;
-        }
-        if (ctx.layoutManager && sync?.symbol) {
-          const from = ctx.symbol;
-          const panes = ctx.getAllChartPanes();
-          debugSymbolChange({
-            symbol: sym,
-            from,
-            sync: true,
-            paneCount: panes.length,
-          });
-          const saved = capturePaneViewports(panes);
-          preparePanesForSeriesReload(ctx, panes);
-          const prevSymbols = panes.map((p) => p.symbol);
-          for (const pane of panes) {
-            pane.symbol = sym;
-          }
-          ctx.symbol = sym;
-          ctx.refreshWatermark();
-          await showChartPendingOverlay(ctx, panes);
-          try {
-            await ctx.loadBarsForPanes(panes, { force: true, deferChartRefresh: true });
-            for (const pane of panes) {
-              ctx.refreshPaneCandleData?.(pane);
-            }
-            restorePaneViewports(panes, saved);
-            finishSeriesReload(ctx, panes);
-            const active = ctx.getActivePane();
-            if (active) {
-              ctx.symbolInfo = active.symbolInfo;
-              ctx.applySymbolFormat(ctx.symbolInfo);
-            }
-            ctx.persistPaneSymbols();
-            notifyHostSymbolChange(ctx, sym);
-            for (const pane of panes) {
-              const prev = prevSymbols[pane.index];
-              if (prev && prev !== pane.symbol) {
-                ctx.unsubscribeQuotesForPane?.({ symbol: prev });
-              }
-              ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
-            }
-          } finally {
-            await hideChartPendingOverlay(ctx);
-          }
-          return;
-        }
-        const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
-        if (!pane) return;
-        const from = pane.symbol;
-        debugSymbolChange({
-          symbol: sym,
-          from,
-          paneIndex: pane.index,
-          sync: false,
-        });
-        const saved = capturePaneViewports([pane]);
-        preparePanesForSeriesReload(ctx, [pane]);
-        pane.symbol = sym;
-        if (pane.index === 0) ctx.chartPanes.get(0).symbol = sym;
-        ctx.symbol = sym;
-        ctx.refreshWatermark();
-        await showChartPendingOverlay(ctx, pane);
-        try {
-          pane.symbolInfo = await ctx.datafeed.resolveSymbol(sym);
-          ctx.symbolInfo = pane.symbolInfo;
-          ctx.applySymbolFormat(ctx.symbolInfo);
-          await ctx.loadPaneBars(pane, { force: true, deferChartRefresh: true });
-          ctx.refreshPaneCandleData?.(pane);
-          restorePaneViewports([pane], saved);
-          finishSeriesReload(ctx, [pane]);
-          ctx.refreshStatusLine();
-          ctx.persistPaneSymbols();
-          notifyHostSymbolChange(ctx, sym);
-          if (from && from !== sym) {
-            ctx.unsubscribeQuotesForPane?.({ symbol: from });
-          }
-          ctx.subscribeQuotesForPane?.(pane, pane.symbolInfo);
-        } finally {
-          await hideChartPendingOverlay(ctx);
-        }
-      },
+      onSelect: (sym) => ctx.changeSymbolFromPicker(sym),
     });
     await ctx.symbolSearchUi.init();
   }

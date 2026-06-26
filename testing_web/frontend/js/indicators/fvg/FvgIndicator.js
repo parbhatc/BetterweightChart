@@ -150,6 +150,7 @@ class FvgIndicator extends BarScriptIndicator {
       extra += `|sf:${instance.inputs.sizeFilterUnit}|${instance.inputs.sizeFilterMin}|${instance.inputs.sizeFilterMax}|${JSON.stringify(instance.inputs.sizeFilterRules ?? [])}`;
     }
     extra += `|lbl:${instance.inputs.showLabels}|${instance.style?.graphicLabels}|${instance.inputs.showSizeOnLabel}|${instance.inputs.showFvgNameOnLabel}|${instance.inputs.sizeLabelFormat}`;
+    extra += `|fvgBc:${instance.inputs.showFvgBoxColors !== false}|${JSON.stringify(instance.inputs.fvgBoxColorsByTf ?? {})}`;
     if (instance.inputs.requireCorrelatedFvg !== true) return extra;
     const corrTf = instance.inputs.correlatedFvgTf ?? "all";
     return `${extra}|${compareBarsRecomputeKey(ctx, instance.inputs)}|${corrTf}`;

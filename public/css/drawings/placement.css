@@ -90,6 +90,14 @@
     min-height: var(--touch-min);
     padding: var(--space-2) var(--space-3);
   }
+
+  .draw-tools__fav-btn {
+    width: var(--touch-min);
+    height: var(--touch-min);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
 }
 
 @media (max-width: 768px) {

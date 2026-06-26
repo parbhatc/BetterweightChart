@@ -68,9 +68,9 @@
 .study-pane-legends__status .study-legend__item.is-expanded:hover {
   background: color-mix(in srgb, var(--tv-surface-hover) 70%, transparent);
   border-radius: var(--radius-sm);
-  padding: 0 var(--space-1);
-  max-width: none;
-  width: max-content;
+  padding: 0 4px;
+  width: min-content;
+  max-width: 100%;
   overflow: visible;
 }
 
@@ -86,4 +86,81 @@
 
 .study-pane-legends__status .study-legend__item:not(.is-expanded):not(.is-selected):hover {
   background: transparent;
+}
+
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+  .study-pane-legends__status .study-legend__item {
+    display: inline-flex;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.25rem 0.35rem;
+    width: min-content;
+    max-width: 100%;
+    padding: 2px 4px;
+    touch-action: manipulation;
+    position: relative;
+    z-index: 2;
+    min-height: calc(1.75rem + 4px);
+    box-sizing: border-box;
+  }
+
+  .study-pane-legends__status .study-legend__main {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
+  .study-pane-legends__status .study-legend__tail {
+    flex: 0 0 auto;
+    margin-left: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    position: static;
+    pointer-events: auto;
+  }
+
+  .study-pane-legends__status .study-legend__actions {
+    display: inline-flex;
+    position: absolute;
+    top: 0;
+    right: 4px;
+    bottom: 0;
+    left: auto;
+    transform: none;
+    gap: 4px;
+    align-items: center;
+    touch-action: manipulation;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  .study-pane-legends__status .study-legend__item.is-selected .study-legend__actions {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  .study-pane-legends__status .study-legend__item:not(.is-selected) .study-legend__tail {
+    display: none;
+  }
+
+  .study-pane-legends__status .study-legend__item.is-selected {
+    padding: 2px calc(5.25rem + 12px) 2px 4px;
+  }
+
+  .study-pane-legends__status .study-legend__action {
+    width: 1.75rem;
+    height: 1.75rem;
+    min-width: 1.75rem;
+    min-height: 1.75rem;
+    touch-action: manipulation;
+    pointer-events: auto;
+  }
+
+  .study-pane-legends__status .study-legend__action svg {
+    width: 1rem;
+    height: 1rem;
+  }
 }

@@ -483,3 +483,62 @@
     padding-inline: var(--space-2);
   }
 }
+
+@media (max-width: 768px) {
+  .tv-chart-replay-bar {
+    min-height: calc(var(--touch-min) + var(--space-2));
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .tv-chart-replay-bar__controls {
+    gap: var(--space-2);
+    min-height: var(--touch-min);
+  }
+
+  .tv-chart-replay-bar__btn {
+    min-height: var(--touch-min);
+    font-size: var(--text-sm);
+    padding: 0 var(--space-3);
+  }
+
+  .tv-chart-replay-bar__btn--icon {
+    width: var(--touch-min);
+    min-width: var(--touch-min);
+    padding: 0;
+  }
+
+  .tv-chart-replay-bar__btn--text {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+    padding-inline: var(--space-3);
+  }
+
+  .tv-chart-replay-bar__btn--select {
+    min-height: var(--touch-min);
+    padding-inline: var(--space-2);
+  }
+
+  .tv-chart-replay-bar__select {
+    min-height: var(--touch-min);
+  }
+
+  .tv-chart-replay-bar__chev-btn {
+    width: calc(var(--touch-min) * 0.55);
+    min-height: var(--touch-min);
+  }
+
+  .tv-chart-replay-bar__icon {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .tv-chart-replay-bar__icon svg {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
+
+  .tv-chart-replay-bar__sep {
+    height: 1.5rem;
+    margin: 0 var(--space-2);
+  }
+}

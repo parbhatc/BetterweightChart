@@ -236,13 +236,16 @@ export function openCustomIntervalDialog(opts) {
   });
 
   typeMenu?.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  typeMenu?.addEventListener("pointerdown", (ev) => ev.stopPropagation());
   typeMenu?.addEventListener("wheel", (ev) => ev.stopPropagation(), { passive: true });
 
   typeMenu?.querySelectorAll("[data-unit]").forEach((el) => {
-    el.addEventListener("click", (ev) => {
+    const pickUnit = (ev) => {
       ev.stopPropagation();
       setUnit(/** @type {IntervalType["id"]} */ (el.dataset.unit));
-    });
+    };
+    el.addEventListener("click", pickUnit);
+    el.addEventListener("pointerup", pickUnit);
   });
 
   overlay.addEventListener(

@@ -5,10 +5,12 @@ import {
 import { registerTestingSettingsHandlers } from "./settingsHandlers.js";
 import { renderFvgTimeframesPanel } from "./ui/fvgTimeframesPanel.js";
 import { renderFvgExtendBoxesPanel } from "./ui/fvgExtendBoxesPanel.js";
+import { renderFvgBoxColorsPanel } from "./ui/fvgBoxColorsPanel.js";
 import { renderSessionLevelsPanel, renderTimeLevelsPanel } from "./ui/levelsLayersPanel.js";
 import { renderNewsLevelsPanel } from "./ui/newsLevelsPanel.js";
 import { readFvgTimeframesFromPanel } from "./ui/fvgTimeframesPanel.js";
 import { readFvgExtendBoxesFromPanel } from "./ui/fvgExtendBoxesPanel.js";
+import { readFvgBoxColorsFromPanel } from "./ui/fvgBoxColorsPanel.js";
 import {
   readSessionLevelsFromPanel,
   readTimeLevelsFromPanel,
@@ -22,6 +24,9 @@ export function registerTestingInputPanels() {
   registerCustomInputRenderer("fvgExtendBoxes", (input, draftInputs, helpers) =>
     renderFvgExtendBoxesPanel(input, draftInputs, helpers?.timeframeOptions ?? []),
   );
+  registerCustomInputRenderer("fvgBoxColors", (input, draftInputs, helpers) =>
+    renderFvgBoxColorsPanel(input, draftInputs, helpers?.timeframeOptions ?? []),
+  );
   registerCustomInputRenderer("timeLevels", (input, draftInputs, helpers) =>
     renderTimeLevelsPanel(input, draftInputs, helpers?.timeframeOptions ?? []),
   );
@@ -34,6 +39,7 @@ export function registerTestingInputPanels() {
 
   registerCustomInputReader("fvgTimeframes", readFvgTimeframesFromPanel);
   registerCustomInputReader("fvgExtendBoxes", readFvgExtendBoxesFromPanel);
+  registerCustomInputReader("fvgBoxColors", readFvgBoxColorsFromPanel);
   registerCustomInputReader("timeLevels", readTimeLevelsFromPanel);
   registerCustomInputReader("sessionLevels", readSessionLevelsFromPanel);
   registerTestingSettingsHandlers();

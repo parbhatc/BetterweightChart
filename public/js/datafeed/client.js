@@ -110,8 +110,11 @@ export function readPageOptions(search = window.location.search) {
   const remoteFeed = datafeed === "tradingview" || datafeed === "tradesea";
   const defaultSymbol =
     datafeed === "tradingview" ? "CME_MINI:NQ1!" : datafeed === "tradesea" ? "MNQ" : "NQ";
-  const rawSymbol =
-    sp.get("symbol") || (remoteFeed ? defaultSymbol : loadLastSymbol(defaultSymbol));
+  const storedSymbol = loadLastSymbol(defaultSymbol);
+  let rawSymbol = sp.get("symbol") || (remoteFeed ? defaultSymbol : storedSymbol);
+  if (datafeed === "tradingview" && !sp.get("symbol") && !String(rawSymbol).includes(":")) {
+    rawSymbol = defaultSymbol;
+  }
   const defaultResolution =
     datafeed === "tradingview" ? "5" : datafeed === "tradesea" ? "1" : "1";
   const resolution =

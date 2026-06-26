@@ -27,8 +27,8 @@ export function buildInputs() {
       ],
       { section: "FVG settings" },
     ),
-    createInt("maxBarsBack", "Max bars back to find FVGs (HTF bars per layer)", 300, { section: "FVG settings" }),
-    createInt("maxFvgZones", "Max FVG zones to show", 300, { min: 0, section: "FVG settings", inline: true }),
+    createInt("maxBarsBack", "Max bars to find FVG", 300, { section: "FVG settings" }),
+    createInt("maxFvgZones", "Max FVG zones to show", 300, { min: 0, section: "FVG settings" }),
     createColor("partialCloseColor", "Partial close", { color: "#ff9800", opacity: 20 }, { section: "FVG settings" }),
     createBool("showLiveForming", "Show live forming FVG", true, { section: "Live Forming" }),
     inlinePair(
@@ -119,12 +119,14 @@ export function buildInputs() {
       section: "Extend Boxes",
       showInStatusLine: false,
     }),
-    inlinePair(
-      "Box Settings",
-      createColor("bullBoxColor", "Bullish", { color: "#00e676", opacity: 10 }),
-      createColor("bearBoxColor", "Bearish", { color: "#f23645", opacity: 10 }),
-      { header: "FVG Box Color" },
-    ),
+    createBool("showFvgBoxColors", "Show all FVG box colors", true, {
+      section: "FVG Box Colors",
+      showInStatusLine: false,
+    }),
+    createField("fvgBoxColors", "fvgBoxColorsByTf", {}, {
+      section: "FVG Box Colors",
+      showInStatusLine: false,
+    }),
     createSelect(
       "borderStyle",
       "Border style",

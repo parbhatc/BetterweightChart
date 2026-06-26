@@ -42,19 +42,17 @@ class LevelsIndicator extends BarScriptIndicator {
       }),
       createInt("pivotLeftBars", "Pivot left bars", 1, { min: 1, section: "Pivot", inline: true }),
       createInt("pivotRightBars", "Pivot right bars", 1, { min: 1, section: "Pivot", inline: true }),
-      createInt("maxBarsBack", "Max bars back to find levels (HTF bars per layer)", 300, {
+      createInt("maxBarsBack", "Max bars to find levels", 300, {
         min: 10,
         section: "Display limits",
       }),
       createInt("maxUnswept", "Max unswept levels", 15, {
         min: 1,
         section: "Display limits",
-        inline: true,
       }),
       createInt("maxSwept", "Max swept levels", 5, {
         min: 0,
         section: "Display limits",
-        inline: true,
       }),
       createInt("maxSessions", "Max session instances", 3, { min: 1, section: "Display limits" }),
       createBool("mergeConfluence", "Merge confluence levels", true, { section: "Confluence" }),

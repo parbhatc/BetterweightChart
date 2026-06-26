@@ -1,6 +1,55 @@
 const STORAGE_KEY = "tv-draw-toolbar-collapsed";
+const TOOLBAR_TRANSITION_MS = 200;
 
 const CHEVRON_LEFT = `<svg class="tv-draw-toolbar-toggle__icon" viewBox="0 0 10 16" width="8" height="12" aria-hidden="true"><path fill="currentColor" d="M6.6 1.4 5.2 0l-8 8 8 8 1.4-1.4L2.811 8 6.6 1.4z"/></svg>`;
+
+function notifyViewportLayout() {
+  window.dispatchEvent(new Event("resize"));
+}
+
+/**
+ * @param {HTMLElement} toolbarEl
+ * @param {HTMLElement | null | undefined} workspace
+ */
+function wireToolbarLayoutNotify(toolbarEl, workspace) {
+  /** @type {ReturnType<typeof setTimeout> | null} */
+  let settleTimer = null;
+  /** @type {number | null} */
+  let settleRaf = null;
+
+  const scheduleNotify = () => {
+    if (settleTimer) clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => {
+      settleTimer = null;
+      notifyViewportLayout();
+    }, TOOLBAR_TRANSITION_MS + 40);
+
+    if (settleRaf != null) cancelAnimationFrame(settleRaf);
+    settleRaf = requestAnimationFrame(() => {
+      settleRaf = requestAnimationFrame(() => {
+        settleRaf = null;
+        notifyViewportLayout();
+      });
+    });
+  };
+
+  toolbarEl.addEventListener("transitionend", (ev) => {
+    if (ev.target !== toolbarEl || ev.propertyName !== "width") return;
+    notifyViewportLayout();
+  });
+
+  const stage = workspace?.querySelector(".tv-stage");
+  if (stage instanceof HTMLElement && typeof ResizeObserver !== "undefined") {
+    let roRaf = 0;
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(roRaf);
+      roRaf = requestAnimationFrame(() => scheduleNotify());
+    });
+    ro.observe(stage);
+  }
+
+  return scheduleNotify;
+}
 
 /**
  * @param {object} opts
@@ -12,6 +61,7 @@ export function createDrawingToolbarCollapse(opts) {
   const workspace = toolbarEl.closest(".tv-workspace");
   /** @type {HTMLButtonElement | null} */
   let toggleBtn = null;
+  const scheduleLayoutNotify = wireToolbarLayoutNotify(toolbarEl, workspace);
 
   function syncCollapsed(collapsed) {
     toolbarEl.classList.toggle("drawing-toolbar--collapsed", collapsed);
@@ -28,7 +78,7 @@ export function createDrawingToolbarCollapse(opts) {
     syncCollapsed(collapsed);
     if (persist) localStorage.setItem(STORAGE_KEY, collapsed ? "1" : "0");
     if (collapsed) flyout.closeAllFlyouts();
-    window.dispatchEvent(new Event("resize"));
+    scheduleLayoutNotify();
   }
 
   function mountBottomToggle() {

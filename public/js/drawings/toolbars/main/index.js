@@ -68,7 +68,7 @@ export function mountMainToolbar(opts) {
     favBtn.type = "button";
     favBtn.className = "draw-tools__fav-btn";
     favBtn.dataset.favToggleTool = toolType;
-    favBtn.addEventListener("click", (ev) => {
+    const toggleFavorite = (ev) => {
       ev.preventDefault();
       ev.stopPropagation();
       const adding = !isFavoriteTool(favoriteTools, toolType);
@@ -78,6 +78,12 @@ export function mountMainToolbar(opts) {
       }
       syncFavoriteButtons();
       favoriteToolbar.render();
+    };
+    favBtn.addEventListener("click", toggleFavorite);
+    favBtn.addEventListener("pointerup", (ev) => {
+      if (ev.pointerType === "mouse") return;
+      ev.preventDefault();
+      toggleFavorite(ev);
     });
     actionsEl.appendChild(favBtn);
     syncFavoriteButtons();
