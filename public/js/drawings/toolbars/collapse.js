@@ -81,6 +81,12 @@ export function createDrawingToolbarCollapse(opts) {
     scheduleLayoutNotify();
   }
 
+  function restorePersistedState() {
+    if (localStorage.getItem(STORAGE_KEY) === "1") {
+      setCollapsed(true, false);
+    }
+  }
+
   function mountBottomToggle() {
     const bar = document.querySelector(".tv-chart-bottom-bar");
     if (!bar) return;
@@ -92,22 +98,22 @@ export function createDrawingToolbarCollapse(opts) {
       bar.insertBefore(left, bar.firstChild);
     }
 
-    toggleBtn = document.createElement("button");
-    toggleBtn.type = "button";
-    toggleBtn.className = "tv-draw-toolbar-toggle";
-    toggleBtn.setAttribute("aria-expanded", "true");
-    toggleBtn.setAttribute("aria-label", "Hide drawing toolbar");
-    toggleBtn.title = "Hide drawing toolbar";
-    toggleBtn.innerHTML = CHEVRON_LEFT;
-    toggleBtn.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      setCollapsed(!toolbarEl.classList.contains("drawing-toolbar--collapsed"));
-    });
-    left.appendChild(toggleBtn);
-  }
+    if (!toggleBtn) {
+      toggleBtn = document.createElement("button");
+      toggleBtn.type = "button";
+      toggleBtn.className = "tv-draw-toolbar-toggle";
+      toggleBtn.setAttribute("aria-expanded", "true");
+      toggleBtn.setAttribute("aria-label", "Hide drawing toolbar");
+      toggleBtn.title = "Hide drawing toolbar";
+      toggleBtn.innerHTML = CHEVRON_LEFT;
+      toggleBtn.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        setCollapsed(!toolbarEl.classList.contains("drawing-toolbar--collapsed"));
+      });
+      left.appendChild(toggleBtn);
+    }
 
-  if (localStorage.getItem(STORAGE_KEY) === "1") {
-    syncCollapsed(true);
+    restorePersistedState();
   }
 
   return {
@@ -116,6 +122,7 @@ export function createDrawingToolbarCollapse(opts) {
     toggle: () => setCollapsed(toolbarEl.classList.contains("drawing-toolbar--collapsed")),
     isCollapsed: () => toolbarEl.classList.contains("drawing-toolbar--collapsed"),
     mountBottomToggle,
+    restorePersistedState,
   };
 }
 
