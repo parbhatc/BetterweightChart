@@ -110,19 +110,26 @@ export function applyReplaySelectCrosshair(chart, el, series) {
     crosshair: {
       mode: CrosshairMode.Normal,
       vertLine: {
-        visible: false,
-        labelVisible: false,
+        visible: true,
+        color: TV_DRAW_CROSSHAIR,
+        width: REPLAY_SELECT_VERT_WIDTH,
+        labelVisible: true,
+        labelBackgroundColor: TV_DRAW_CROSSHAIR,
       },
       horzLine: {
-        visible: false,
-        labelVisible: false,
+        visible: true,
+        color: TV_DRAW_CROSSHAIR,
+        labelVisible: true,
+        labelBackgroundColor: TV_DRAW_CROSSHAIR,
       },
     },
   });
 
   if (series) {
     series.applyOptions({
-      crosshairMarkerVisible: false,
+      crosshairMarkerVisible: true,
+      crosshairMarkerBorderColor: TV_DRAW_CROSSHAIR,
+      crosshairMarkerBackgroundColor: TV_DRAW_CROSSHAIR,
     });
   }
 }

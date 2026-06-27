@@ -5,6 +5,7 @@ import {
   resolveThemeCrosshair,
 } from "../app/cursor/mode.js";
 import { replayDebug } from "./debug.js";
+import { isReplayHostControlled, emitReplayHostAction } from "./hostControl.js";
 
 const REPLAY_SELECT_BAR_CLASS = "chart--replay-select-bar";
 
@@ -277,6 +278,14 @@ export function attachReplaySelection(ctx, replay) {
     if (param.point?.y != null) pane.replayCutLocalY = param.point.y;
     clearReplayHover(pane);
     replayDebug("selectBar.click", { index, time: bar?.time });
+    if (isReplayHostControlled(ctx)) {
+      emitReplayHostAction(ctx, "selectBar", {
+        index,
+        time: bar?.time,
+        bar,
+        paneIndex,
+      });
+    }
     replay.setSelectedBar(index, bar.time);
   }
 

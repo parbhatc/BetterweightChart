@@ -69,6 +69,13 @@
   flex-shrink: 0;
 }
 
+.tv-toolbar__slot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
 .tv-chart-tools {
   display: flex;
   align-items: center;

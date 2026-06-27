@@ -3,10 +3,11 @@ import { INDICATORS, REPLAY } from "./icons.js";
 /**
  * TradingView-style Indicators + Replay controls on the left header bar.
  * @param {HTMLElement} mountEl `.tv-toolbar__left`
- * @param {{ replay?: boolean }} [opts]
+ * @param {{ replay?: boolean, replayHideToggle?: boolean }} [opts]
  */
 export function mountChartToolbarTools(mountEl, opts = {}) {
   const replayEnabled = opts.replay !== false;
+  const replayHideToggle = Boolean(opts.replayHideToggle);
   const sep = document.createElement("div");
   sep.className = "tv-toolbar__sep";
   sep.setAttribute("aria-hidden", "true");
@@ -45,7 +46,7 @@ export function mountChartToolbarTools(mountEl, opts = {}) {
 
   mountEl.appendChild(sep);
   mountEl.appendChild(indicatorsWrap);
-  if (replayBtn) mountEl.appendChild(replayBtn);
+  if (replayBtn && !replayHideToggle) mountEl.appendChild(replayBtn);
 
   const indicatorsBtn = indicatorsWrap.querySelector('[data-name="open-indicators-dialog"]');
   const favoritesEl = indicatorsWrap.querySelector(".tv-chart-tools__favorites");

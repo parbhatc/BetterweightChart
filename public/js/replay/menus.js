@@ -66,19 +66,76 @@ export function normalizeStepInterval(id) {
   return norm;
 }
 
-/** @param {string} chartResolutionId */
-export function replayStepOptionsForChart(chartResolutionId) {
+/**
+ * @param {ReadonlyArray<{ id: string, label?: string, sec?: number }> | string[] | undefined} availableResolutions
+ * @returns {Set<string> | null}
+ */
+function allowedResolutionIds(availableResolutions) {
+  if (!Array.isArray(availableResolutions) || !availableResolutions.length) return null;
+  return new Set(
+    availableResolutions.map((entry) =>
+      normalizeResolutionId(typeof entry === "string" ? entry : entry.id),
+    ),
+  );
+}
+
+/** @param {Set<string>} allowed */
+function tickResolutionAllowed(allowed) {
+  return [...allowed].some((id) => id === "tick" || /^\d+T$/i.test(id));
+}
+
+/**
+ * @param {string} chartResolutionId
+ * @param {ReadonlyArray<{ id: string, label?: string, sec?: number }> | string[] | undefined} [availableResolutions]
+ */
+export function replayStepOptionsForChart(chartResolutionId, availableResolutions) {
   const chartSec = resolutionSec(chartResolutionId);
   const chartNorm = normalizeResolutionId(chartResolutionId);
-  let resolutionOpts = REPLAY_STEP_RESOLUTION_OPTIONS.filter((opt) => opt.sec <= chartSec);
-  if (chartSec > 0 && !resolutionOpts.some((opt) => opt.id === chartNorm)) {
-    resolutionOpts = [
-      ...resolutionOpts,
-      { id: chartNorm, label: replayStepMenuLabel(chartNorm), sec: chartSec },
-    ].sort((a, b) => a.sec - b.sec);
+  const allowed = allowedResolutionIds(availableResolutions);
+
+  /** @type {ReplayStepOption[]} */
+  let options;
+
+  if (allowed) {
+    /** @type {Map<string, ReplayStepOption>} */
+    const byId = new Map(
+      [...REPLAY_STEP_BASE_OPTIONS, ...REPLAY_STEP_RESOLUTION_OPTIONS]
+        .filter((opt) => {
+          if (opt.id === "tick") return tickResolutionAllowed(allowed);
+          return allowed.has(normalizeResolutionId(opt.id));
+        })
+        .map((opt) => [opt.id, opt]),
+    );
+
+    for (const entry of availableResolutions) {
+      const id = normalizeResolutionId(typeof entry === "string" ? entry : entry.id);
+      if (byId.has(id)) continue;
+      const sec =
+        typeof entry === "object" && entry.sec != null ? entry.sec : resolutionSec(id);
+      byId.set(id, { id, label: replayStepMenuLabel(id), sec });
+    }
+
+    options = [...byId.values()].filter((opt) => opt.id === "tick" || opt.sec <= chartSec);
+  } else {
+    const base = REPLAY_STEP_BASE_OPTIONS.filter((opt) => opt.sec <= chartSec || opt.id === "tick");
+    const resolutionOpts = REPLAY_STEP_RESOLUTION_OPTIONS.filter((opt) => opt.sec <= chartSec);
+    options = [...base, ...resolutionOpts];
   }
-  const base = REPLAY_STEP_BASE_OPTIONS.filter((opt) => opt.sec <= chartSec || opt.id === "tick");
-  return [...base, ...resolutionOpts];
+
+  if (chartSec > 0 && !options.some((opt) => opt.id === chartNorm)) {
+    if (!allowed || allowed.has(chartNorm)) {
+      options.push({ id: chartNorm, label: replayStepMenuLabel(chartNorm), sec: chartSec });
+    }
+  }
+
+  const seen = new Set();
+  return options
+    .sort((a, b) => a.sec - b.sec)
+    .filter((opt) => {
+      if (seen.has(opt.id)) return false;
+      seen.add(opt.id);
+      return true;
+    });
 }
 
 /**

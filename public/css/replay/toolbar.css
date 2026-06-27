@@ -471,7 +471,7 @@
 }
 
 .chart--replay-select-bar {
-  cursor: none !important;
+  cursor: crosshair !important;
 }
 
 @media (max-width: 640px) {

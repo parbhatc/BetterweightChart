@@ -17,6 +17,36 @@ import {
   replayStepOptionsForChart,
 } from "./menus.js";
 import { openReplayDateDialog } from "./dateDialog.js";
+import { isReplayHostControlled, emitReplayHostAction } from "./hostControl.js";
+
+/**
+ * @param {boolean} hideSelectModeMenu
+ * @param {string} modeMenuItems
+ */
+function buildSelectGroupHtml(hideSelectModeMenu, modeMenuItems) {
+  const modeMenuBlock = hideSelectModeMenu
+    ? `</div>`
+    : `<button type="button" class="tv-chart-replay-bar__chev-btn" data-action="select-mode" aria-label="Select starting point" aria-haspopup="menu" aria-expanded="false" title="Select starting point">
+            <span class="tv-chart-replay-bar__chev" aria-hidden="true">${CHEVRON_DOWN}</span>
+          </button>
+        </div>
+        <div class="tv-replay-select-menu" role="menu" aria-label="Select starting point" hidden>
+          <div class="tv-replay-select-menu__title">Select starting point</div>
+          ${modeMenuItems}
+        </div>`;
+
+  return `<div class="tv-chart-replay-bar__group">
+      <div class="tv-chart-replay-bar__select-wrap">
+        <div class="tv-chart-replay-bar__select">
+          <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--select" data-action="select-bar" title="Select bar">
+            <span class="tv-chart-replay-bar__icon" data-select-icon aria-hidden="true"></span>
+            <span class="tv-chart-replay-bar__label" data-select-label>Select bar</span>
+          </button>
+          ${modeMenuBlock}
+      </div>
+    </div>
+    <span class="tv-chart-replay-bar__sep" aria-hidden="true"></span>`;
+}
 
 /**
  * @param {object} opts
@@ -25,9 +55,15 @@ import { openReplayDateDialog } from "./dateDialog.js";
  * @param {import("../app/boot/chart/state.js").BootContext} [opts.ctx]
  * @param {HTMLElement} [opts.footerEl]
  * @param {HTMLElement} [opts.controlsEl]
+ * @param {boolean} [opts.hideSelectModeMenu]
+ * @param {boolean} [opts.hideJumpEnd]
+ * @param {boolean} [opts.hideExit]
  */
 export function mountReplayToolbar(opts) {
   const { replay, getChartResolution = () => "1", ctx } = opts;
+  const hideSelectModeMenu = Boolean(opts.hideSelectModeMenu);
+  const hideJumpEnd = Boolean(opts.hideJumpEnd);
+  const hideExit = Boolean(opts.hideExit);
 
   const footer =
     opts.footerEl instanceof HTMLElement
@@ -59,25 +95,24 @@ export function mountReplayToolbar(opts) {
       </button>`,
   ).join("");
 
-  controls.innerHTML = `<div class="tv-chart-replay-bar__group">
-      <div class="tv-chart-replay-bar__select-wrap">
-        <div class="tv-chart-replay-bar__select">
-          <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--select" data-action="select-bar" title="Select bar">
-            <span class="tv-chart-replay-bar__icon" data-select-icon aria-hidden="true"></span>
-            <span class="tv-chart-replay-bar__label" data-select-label>Select bar</span>
-          </button>
-          <button type="button" class="tv-chart-replay-bar__chev-btn" data-action="select-mode" aria-label="Select starting point" aria-haspopup="menu" aria-expanded="false" title="Select starting point">
-            <span class="tv-chart-replay-bar__chev" aria-hidden="true">${CHEVRON_DOWN}</span>
-          </button>
-        </div>
-        <div class="tv-replay-select-menu" role="menu" aria-label="Select starting point" hidden>
-          <div class="tv-replay-select-menu__title">Select starting point</div>
-          ${modeMenuItems}
-        </div>
-      </div>
-    </div>
-    <span class="tv-chart-replay-bar__sep" aria-hidden="true"></span>
+  const jumpEndBlock = hideJumpEnd
+    ? ""
+    : `<span class="tv-chart-replay-bar__sep" aria-hidden="true"></span>
     <div class="tv-chart-replay-bar__group">
+      <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--icon" data-action="jump-end" title="Jump to end" disabled>
+        <span class="tv-chart-replay-bar__icon" aria-hidden="true">${JUMP_TO_END}</span>
+      </button>
+    </div>`;
+
+  const exitBlock = hideExit
+    ? ""
+    : `<div class="tv-chart-replay-bar__group tv-chart-replay-bar__group--close">
+      <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--icon tv-chart-replay-bar__btn--close" data-action="exit" title="Exit Bar Replay" aria-label="Exit Bar Replay">
+        <span class="tv-chart-replay-bar__icon" aria-hidden="true">${CLOSE}</span>
+      </button>
+    </div>`;
+
+  controls.innerHTML = `${buildSelectGroupHtml(hideSelectModeMenu, modeMenuItems)}<div class="tv-chart-replay-bar__group">
       <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--icon" data-action="play" title="Play" disabled>
         <span class="tv-chart-replay-bar__icon" data-play-icon aria-hidden="true">${PLAY}</span>
       </button>
@@ -110,17 +145,8 @@ export function mountReplayToolbar(opts) {
         </div>
       </div>
     </div>
-    <span class="tv-chart-replay-bar__sep" aria-hidden="true"></span>
-    <div class="tv-chart-replay-bar__group">
-      <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--icon" data-action="jump-end" title="Jump to end" disabled>
-        <span class="tv-chart-replay-bar__icon" aria-hidden="true">${JUMP_TO_END}</span>
-      </button>
-    </div>
-    <div class="tv-chart-replay-bar__group tv-chart-replay-bar__group--close">
-      <button type="button" class="tv-chart-replay-bar__btn tv-chart-replay-bar__btn--icon tv-chart-replay-bar__btn--close" data-action="exit" title="Exit Bar Replay" aria-label="Exit Bar Replay">
-        <span class="tv-chart-replay-bar__icon" aria-hidden="true">${CLOSE}</span>
-      </button>
-    </div>`;
+    ${jumpEndBlock}
+    ${exitBlock}`;
 
   const selectBtn = controls.querySelector('[data-action="select-bar"]');
   const selectIcon = controls.querySelector("[data-select-icon]");
@@ -143,9 +169,10 @@ export function mountReplayToolbar(opts) {
 
   /** @param {boolean} on */
   function setTransportEnabled(on) {
-    playBtn?.toggleAttribute("disabled", !on);
-    stepBtn?.toggleAttribute("disabled", !on);
-    jumpBtn?.toggleAttribute("disabled", !on);
+    const enabled = isReplayHostControlled(ctx) ? replay.isActive() : on;
+    playBtn?.toggleAttribute("disabled", !enabled);
+    stepBtn?.toggleAttribute("disabled", !enabled);
+    jumpBtn?.toggleAttribute("disabled", !enabled);
   }
 
   /** @param {HTMLElement | null | undefined} anchor @param {HTMLElement | null | undefined} menu */
@@ -206,11 +233,30 @@ export function mountReplayToolbar(opts) {
     return modeMenu != null && !modeMenu.hidden;
   }
 
+  function getAvailableResolutions() {
+    return ctx?.resolutions?.length ? ctx.resolutions : undefined;
+  }
+
+  function ensureValidStepInterval() {
+    const state = replay.getState();
+    if (state.autoSelectInterval) return;
+    const chartRes = getChartResolution();
+    const options = replayStepOptionsForChart(chartRes, getAvailableResolutions());
+    const current = normalizeStepInterval(state.stepInterval);
+    if (options.some((opt) => opt.id === current)) return;
+    const fallback =
+      options.find((opt) => opt.id === normalizeResolutionId(chartRes))?.id ??
+      options[options.length - 1]?.id ??
+      "1";
+    replay.setStepInterval(fallback);
+  }
+
   function renderIntervalMenuItems() {
     if (!(intervalItemsEl instanceof HTMLElement)) return;
+    ensureValidStepInterval();
     const state = replay.getState();
     const chartRes = getChartResolution();
-    const options = replayStepOptionsForChart(chartRes);
+    const options = replayStepOptionsForChart(chartRes, getAvailableResolutions());
     const activeId = state.autoSelectInterval
       ? normalizeResolutionId(chartRes)
       : normalizeStepInterval(state.stepInterval);
@@ -268,13 +314,19 @@ export function mountReplayToolbar(opts) {
     const hasSelection = state.selectedBarTime != null;
     setTransportEnabled(hasSelection);
 
+    const hostControlled = isReplayHostControlled(ctx);
     const max = replay.getMaxBarIndex?.() ?? 0;
     const cursorIdx = replay.getCursorBarIndex?.() ?? state.currentBarIndex ?? 0;
     const atEnd =
       hasSelection && cursorIdx >= max && !(replay.hasForwardBars?.() ?? false);
 
-    stepBtn?.toggleAttribute("disabled", !hasSelection || atEnd);
-    playBtn?.toggleAttribute("disabled", !hasSelection || atEnd);
+    if (hostControlled) {
+      stepBtn?.removeAttribute("disabled");
+      playBtn?.removeAttribute("disabled");
+    } else {
+      stepBtn?.toggleAttribute("disabled", !hasSelection || atEnd);
+      playBtn?.toggleAttribute("disabled", !hasSelection || atEnd);
+    }
 
     if (playIcon) playIcon.innerHTML = state.playing ? PAUSE : PLAY;
     if (playBtn instanceof HTMLButtonElement) {
@@ -283,10 +335,12 @@ export function mountReplayToolbar(opts) {
 
     if (speedBtn) speedBtn.textContent = replaySpeedLabel(state.speed);
     if (intervalBtn) {
+      ensureValidStepInterval();
+      const synced = replay.getState();
       intervalBtn.textContent = replayStepIntervalButtonLabel(
-        state.stepInterval,
+        synced.stepInterval,
         chartRes,
-        state.autoSelectInterval,
+        synced.autoSelectInterval,
       );
     }
     if (autoIntervalInput instanceof HTMLInputElement) {
@@ -322,7 +376,7 @@ export function mountReplayToolbar(opts) {
   selectBtn?.addEventListener("click", () => {
     closeAllMenus();
     const state = replay.getState();
-    if (state.selectMode === "date" && ctx) {
+    if (!hideSelectModeMenu && state.selectMode === "date" && ctx) {
       openReplayDateDialog({
         ctx,
         replay,
@@ -376,6 +430,13 @@ export function mountReplayToolbar(opts) {
     const id = btn.dataset.interval;
     if (!id) return;
     replay.setStepInterval(id);
+    if (isReplayHostControlled(ctx)) {
+      emitReplayHostAction(ctx, "stepInterval", {
+        stepInterval: id,
+        autoSelectInterval: false,
+        chartResolution: getChartResolution(),
+      });
+    }
     closeIntervalMenu();
   });
 
@@ -383,6 +444,13 @@ export function mountReplayToolbar(opts) {
     ev.stopPropagation();
     if (autoIntervalInput instanceof HTMLInputElement) {
       replay.setAutoSelectInterval(autoIntervalInput.checked);
+      if (isReplayHostControlled(ctx)) {
+        emitReplayHostAction(ctx, "stepInterval", {
+          stepInterval: replay.getState().stepInterval,
+          autoSelectInterval: autoIntervalInput.checked,
+          chartResolution: getChartResolution(),
+        });
+      }
     }
   });
 
@@ -420,13 +488,38 @@ export function mountReplayToolbar(opts) {
   });
 
   playBtn?.addEventListener("click", () => {
-    const { playing, selectedBarTime } = replay.getState();
-    if (selectedBarTime == null) return;
+    const { playing, selectedBarTime, currentBarIndex, currentBarTime, selectedBarIndex } = replay.getState();
+    const hostControlled = isReplayHostControlled(ctx);
+    if (!hostControlled && selectedBarTime == null) return;
     const max = replay.getMaxBarIndex?.() ?? 0;
     const cursorIdx = replay.getCursorBarIndex?.() ?? 0;
-    if (cursorIdx >= max && !(replay.hasForwardBars?.() ?? false)) return;
-    if (playing) replay.pause();
-    else replay.play();
+    if (!hostControlled && cursorIdx >= max && !(replay.hasForwardBars?.() ?? false)) return;
+
+    if (playing) {
+      replay.pause();
+      if (hostControlled) {
+        emitReplayHostAction(ctx, "pause", {
+          currentBarIndex,
+          currentBarTime,
+          selectedBarIndex,
+          selectedBarTime,
+        });
+      }
+      return;
+    }
+
+    if (hostControlled) {
+      replay.play();
+      emitReplayHostAction(ctx, "play", {
+        currentBarIndex,
+        currentBarTime,
+        selectedBarIndex,
+        selectedBarTime,
+      });
+      return;
+    }
+
+    replay.play();
   });
 
   stepBtn?.addEventListener("click", () => replay.stepForward());

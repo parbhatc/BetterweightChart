@@ -7,6 +7,7 @@ import {
 } from "../chart/pane/data.js";
 import { getPaneChartView, invalidatePaneChartView } from "../chart/pane/viewCache.js";
 import { replayDebug } from "./debug.js";
+import { isReplayHostControlled, emitReplayHostAction } from "./hostControl.js";
 import { patchReplayHtfFormingBar, resolveReplayCursorOnTfSwitch } from "./formingBar.js";
 import { setResolutionCacheReplayTtl, clearResolutionCache } from "../app/bar/resolutionCache.js";
 import { clearAllHtfBars } from "../app/bar/htfBarCache.js";
@@ -1075,6 +1076,7 @@ export function attachReplayEngine(ctx, replay) {
   }
 
   function persistSession(state) {
+    if (isReplayHostControlled(ctx)) return;
     if (ctx.replayPendingRestore?.active) return;
     const payload = buildReplaySessionPayload(state, ctx);
     if (payload) {
@@ -1154,10 +1156,11 @@ export function attachReplayEngine(ctx, replay) {
 
   /** @param {import("./mode.js").ReplayState} state */
   function sync(state) {
-    setResolutionCacheReplayTtl(state.active);
+    const hostControlled = isReplayHostControlled(ctx);
+    setResolutionCacheReplayTtl(state.active && !hostControlled);
 
     if (state.active !== wasReplayUiActive) {
-      if (state.active) clearBarCachesForReplay();
+      if (state.active && !hostControlled) clearBarCachesForReplay();
       wasReplayUiActive = state.active;
       refreshPriceLabelsForReplay();
     }
@@ -1166,7 +1169,12 @@ export function attachReplayEngine(ctx, replay) {
       stopPlayTimer();
       lastAppliedEndIndex = null;
       lastAppliedBarTime = null;
-      if (ctx.getAllChartPanes().some((p) => p._replaySnapshot)) {
+      if (hostControlled) {
+        for (const pane of ctx.getAllChartPanes()) {
+          delete pane._replaySnapshot;
+          delete pane.replayCursorEndIndex;
+        }
+      } else if (ctx.getAllChartPanes().some((p) => p._replaySnapshot)) {
         restoreLiveData();
       } else if (!ctx.replayPendingRestore?.active) {
         clearReplaySession();
@@ -1177,6 +1185,14 @@ export function attachReplayEngine(ctx, replay) {
 
     if (state.selectedBarTime == null) {
       stopPlayTimer();
+      return;
+    }
+
+    if (isReplayHostControlled(ctx)) {
+      stopPlayTimer();
+      if (state.selectingBar && state.selectMode === "bar") {
+        ctx.replayFutureDim?.refreshAll?.();
+      }
       return;
     }
 
@@ -1561,6 +1577,7 @@ export function attachReplayEngine(ctx, replay) {
 
   return {
     isReplayLocked: () => {
+      if (isReplayHostControlled(ctx)) return false;
       const state = replay.getState();
       return Boolean(state.active && state.selectedBarTime != null);
     },
@@ -1568,19 +1585,46 @@ export function attachReplayEngine(ctx, replay) {
     mergeHistoryIntoSnapshot: mergePaneHistoryIntoSnapshot,
     getCursorBarIndex: () => {
       const state = replay.getState();
+      if (isReplayHostControlled(ctx)) {
+        return state.currentBarIndex ?? state.selectedBarIndex ?? 0;
+      }
       const snap = (ctx.getActivePane?.() ?? ctx.chartPanes.get(0))?._replaySnapshot;
       if (!snap?.bars?.length || state.currentBarTime == null) return state.currentBarIndex ?? 0;
       return replayBarIndexForUtcTime(snap.bars, state.currentBarTime) ?? state.currentBarIndex ?? 0;
     },
-    getMaxBarIndex,
-    hasForwardBars,
+    getMaxBarIndex: () => {
+      if (isReplayHostControlled(ctx)) {
+        const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
+        return Math.max(0, (pane?.bars?.length ?? 1) - 1);
+      }
+      return getMaxBarIndex();
+    },
+    hasForwardBars: () => {
+      if (isReplayHostControlled(ctx)) {
+        const state = replay.getState();
+        const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
+        const cursor = state.currentBarIndex ?? state.selectedBarIndex ?? 0;
+        return cursor < Math.max(0, (pane?.bars?.length ?? 0) - 1);
+      }
+      return hasForwardBars();
+    },
     refreshReplayLiveEnd: refreshAllSnapshotLiveEnds,
     restoreSession,
     onChartResolutionChange,
     beforeResolutionChange,
     stepForward: async () => {
       const state = replay.getState();
-      if (!state.active || state.currentBarTime == null) return;
+      if (!state.active) return;
+      if (isReplayHostControlled(ctx)) {
+        emitReplayHostAction(ctx, "stepForward", {
+          currentBarIndex: state.currentBarIndex,
+          currentBarTime: state.currentBarTime,
+          selectedBarIndex: state.selectedBarIndex,
+          selectedBarTime: state.selectedBarTime,
+        });
+        return;
+      }
+      if (state.currentBarTime == null) return;
       refreshAllSnapshotLiveEnds();
       const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
       if (!pane) return;
@@ -1610,7 +1654,17 @@ export function attachReplayEngine(ctx, replay) {
     },
     jumpToEnd: async () => {
       const state = replay.getState();
-      if (!state.active || state.selectedBarTime == null) return;
+      if (!state.active) return;
+      if (isReplayHostControlled(ctx)) {
+        emitReplayHostAction(ctx, "jumpToEnd", {
+          currentBarIndex: state.currentBarIndex,
+          currentBarTime: state.currentBarTime,
+          selectedBarIndex: state.selectedBarIndex,
+          selectedBarTime: state.selectedBarTime,
+        });
+        return;
+      }
+      if (state.selectedBarTime == null) return;
       replay.pause();
       await ensureAllSnapshotsForward();
       const max = getMaxBarIndex();
@@ -1623,7 +1677,16 @@ export function attachReplayEngine(ctx, replay) {
     },
     play: () => {
       const state = replay.getState();
-      if (!state.active || state.currentBarTime == null) return;
+      if (!state.active) return;
+      if (isReplayHostControlled(ctx)) {
+        emitReplayHostAction(ctx, "play", {
+          playing: state.playing,
+          currentBarIndex: state.currentBarIndex,
+          currentBarTime: state.currentBarTime,
+        });
+        return;
+      }
+      if (state.currentBarTime == null) return;
       const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
       const snap = pane?._replaySnapshot;
       if (!snap?.bars?.length || !pane) return;

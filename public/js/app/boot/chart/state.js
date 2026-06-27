@@ -6,6 +6,43 @@ import { createAppLoader, createChartOverlayLoader } from "../../../ui/loader/ap
 import { resolveTimezone } from "../../../chart/timezone/list.js";
 import { createFeatureFlags } from "../../../chart/features.js";
 
+function createNoopLoader() {
+  return {
+    show() {},
+    hide() {},
+    async wrap(fn) {
+      return fn();
+    },
+  };
+}
+
+/** Nearest embed shell (Auren / host-injected `.tv-app`). */
+function chartShellRoot(el) {
+  return el instanceof HTMLElement ? el.closest(".tv-app") : null;
+}
+
+/** Prefer selectors scoped to the chart mount; fall back to document for standalone pages. */
+function queryChartShell(el, selector) {
+  const root = chartShellRoot(el);
+  if (root) {
+    const hit = root.querySelector(selector);
+    if (hit) return hit;
+    return null;
+  }
+  return document.querySelector(selector);
+}
+
+/** Prefer ids scoped to the chart mount; fall back to document for standalone pages. */
+function getChartShellById(el, id) {
+  const root = chartShellRoot(el);
+  if (root) {
+    const hit = root.querySelector(`#${CSS.escape(id)}`);
+    if (hit instanceof HTMLElement) return hit;
+  }
+  const docHit = document.getElementById(id);
+  return docHit instanceof HTMLElement ? docHit : null;
+}
+
 /**
  * @typedef {object} BootContext
  * @property {ReturnType<typeof readPageOptions>} opts
@@ -34,6 +71,7 @@ import { createFeatureFlags } from "../../../chart/features.js";
  * @property {HTMLElement} chartWrap
  * @property {HTMLElement | null} stageEl
  * @property {HTMLElement | null} chromeEl
+ * @property {HTMLElement | null} shellRoot
  * @property {HTMLElement | null} drawToolbar
  * @property {HTMLElement | null} workspaceEl
  * @property {HTMLElement | null} statusEl
@@ -142,7 +180,10 @@ export function createBootContext(overrides) {
       : document.getElementById(overrides.mountId ?? "chart");
   if (!el) throw new Error("#chart element missing (pass mount or mountId)");
 
-  let symbol = getPaneSymbol(0, opts.symbol);
+  let symbol =
+    overrides.symbol != null && String(overrides.symbol).trim() !== ""
+      ? String(overrides.symbol).trim().toUpperCase()
+      : getPaneSymbol(0, opts.symbol);
   let resolution = "";
   let symbolInfo = null;
   let bars = [];
@@ -160,7 +201,9 @@ export function createBootContext(overrides) {
     el,
     datafeed: null,
     settingsStore,
-    loader: createAppLoader(document.querySelector(".tv-stage")),
+    loader: overrides.skipAppLoader
+      ? createNoopLoader()
+      : createAppLoader(queryChartShell(el, ".tv-stage")),
     chartOverlayLoader: createChartOverlayLoader(),
     symbol,
     resolution,
@@ -177,16 +220,17 @@ export function createBootContext(overrides) {
       barsLoading = v;
     },
     timeAdapter,
-    watermarkText: document.getElementById("watermark"),
+    watermarkText: getChartShellById(el, "watermark"),
     chartWrap: el.closest(".tv-chart-wrap") ?? el,
-    stageEl: document.querySelector(".tv-stage"),
-    chromeEl: document.querySelector(".tv-toolbar"),
-    drawToolbar: document.getElementById("drawing-toolbar"),
-    workspaceEl: document.querySelector(".tv-workspace"),
-    statusEl: document.getElementById("ohlc"),
-    symbolPicker: document.getElementById("symbol-picker"),
-    tfPickerEl: document.getElementById("timeframe-picker"),
-    bottomToolbar: document.getElementById("chart-bottom-toolbar"),
+    stageEl: queryChartShell(el, ".tv-stage"),
+    chromeEl: queryChartShell(el, ".tv-toolbar"),
+    shellRoot: chartShellRoot(el),
+    drawToolbar: getChartShellById(el, "drawing-toolbar"),
+    workspaceEl: queryChartShell(el, ".tv-workspace"),
+    statusEl: getChartShellById(el, "ohlc"),
+    symbolPicker: getChartShellById(el, "symbol-picker"),
+    tfPickerEl: getChartShellById(el, "timeframe-picker"),
+    bottomToolbar: getChartShellById(el, "chart-bottom-toolbar"),
     tzClock: null,
     layoutManager: null,
     headerToolbarUi: null,

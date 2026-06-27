@@ -22,9 +22,11 @@ import { replayDebug, replayDebugState } from "./debug.js";
  * @param {object} opts
  * @param {HTMLElement} opts.appEl
  * @param {HTMLElement} opts.toggleBtn
+ * @param {boolean} [opts.hostControlled]
+ * @param {boolean} [opts.lockActive]
  */
 export function mountReplayMode(opts) {
-  const { appEl, toggleBtn } = opts;
+  const { appEl, toggleBtn, hostControlled = false, lockActive = false } = opts;
 
   /** @type {ReplayState} */
   let state = {
@@ -56,6 +58,7 @@ export function mountReplayMode(opts) {
   }
 
   function setActive(next) {
+    if (lockActive && !next && state.active) return;
     if (state.active === next) return;
     if (!next) {
       state = {
@@ -93,23 +96,29 @@ export function mountReplayMode(opts) {
   }
 
   function toggle() {
+    if (lockActive && state.active) return;
     setActive(!state.active);
   }
 
   toggleBtn.addEventListener("click", toggle);
 
-  document.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape" && state.active) {
-      ev.preventDefault();
-      setActive(false);
-    }
-  });
+  if (!lockActive) {
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && state.active) {
+        ev.preventDefault();
+        setActive(false);
+      }
+    });
+  }
 
   return {
     getState: () => ({ ...state }),
     isActive: () => state.active,
     enter: () => setActive(true),
-    exit: () => setActive(false),
+    exit: () => {
+      if (lockActive && state.active) return;
+      setActive(false);
+    },
     toggle,
     subscribe: (fn) => {
       listeners.add(fn);
@@ -167,7 +176,8 @@ export function mountReplayMode(opts) {
       });
     },
     play: () => {
-      if (!state.active || state.selectedBarTime == null) return;
+      if (!state.active) return;
+      if (!hostControlled && state.selectedBarTime == null) return;
       replayDebug("play");
       patch({ playing: true });
     },

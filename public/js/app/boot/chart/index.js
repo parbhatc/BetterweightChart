@@ -146,7 +146,10 @@ export async function bootChart(overrides = {}) {
   if (ctx.opts.chrome && ctx.chromeEl) {
     const toolbarLeft = ctx.chromeEl.querySelector(".tv-toolbar__left");
     if (toolbarLeft) {
-      ctx.chartToolbarTools = mountChartToolbarTools(toolbarLeft, { replay: replayEnabled });
+      ctx.chartToolbarTools = mountChartToolbarTools(toolbarLeft, {
+        replay: replayEnabled,
+        replayHideToggle: Boolean(ctx.opts.replayHideToggle ?? ctx.opts.replayPersistent),
+      });
     }
   }
   if (replayEnabled) attachReplayBoot(ctx);
@@ -212,6 +215,8 @@ export async function bootChart(overrides = {}) {
       lastBar: last,
       countBack: ctx.opts.countBack,
       getReplayState: () => ctx.replay?.getState?.(),
+      replay: ctx.replay,
+      replay: ctx.replay,
       replayEngine: ctx.replayEngine,
       resolutions: ctx.resolutions,
       activePriceScaleId: ctx.activePriceScaleId,

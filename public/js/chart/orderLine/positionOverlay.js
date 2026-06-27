@@ -19,6 +19,15 @@
 
 import { plotPaneWidth, resolveOrderLinePillOffset, resolveBracketPillOffset } from "./rowLayout.js";
 
+/** @param {string} key @param {number} [n] */
+function aurenPosPerfCount(key, n = 1) {
+  try {
+    globalThis.__AUREN_POS_PERF__?.count?.(key, n);
+  } catch {
+    //
+  }
+}
+
 const DEFAULT_PILL_OFFSET = 10;
 const DEFAULT_BRACKET_PILL_OFFSET = 96;
 const BRACKET_LINE_LENGTH = 21;
@@ -245,6 +254,7 @@ export function createPositionOverlay(widget) {
   }
 
   function syncLayoutOffsets() {
+    if (!position?.line && !pending.length) return;
     const plotW = currentPlotWidth();
     const nextPos = resolveOrderLinePillOffset(plotW, DEFAULT_PILL_OFFSET);
     const nextBracket = resolveBracketPillOffset(plotW, DEFAULT_BRACKET_PILL_OFFSET);
@@ -258,12 +268,12 @@ export function createPositionOverlay(widget) {
       if (position?.stopLoss?.line) position.stopLoss.line.setPillOffset(bracketPillOffset);
       if (position?.takeProfit?.line) position.takeProfit.line.setPillOffset(bracketPillOffset);
     }
-    widget.orderLines?.requestRefresh?.();
   }
 
   function ensureLiveHook() {
     if (offLiveBar || typeof widget.onLiveBar !== "function") return;
     offLiveBar = widget.onLiveBar((bar) => {
+      aurenPosPerfCount("bwc.overlay.onLiveBar");
       latestBar = bar;
       onBarTick(bar);
     });
@@ -615,7 +625,20 @@ export function createPositionOverlay(widget) {
     const sideColor = positionSideColor(position.qty);
     const textChanged = text !== position.lastText;
     const profitChanged = profit !== position.lastProfit;
-    if (!textChanged && !profitChanged) return;
+    emitOverlayUpl(pnl);
+    if (!textChanged && !profitChanged) {
+      aurenPosPerfCount("bwc.overlay.pnlSkip");
+      return;
+    }
+
+    const now = performance.now();
+    if (now - lastPnlPaintAt < PNL_PAINT_MIN_MS) {
+      aurenPosPerfCount("bwc.overlay.pnlThrottle");
+      return;
+    }
+    lastPnlPaintAt = now;
+
+    aurenPosPerfCount("bwc.overlay.pnlApply");
 
     position.lastText = text;
     position.lastProfit = profit;
@@ -631,6 +654,8 @@ export function createPositionOverlay(widget) {
     try {
       if (typeof position.line.applyAppearance === "function") {
         position.line.applyAppearance(patch);
+        position.line.setLineColor(sideColor);
+        return;
       }
       position.line.setText(text);
       position.line.setQuantity(String(Math.abs(position.qty)));
@@ -643,6 +668,30 @@ export function createPositionOverlay(widget) {
     } catch {
       closePosition();
     }
+  }
+
+  /** @type {number | null} */
+  let pnlRefreshRaf = null;
+  /** @type {number | null} */
+  let pendingPnlMark = null;
+  let lastPnlPaintAt = 0;
+  const PNL_PAINT_MIN_MS = 120;
+
+  function emitOverlayUpl(pnl) {
+    if (typeof widget.emitPositionUpl === "function") {
+      widget.emitPositionUpl(pnl);
+    }
+  }
+
+  function scheduleRefreshPositionPnl(mark) {
+    pendingPnlMark = mark;
+    if (pnlRefreshRaf != null) return;
+    pnlRefreshRaf = requestAnimationFrame(() => {
+      pnlRefreshRaf = null;
+      const m = pendingPnlMark;
+      pendingPnlMark = null;
+      if (m != null) refreshPositionPnl(m);
+    });
   }
 
   /**
@@ -668,7 +717,7 @@ export function createPositionOverlay(widget) {
       void openPositionAt(row.price, row.side === "buy" ? row.qty : -row.qty);
     }
 
-    refreshPositionPnl(mark);
+    scheduleRefreshPositionPnl(mark);
   }
 
   /**
@@ -863,6 +912,7 @@ export function createPositionOverlay(widget) {
     },
     /** Recompute pill offsets after viewport / chart resize (mobile). */
     refreshLayout() {
+      aurenPosPerfCount("bwc.overlay.refreshLayout");
       syncLayoutOffsets();
       const mark = markPrice();
       if (position?.line && mark != null) refreshPositionPnl(mark);

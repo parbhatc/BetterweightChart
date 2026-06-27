@@ -15,6 +15,8 @@ import { getIndicatorClass } from "../../../indicators/catalog.js";
 export function attachBarLoader(ctx) {
   /** @param {object} pane */
   function replayLoadContextForPane(pane) {
+    if (ctx.opts?.replayHostControlled) return null;
+
     const sym = pane?.symbol ?? ctx.symbol ?? "";
     const res = pane?.resolution ?? ctx.resolution ?? "";
 

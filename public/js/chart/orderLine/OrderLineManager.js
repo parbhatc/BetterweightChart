@@ -19,6 +19,15 @@ const CLICK_DRAG_THRESHOLD_SQ = 36;
 
 let nextId = 1;
 
+/** @param {string} key @param {number} [n] */
+function aurenPosPerfCount(key, n = 1) {
+  try {
+    globalThis.__AUREN_POS_PERF__?.count?.(key, n);
+  } catch {
+    //
+  }
+}
+
 /**
  * Manages TradingView-style order lines on the active chart pane.
  * Rendering + pills via native series.createOrderLine(); pointer handlers for drag/cancel.
@@ -156,12 +165,15 @@ export class OrderLineManager {
   }
 
   requestRefresh() {
+    if (!this._adapters.size) return;
+    aurenPosPerfCount("bwc.orderLines.requestRefresh");
     if (this._getIsPanning()) {
       return;
     }
     if (this._refreshRaf) return;
     this._refreshRaf = requestAnimationFrame(() => {
       this._refreshRaf = 0;
+      aurenPosPerfCount("bwc.orderLines.syncRaf");
       if (this._getIsPanning()) return;
       this._priceLineSync.sync(this._activeStates(), this._adapters);
     });

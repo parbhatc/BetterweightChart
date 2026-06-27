@@ -15,6 +15,8 @@ import {
   showChartPendingOverlay,
   hideChartPendingOverlay,
 } from "../../ui/loader/chartPendingOverlay.js";
+import { createReplayControlApi } from "../../replay/controlApi.js";
+import { createToolbarApi } from "../../ui/header/toolbarHost.js";
 import { clearResolutionCache } from "../bar/resolutionCache.js";
 import {
   finishSeriesReload,
@@ -63,6 +65,7 @@ export function createChartWidgetApi(ctx) {
     countBack,
     getReplayState,
     replayEngine,
+    replay: ctxReplay,
     resolutions,
     activePriceScaleId,
     chartOverlayLoader,
@@ -95,17 +98,23 @@ export function createChartWidgetApi(ctx) {
     symbolInfo: getSymbolInfo,
     getIsPanning: () => Boolean(ctx.ui?.chartPanning),
   });
+  const toolbar = createToolbarApi(ctx);
   const executionShapes = createExecutionShapeManager(getActivePane);
   const shortcutRegistry = createWidgetShortcutRegistry(getActivePane);
   /** @type {ReturnType<typeof createTradingViewChartApi> | null} */
   let tvChartApi = null;
   /** @type {Array<() => void>} */
   const readyCallbacks = [];
+  /** @type {Set<(pnl: number) => void>} */
+  const positionUplListeners = new Set();
   let chartReady = false;
 
   const widget = {
     /** Order-line manager (position / bracket overlays). */
     orderLines,
+
+    /** Host toolbar slots (mount custom header controls). */
+    toolbar,
 
     /** True while the user is dragging the time scale (pan). */
     isChartPanning() {
@@ -126,6 +135,29 @@ export function createChartWidgetApi(ctx) {
       }
       listeners.add(cb);
       return () => listeners.delete(cb);
+    },
+
+    /**
+     * Position overlay UPL (single source — avoids duplicate onLiveBar subscribers).
+     * @param {(pnl: number) => void} cb
+     * @returns {() => void} unsubscribe
+     */
+    onPositionUpl(cb) {
+      if (typeof cb !== "function") return () => {};
+      positionUplListeners.add(cb);
+      return () => positionUplListeners.delete(cb);
+    },
+
+    /** @param {number} pnl */
+    emitPositionUpl(pnl) {
+      if (!Number.isFinite(pnl)) return;
+      for (const cb of positionUplListeners) {
+        try {
+          cb(pnl);
+        } catch {
+          //
+        }
+      }
     },
 
     /** Raw lightweight-charts IChartApi instance. */
@@ -470,9 +502,13 @@ export function createChartWidgetApi(ctx) {
       );
     },
 
+    /** Bar replay controls for host UI (see replayToolbar: "external" boot option). */
+    replay: createReplayControlApi({ replay: ctxReplay, replayEngine }),
+
     /** Tear down host-global side effects (touch scroll lock, clocks). */
     destroy() {
       widget.positionOverlay?.destroy?.();
+      toolbar.destroy?.();
       releaseTouchScrollLock?.();
       ctx.tzClock?.destroy?.();
       if (typeof window !== "undefined" && window.__BWC_WIDGET__ === widget) {

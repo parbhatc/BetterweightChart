@@ -53,5 +53,7 @@ export {
   resolveDatafeed,
 } from "../../datafeed/index.js";
 export { createChartWidgetApi } from "../../app/boot/widgetApi.js";
+export { createReplayControlApi } from "../../replay/controlApi.js";
+export { createToolbarApi } from "../../ui/header/toolbarHost.js";
 export { bootChart } from "../../app/boot/chart.js";
 export { createPositionOverlay } from "../../chart/orderLine/positionOverlay.js";

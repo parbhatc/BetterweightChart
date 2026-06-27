@@ -21,10 +21,10 @@ import { replayDebug } from "../../../replay/debug.js";
  */
 
 export function attachReplayBoot(ctx) {
+  if (!ctx.opts.chrome) return;
 
-  if (!ctx.opts.chrome || !ctx.chartToolbarTools?.replayBtn) return;
-
-
+  const replayBtn = ctx.chartToolbarTools?.replayBtn;
+  if (!replayBtn) return;
 
   const appEl = document.querySelector(".tv-app");
 
@@ -46,11 +46,10 @@ export function attachReplayBoot(ctx) {
 
 
   const replay = mountReplayMode({
-
     appEl,
-
-    toggleBtn: ctx.chartToolbarTools.replayBtn,
-
+    toggleBtn: replayBtn,
+    hostControlled: Boolean(ctx.opts.replayHostControlled),
+    lockActive: Boolean(ctx.opts.replayHideToggle || ctx.opts.replayPersistent),
   });
 
 
@@ -61,6 +60,9 @@ export function attachReplayBoot(ctx) {
     replay,
     ctx,
     footerEl,
+    hideSelectModeMenu: Boolean(ctx.opts.replayHideSelectModeMenu),
+    hideJumpEnd: Boolean(ctx.opts.replayHideJumpEnd ?? ctx.opts.replayHostControlled),
+    hideExit: Boolean(ctx.opts.replayHideExit ?? ctx.opts.replayPersistent),
     getChartResolution: () => {
       const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
       return pane?.resolution ?? ctx.resolution ?? "1";
@@ -104,6 +106,10 @@ export function attachReplayBoot(ctx) {
  */
 
 export async function restoreReplayAfterLoad(ctx) {
+  if (ctx.opts.replayHostControlled) {
+    delete ctx.replayPendingRestore;
+    return;
+  }
   if (!ctx.replayEngine?.restoreSession) {
     delete ctx.replayPendingRestore;
     return;
