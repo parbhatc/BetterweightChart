@@ -28,10 +28,10 @@ export function createOrderLineAdapter(manager, id) {
     bodyBorderColor: "transparent",
     quantityBackgroundColor: "#089981",
     quantityTextColor: "#ffffff",
-    quantityBorderColor: "transparent",
-    cancelButtonBorderColor: "rgba(0, 0, 0, 0.1)",
+    quantityBorderColor: "#000000",
+    cancelButtonBorderColor: "#000000",
     cancelButtonBackgroundColor: "rgba(255, 255, 255, 0.96)",
-    cancelButtonIconColor: "rgba(0, 0, 0, 0.55)",
+    cancelButtonIconColor: "#000000",
     cancelTooltip: "",
     bodyTooltip: "",
     quantityTooltip: "",
@@ -39,7 +39,7 @@ export function createOrderLineAdapter(manager, id) {
     target: null,
     isMoving: false,
     pillSide: "right",
-    pillOffset: 10,
+    pillOffset: 20,
     lineFullWidth: false,
     bodyFontWeight: 600,
     quantityFontWeight: 600,
@@ -299,7 +299,7 @@ export function createOrderLineAdapter(manager, id) {
 
     /**
      * Single native patch for live PnL ticks (text + profit colors).
-     * @param {{ text?: string, quantityText?: string, profit?: boolean, fill?: string, quantityFill?: string, textColor?: string }} appearance
+     * @param {{ text?: string, profit?: boolean, fill?: string, textColor?: string }} appearance
      */
     applyAppearance(appearance) {
       const patch = { pills: {} };
@@ -311,34 +311,19 @@ export function createOrderLineAdapter(manager, id) {
         changed = true;
       }
 
-      if (appearance.quantityText != null) {
-        state.quantity = String(appearance.quantityText);
-        patch.pills.quantity = {
-          ...(patch.pills.quantity || {}),
-          text: state.quantity,
-          visible: Boolean(state.quantity),
-        };
-        changed = true;
-      }
-
       if (appearance.fill != null) {
         const fill = String(appearance.fill);
         state.lineColor = fill;
         state.bodyBackgroundColor = fill;
+        state.quantityBackgroundColor = fill;
         patch.color = fill;
         patch.pills.body = {
           ...(patch.pills.body || {}),
           backgroundColor: fill,
         };
-        changed = true;
-      }
-
-      if (appearance.quantityFill != null) {
-        const qFill = String(appearance.quantityFill);
-        state.quantityBackgroundColor = qFill;
         patch.pills.quantity = {
           ...(patch.pills.quantity || {}),
-          backgroundColor: qFill,
+          backgroundColor: fill,
         };
         changed = true;
       }

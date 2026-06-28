@@ -18,6 +18,12 @@
  */
 
 import { plotPaneWidth, resolveOrderLinePillOffset, resolveBracketPillOffset } from "./rowLayout.js";
+import {
+  getBracketTextColor,
+  getOrderLineTheme,
+  getPositionTextColor,
+  setOrderLineTheme,
+} from "./theme.js";
 
 /** @param {string} key @param {number} [n] */
 function aurenPosPerfCount(key, n = 1) {
@@ -31,8 +37,6 @@ function aurenPosPerfCount(key, n = 1) {
 const DEFAULT_PILL_OFFSET = 10;
 const DEFAULT_BRACKET_PILL_OFFSET = 96;
 const BRACKET_LINE_LENGTH = 21;
-const POSITION_TEXT_COLOR = "#ffffff";
-const BRACKET_TEXT_COLOR = "#ffffff";
 const BUY_COLOR = "#089981";
 const SELL_COLOR = "#f23645";
 const DEFAULT_QTY = 1;
@@ -56,7 +60,7 @@ function formatPnl(pnl, signMode = "both") {
 
 /** @param {boolean} profit */
 function lineColors(profit) {
-  return { fill: profit ? BUY_COLOR : SELL_COLOR, text: POSITION_TEXT_COLOR };
+  return { fill: profit ? BUY_COLOR : SELL_COLOR, text: getPositionTextColor() };
 }
 
 /** @param {object | null | undefined} symbolInfo */
@@ -351,8 +355,8 @@ export function createPositionOverlay(widget) {
       .setLineColor(color)
       .setBodyBackgroundColor(color)
       .setQuantityBackgroundColor(color)
-      .setBodyTextColor(POSITION_TEXT_COLOR)
-      .setQuantityTextColor(POSITION_TEXT_COLOR)
+      .setBodyTextColor(getPositionTextColor())
+      .setQuantityTextColor(getPositionTextColor())
       .setLineStyle(2)
       .setLineLength(8)
       .setPillSide("right")
@@ -394,7 +398,7 @@ export function createPositionOverlay(widget) {
         text,
         profit,
         fill: colors.fill,
-        textColor: BRACKET_TEXT_COLOR,
+        textColor: getBracketTextColor(),
       });
     }
     line.setText(text);
@@ -402,8 +406,8 @@ export function createPositionOverlay(widget) {
       .setLineColor(colors.fill)
       .setBodyBackgroundColor(colors.fill)
       .setQuantityBackgroundColor(colors.fill)
-      .setBodyTextColor(BRACKET_TEXT_COLOR)
-      .setQuantityTextColor(BRACKET_TEXT_COLOR);
+      .setBodyTextColor(getBracketTextColor())
+      .setQuantityTextColor(getBracketTextColor());
   }
 
   /**
@@ -429,7 +433,7 @@ export function createPositionOverlay(widget) {
         text,
         profit,
         fill: colors.fill,
-        textColor: BRACKET_TEXT_COLOR,
+        textColor: getBracketTextColor(),
       });
     }
     bracket.line.setText(text);
@@ -437,8 +441,8 @@ export function createPositionOverlay(widget) {
       .setLineColor(colors.fill)
       .setBodyBackgroundColor(colors.fill)
       .setQuantityBackgroundColor(colors.fill)
-      .setBodyTextColor(BRACKET_TEXT_COLOR)
-      .setQuantityTextColor(BRACKET_TEXT_COLOR);
+      .setBodyTextColor(getBracketTextColor())
+      .setQuantityTextColor(getBracketTextColor());
   }
 
   /**
@@ -452,8 +456,8 @@ export function createPositionOverlay(widget) {
       .setLineLength(BRACKET_LINE_LENGTH)
       .setPillSide("right")
       .setPillOffset(bracketPillOffset)
-      .setBodyTextColor(BRACKET_TEXT_COLOR)
-      .setQuantityTextColor(BRACKET_TEXT_COLOR);
+      .setBodyTextColor(getBracketTextColor())
+      .setQuantityTextColor(getBracketTextColor());
     if (typeof line.setQuantityBorderColor === "function") {
       line.setQuantityBorderColor("transparent");
     }
@@ -553,8 +557,8 @@ export function createPositionOverlay(widget) {
       position.lastText = "";
       position.lastProfit = true;
       line
-        .setBodyTextColor(POSITION_TEXT_COLOR)
-        .setQuantityTextColor(POSITION_TEXT_COLOR);
+        .setBodyTextColor(getPositionTextColor())
+        .setQuantityTextColor(getPositionTextColor());
       if (pending) void upsertBracketLine(pending.type, pending.price);
       const mark = markPrice();
       if (mark != null) refreshPositionPnl(mark);
@@ -574,8 +578,8 @@ export function createPositionOverlay(widget) {
       .setLineColor(color)
       .setBodyBackgroundColor(color)
       .setQuantityBackgroundColor(color)
-      .setBodyTextColor(POSITION_TEXT_COLOR)
-      .setQuantityTextColor(POSITION_TEXT_COLOR)
+      .setBodyTextColor(getPositionTextColor())
+      .setQuantityTextColor(getPositionTextColor())
       .setPillSide("right")
       .setPillOffset(pillOffset)
       .setCancelTooltip("Cancel order");
@@ -648,7 +652,7 @@ export function createPositionOverlay(widget) {
       quantityText: String(Math.abs(position.qty)),
       fill: colors.fill,
       quantityFill: sideColor,
-      textColor: POSITION_TEXT_COLOR,
+      textColor: getPositionTextColor(),
     };
 
     try {
@@ -662,9 +666,9 @@ export function createPositionOverlay(widget) {
       position.line
         .setLineColor(sideColor)
         .setBodyBackgroundColor(colors.fill)
-        .setBodyTextColor(POSITION_TEXT_COLOR)
+        .setBodyTextColor(getPositionTextColor())
         .setQuantityBackgroundColor(sideColor)
-        .setQuantityTextColor(POSITION_TEXT_COLOR);
+        .setQuantityTextColor(getPositionTextColor());
     } catch {
       closePosition();
     }
@@ -766,7 +770,7 @@ export function createPositionOverlay(widget) {
         quantityText: String(Math.abs(qty)),
         fill: colors.fill,
         quantityFill: sideColor,
-        textColor: POSITION_TEXT_COLOR,
+        textColor: getPositionTextColor(),
       });
     }
     line.setText(text);
@@ -774,9 +778,9 @@ export function createPositionOverlay(widget) {
     line
       .setLineColor(sideColor)
       .setBodyBackgroundColor(colors.fill)
-      .setBodyTextColor(POSITION_TEXT_COLOR)
+      .setBodyTextColor(getPositionTextColor())
       .setQuantityBackgroundColor(sideColor)
-      .setQuantityTextColor(POSITION_TEXT_COLOR);
+      .setQuantityTextColor(getPositionTextColor());
 
     ensureLiveHook();
     if (mark != null && mark !== entry) refreshPositionPnl(mark);
@@ -964,6 +968,23 @@ export function createPositionOverlay(widget) {
      */
     onOpen(cb) {
       return subscribe(openListeners, cb);
+    },
+    /**
+     * Update position / bracket pill text colors at runtime.
+     * @param {{ positionTextColor?: string, bracketTextColor?: string, defaultTextColor?: string, axisLabelTextColor?: string }} partial
+     */
+    setTheme(partial) {
+      setOrderLineTheme(partial);
+      if (position?.line) stylePositionLine(position.line, position.qty);
+      if (position?.stopLoss) applyBracketLineVisual(position.stopLoss, position.stopLoss.price);
+      if (position?.takeProfit) applyBracketLineVisual(position.takeProfit, position.takeProfit.price);
+      for (const row of pending) stylePendingLine(row.line, row.side);
+      const mark = markPrice();
+      if (position?.line && mark != null) refreshPositionPnl(mark);
+      return getOrderLineTheme();
+    },
+    getTheme() {
+      return getOrderLineTheme();
     },
     destroy() {
       closePosition({ emitClose: false });

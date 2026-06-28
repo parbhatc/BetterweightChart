@@ -85,6 +85,10 @@ export function attachReplayBoot(ctx) {
   replay.hasForwardBars = () => ctx.replayEngine.hasForwardBars();
   replay.getCursorBarIndex = () => ctx.replayEngine.getCursorBarIndex();
 
+  if (ctx.opts.replayHostControlled && ctx.opts.replayAutoEnter !== false) {
+    replay.enter();
+  }
+
   const prevAfterTimeframeChange = ctx.afterTimeframeChange;
   ctx.afterTimeframeChange = async () => {
     await ctx.replayEngine?.onChartResolutionChange?.();

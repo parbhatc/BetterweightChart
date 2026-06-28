@@ -729,6 +729,7 @@ export function createBarLoader(opts) {
           scrollToLatest: false,
           deferChartRefresh: Boolean(opts.deferChartRefresh),
           skipPriceScaleMargins: Boolean(opts.skipPriceScaleMargins),
+          avoidPreserveViewport: Boolean(opts.avoidPreserveViewport),
         };
         const restored = await tryReplayCacheLoad(loadOpts);
         if (restored) return restored;
@@ -776,6 +777,7 @@ export function createBarLoader(opts) {
         scrollToLatest: !opts.force && wasFirstRequest,
         deferChartRefresh: Boolean(opts.deferChartRefresh),
         skipPriceScaleMargins: Boolean(opts.skipPriceScaleMargins),
+        avoidPreserveViewport: Boolean(opts.avoidPreserveViewport),
       };
       const result = await fetchBarsShared(pane, pane.symbolInfo, periodParams);
       pane._firstDataRequest = false;

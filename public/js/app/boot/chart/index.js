@@ -40,6 +40,7 @@ import {
   setBootFeatureFlags,
 } from "../../../chart/features.js";
 import { mergeWithCustomResolutions, CHART_RESOLUTIONS } from "../../../chart/resolutions.js";
+import { setOrderLineTheme } from "../../../chart/orderLine/theme.js";
 
 export { readPageOptions };
 
@@ -56,6 +57,9 @@ export async function bootChart(overrides = {}) {
   const debugOn = configureChartDebug();
 
   const ctx = createBootContext(overrides);
+  if (overrides.orderLineTheme) {
+    setOrderLineTheme(overrides.orderLineTheme);
+  }
   const featureFlags = createFeatureFlags({
     disabled_features: overrides.disabled_features ?? ctx.opts.disabled_features,
     enabled_features: overrides.enabled_features ?? ctx.opts.enabled_features,

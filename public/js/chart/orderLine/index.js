@@ -12,3 +12,8 @@ export { createOrderLineManager, OrderLineManager } from "./OrderLineManager.js"
 export { hasShellBorder } from "./pillLayout.js";
 export { createTradingViewChartApi } from "./tvChartApi.js";
 export { createPositionOverlay } from "./positionOverlay.js";
+export {
+  getOrderLineTheme,
+  setOrderLineTheme,
+  resetOrderLineTheme,
+} from "./theme.js";

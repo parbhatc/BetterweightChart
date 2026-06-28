@@ -8,6 +8,8 @@ import {
   createOrderLineManager,
   createTradingViewChartApi,
   createPositionOverlay,
+  getOrderLineTheme,
+  setOrderLineTheme,
 } from "../../chart/orderLine/index.js";
 import { createExecutionShapeManager } from "../../chart/executionShape/index.js";
 import { createWidgetShortcutRegistry } from "../../chart/widgetShortcuts.js";
@@ -287,13 +289,30 @@ export function createChartWidgetApi(ctx) {
         const loadAll = sync?.symbol || sync?.interval || panes.length > 1;
         const targets = loadAll ? panes : [getActivePane()].filter(Boolean);
         chartDebug("data", "widget.reset", { mode: "data", panes: targets.length });
-        await loadBarsForPanes(targets, { force: true });
-        if (opts.viewport !== false) {
+        const resetViewport = opts.viewport !== false;
+        await loadBarsForPanes(targets, {
+          force: true,
+          // Session/date reloads must not restore the previous visible time range after setData.
+          avoidPreserveViewport: resetViewport,
+        });
+        if (resetViewport) {
           const resetPrice = opts.price !== false;
           const resetTime = opts.time !== false;
           if (resetPrice) resetChartView();
           else if (resetTime) resetTimeScale();
           else scrollToLatest(getBarsSnapshot().length);
+        }
+        try {
+          const panes = getAllChartPanes();
+          await Promise.all(
+            panes.map((pane) =>
+              ensureIndicatorChartHistory?.(pane) ?? Promise.resolve(),
+            ),
+          );
+          refreshIndicatorsImmediate?.();
+          refreshIndicatorLegends?.();
+        } catch (err) {
+          chartDebug("data", "widget.reset indicators refresh failed", { err: String(err) });
         }
         return;
       }
@@ -504,6 +523,21 @@ export function createChartWidgetApi(ctx) {
 
     /** Bar replay controls for host UI (see replayToolbar: "external" boot option). */
     replay: createReplayControlApi({ replay: ctxReplay, replayEngine }),
+
+    /**
+     * Position / order-line pill text colors (see chart/orderLine/theme.js).
+     * @param {{ positionTextColor?: string, bracketTextColor?: string, defaultTextColor?: string, axisLabelTextColor?: string }} theme
+     */
+    setOrderLineTheme(theme) {
+      setOrderLineTheme(theme);
+      widget.positionOverlay?.setTheme?.(theme);
+      widget.orderLines?.requestRefresh?.();
+      return getOrderLineTheme();
+    },
+
+    getOrderLineTheme() {
+      return getOrderLineTheme();
+    },
 
     /** Tear down host-global side effects (touch scroll lock, clocks). */
     destroy() {
