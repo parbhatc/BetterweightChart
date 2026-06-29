@@ -75,6 +75,8 @@ export function applySettingsToChart(opts) {
   const timeZone = resolveTimezone(sym.timezone, paneSymbolInfo);
   const timezoneProvider = createTimezoneProvider(timeZone);
   pane._timezoneProvider = timezoneProvider;
+  const barSec = pane._chartView?.barSec ?? resolutionSec(pane.resolution) ?? 60;
+  const showSeconds = barSec < 60;
 
   targetChart.applyOptions({
     layout: {
@@ -111,6 +113,7 @@ export function applySettingsToChart(opts) {
     timeScale: {
       borderColor: cv.scalesLineColor ?? themeColors.border,
       rightOffset: Number.isFinite(marginRight) ? marginRight : FUTURE_RIGHT_OFFSET,
+      secondsVisible: showSeconds,
       tickMarkFormatter: (time, tickMarkType) => {
         const displayTime = toDisplayTime(time, timezoneProvider);
         switch (tickMarkType) {
@@ -121,7 +124,7 @@ export function applySettingsToChart(opts) {
           case TickMarkType.DayOfMonth:
             return formatAxisDateTick(displayTime, sc, CHART_TIME_LABEL_TZ);
           case TickMarkType.Time:
-            return formatAxisTimeTick(toDate(displayTime), CHART_TIME_LABEL_TZ, sc);
+            return formatAxisTimeTick(toDate(displayTime), CHART_TIME_LABEL_TZ, sc, showSeconds);
           default:
             return "";
         }
@@ -132,10 +135,10 @@ export function applySettingsToChart(opts) {
       locale: navigator.language,
       priceFormatter: (price) => formatDisplayPrice(price, precisionFromSettings(s, paneSymbolInfo)),
       timeFormatter: (t) => {
-        const barSec = pane._chartView?.barSec ?? resolutionSec(pane.resolution) ?? 60;
         const displayTime = toDisplayTime(t, timezoneProvider);
         return formatChartTimeLabel(displayTime, sc, CHART_TIME_LABEL_TZ, {
           includeTime: barSec < 86400,
+          withSeconds: showSeconds,
         });
       },
     },

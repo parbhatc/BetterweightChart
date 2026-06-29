@@ -210,7 +210,7 @@ export function formatTimePart(d, timeZone, hour12, withSeconds = false) {
  * @param {number | { year: number, month: number, day: number }} t
  * @param {object} scales
  * @param {string} timeZone
- * @param {{ includeTime?: boolean }} [opts]
+ * @param {{ includeTime?: boolean, withSeconds?: boolean }} [opts]
  */
 /** TradingView replay cut label: `Re: Thu 18 Jun '26 03:17 PM` */
 export function formatReplayCutTimeLabel(utcSec, timeZone) {
@@ -239,6 +239,6 @@ export function formatChartTimeLabel(t, scales, timeZone, opts = {}) {
   const datePart = formatDateBody(d, scales.dateFormat, timeZone);
   if (!opts.includeTime) return `${dow}${datePart}`;
   const hour12 = scales.timeHoursFormat !== "24-hours";
-  const timePart = formatTimePart(d, timeZone, hour12);
+  const timePart = formatTimePart(d, timeZone, hour12, Boolean(opts.withSeconds));
   return `${dow}${datePart} ${timePart}`;
 }
