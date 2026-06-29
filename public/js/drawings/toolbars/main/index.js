@@ -99,7 +99,6 @@ export function mountMainToolbar(opts) {
     getFavorites: () => favoriteTools,
     getActiveTool: () => controller.getActiveTool(),
     onSelectTool: (type) => {
-      maybeExpandToolbar();
       controller.armChartPlacementSuppress?.();
       const group = findGroupForTool(type);
       if (group) selectTool(type, group.id);
@@ -388,9 +387,18 @@ export function mountMainToolbar(opts) {
   const stage = toolbarEl.closest(".tv-stage") ?? toolbarEl.closest(".tv-workspace");
   mountMobilePlacementBar(controller, stage);
 
-  window.addEventListener("resize", () => flyout.repositionOpenFlyouts());
+  const onResizeRepositionFlyouts = () => flyout.repositionOpenFlyouts();
+  window.addEventListener("resize", onResizeRepositionFlyouts);
 
-  return { selectCursorTool, selectTool, toolbarCollapse };
+  function destroy() {
+    favoriteToolbar.destroy?.();
+    document.removeEventListener("click", dismissDrawFlyoutsUnlessInside);
+    document.removeEventListener("pointerdown", dismissDrawFlyoutsUnlessInside, true);
+    document.removeEventListener("touchstart", dismissDrawFlyoutsUnlessInside, { capture: true });
+    window.removeEventListener("resize", onResizeRepositionFlyouts);
+  }
+
+  return { selectCursorTool, selectTool, toolbarCollapse, destroy };
 }
 
 export const mountDrawingToolbar = mountMainToolbar;

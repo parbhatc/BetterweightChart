@@ -4,9 +4,11 @@ import { loadFavoriteToolbarPos, saveFavoriteToolbarPos } from "../favorites/sto
 import {
   applyFloatingToolbarPos,
   bindFloatingToolbarViewportGuard,
+  isFloatingToolbarInViewport,
   isFloatingToolbarPosInViewport,
   readFloatingToolbarPos,
 } from "../floating/position.js";
+import { defaultFavoriteToolbarPosition } from "../floating/reposition.js";
 
 const DRAG_HANDLE = `<svg viewBox="0 0 8 12" width="8" height="12" fill="currentColor" aria-hidden="true"><rect width="2" height="2" rx="1"/><rect width="2" height="2" rx="1" y="5"/><rect width="2" height="2" rx="1" y="10"/><rect width="2" height="2" rx="1" x="6"/><rect width="2" height="2" rx="1" x="6" y="5"/><rect width="2" height="2" rx="1" x="6" y="10"/></svg>`;
 
@@ -33,23 +35,22 @@ export function createFavoriteToolbar(opts) {
   const dragHandle = root.querySelector("[data-fav-drag]");
   if (!content || !dragHandle) throw new Error("Favorite toolbar mount failed");
 
-  function defaultPosition() {
-    const toolbar = document.getElementById("drawing-toolbar");
-    const rect = toolbar?.getBoundingClientRect();
-    const left = rect ? rect.right + 8 : 66;
-    const top = rect ? Math.max(8, rect.bottom - 160) : Math.max(8, window.innerHeight - 200);
-    return { left, top };
-  }
-
   function applyPosition(pos) {
     return applyFloatingToolbarPos(root, pos);
   }
 
   function ensurePosition() {
+    if (root.hidden) return;
     const saved = loadFavoriteToolbarPos();
     const size = { width: root.offsetWidth, height: root.offsetHeight };
     const useSaved = saved && isFloatingToolbarPosInViewport(saved, size);
-    const clamped = applyPosition(useSaved ? saved : defaultPosition());
+    applyPosition(useSaved ? saved : defaultFavoriteToolbarPosition());
+    if (!isFloatingToolbarInViewport(root)) {
+      const reset = applyPosition(defaultFavoriteToolbarPosition());
+      saveFavoriteToolbarPos(reset);
+      return;
+    }
+    const clamped = readFloatingToolbarPos(root);
     if (saved && !useSaved) saveFavoriteToolbarPos(clamped);
   }
 
@@ -88,7 +89,10 @@ export function createFavoriteToolbar(opts) {
       render();
       ensurePosition();
       syncActive();
-      requestAnimationFrame(() => clampToViewport(true));
+      requestAnimationFrame(() => {
+        ensurePosition();
+        clampToViewport(true);
+      });
     }
   }
 
@@ -139,9 +143,21 @@ export function createFavoriteToolbar(opts) {
   dragHandle.addEventListener("pointerup", endDrag);
   dragHandle.addEventListener("pointercancel", endDrag);
 
-  bindFloatingToolbarViewportGuard(root, {
+  const unbindViewportGuard = bindFloatingToolbarViewportGuard(root, {
     onGuard: () => clampToViewport(true),
   });
 
-  return { root, render, syncActive, setVisible, ensurePosition };
+  const onReposition = () => {
+    if (root.hidden) return;
+    ensurePosition();
+  };
+  window.addEventListener("bwc:reposition-floating-toolbars", onReposition);
+
+  function destroy() {
+    window.removeEventListener("bwc:reposition-floating-toolbars", onReposition);
+    unbindViewportGuard?.();
+    root.remove();
+  }
+
+  return { root, render, syncActive, setVisible, ensurePosition, destroy };
 }

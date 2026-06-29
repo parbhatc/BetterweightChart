@@ -20,6 +20,7 @@ import {
 import { createReplayControlApi } from "../../replay/controlApi.js";
 import { createToolbarApi } from "../../ui/header/toolbarHost.js";
 import { clearResolutionCache } from "../bar/resolutionCache.js";
+import { repositionVisibleFloatingToolbars } from "../../drawings/toolbars/floating/reposition.js";
 import {
   finishSeriesReload,
   paintPaneAfterTimeframeLoad,
@@ -313,6 +314,10 @@ export function createChartWidgetApi(ctx) {
           refreshIndicatorLegends?.();
         } catch (err) {
           chartDebug("data", "widget.reset indicators refresh failed", { err: String(err) });
+        }
+        repositionVisibleFloatingToolbars();
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("bwc:reposition-floating-toolbars"));
         }
         return;
       }
