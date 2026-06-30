@@ -47,7 +47,13 @@ export function createSecondaryPaneFactory(ctx) {
     ctx.refreshPaneStatusLine(paneState);
     ctx.attachPaneDrawings(paneState);
     wirePaneContextMenus(ctx.buildPaneContextMenuOpts(paneState, wrap));
-    wirePaneActivation(wrap, paneIndex, (index) => ctx.layoutManager?.setActivePane(index));
+    wirePaneActivation(
+      wrap,
+      paneIndex,
+      (index) => ctx.layoutManager?.setActivePane(index),
+      paneChart.chart,
+    );
+
 
     return {
       chart: paneChart.chart,

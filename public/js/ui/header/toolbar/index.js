@@ -262,14 +262,22 @@ export function mountHeaderToolbar(opts) {
       </div>
     `;
 
-    menu.addEventListener("click", (ev) => {
+    const onLayoutPick = (ev) => {
       const layoutItem = ev.target.closest("[data-layout-id]");
-      if (layoutItem instanceof HTMLElement && layoutItem.dataset.layoutId) {
-        layoutManager.setLayout(layoutItem.dataset.layoutId);
-        closeMenu();
-        return;
-      }
-    });
+      if (!(layoutItem instanceof HTMLElement) || !layoutItem.dataset.layoutId) return;
+      layoutManager.setLayout(layoutItem.dataset.layoutId);
+      closeMenu();
+    };
+
+    menu.addEventListener("click", onLayoutPick);
+    menu.addEventListener("pointerup", onLayoutPick);
+    menu.addEventListener(
+      "pointerdown",
+      (ev) => {
+        if (ev.target.closest("[data-layout-id]")) ev.stopPropagation();
+      },
+      true,
+    );
 
     menu.addEventListener("change", (ev) => {
       const input = ev.target;
@@ -386,14 +394,17 @@ export function mountHeaderToolbar(opts) {
     performSave();
   });
 
-  document.addEventListener("mousedown", (ev) => {
+  document.addEventListener("mousedown", onOutsideMenuPointer);
+  document.addEventListener("pointerdown", onOutsideMenuPointer);
+
+  function onOutsideMenuPointer(ev) {
     if (!openMenu) return;
     const t = ev.target;
     if (!(t instanceof Node)) return;
     if (openMenu.contains(t)) return;
     if (screenshotBtn?.contains(t) || layoutBtn?.contains(t) || saveMenuBtn?.contains(t)) return;
     closeMenu();
-  });
+  }
 
   document.addEventListener("keydown", async (ev) => {
     if (ev.target instanceof HTMLInputElement || ev.target instanceof HTMLTextAreaElement) return;

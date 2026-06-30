@@ -972,14 +972,24 @@
 
   .tv-toolbar__icon-btn,
   .tv-header-tools__btn,
+  .tv-header-layouts__btn,
   .tv-tf__btn,
   .tv-symbol__trigger,
   .draw-tools__tool,
   .draw-tools__expand,
   .tv-ind-lib__fav-btn,
   .draw-tools__fav-btn {
-    min-width: var(--control-size-md);
-    min-height: var(--control-size-md);
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+
+  .tv-header-layouts__buttons {
+    gap: var(--space-2);
+  }
+
+  .tv-header-tools__btn,
+  .tv-header-layouts__btn {
+    touch-action: manipulation;
   }
 
   .tv-tf__interval,

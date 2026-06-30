@@ -53,7 +53,7 @@ export function wireLayoutChrome(ctx) {
     },
   });
 
-  wirePaneActivation(ctx.chartWrap, 0, (index) => ctx.layoutManager?.setActivePane(index));
+  wirePaneActivation(ctx.chartWrap, 0, (index) => ctx.layoutManager?.setActivePane(index), ctx.chart);
 
   const toolbarRight = ctx.chromeEl.querySelector(".tv-toolbar__right");
   if (!toolbarRight) return;
