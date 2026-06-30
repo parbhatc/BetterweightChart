@@ -46,7 +46,7 @@
   font-size: var(--text-sm);
   line-height: var(--leading-normal);
   color: var(--tv-text-secondary);
-  max-width: 18rem;
+  max-width: 28rem;
 }
 
 .tv-chart-empty__actions {

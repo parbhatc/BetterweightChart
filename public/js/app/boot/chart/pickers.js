@@ -5,6 +5,7 @@ import { captureVisibleViewport, restoreVisibleViewport } from "../../../chart/p
 import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
+  restoreViewportBarLayoutFromUtc,
   computeViewportBarLayoutLogical,
   computeViewportLogicalFromUtc,
 } from "../../../chart/pane/viewportBarLayout.js";
@@ -14,6 +15,7 @@ import {
   showChartPendingOverlay,
   hideChartPendingOverlay,
 } from "../../../ui/loader/chartPendingOverlay.js";
+import { showChartError, hideChartError } from "../../../ui/chart/emptyState.js";
 
 /** @param {import("./state.js").BootContext} ctx @param {string} sym */
 function notifyHostSymbolChange(ctx, sym) {
@@ -59,9 +61,41 @@ function capturePaneBarLayouts(ctx, panes) {
  */
 function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
   if (!layout || !pane?.bars?.length) return null;
+  const utcLogical = computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
+  if (utcLogical && layout.visibleFromUtc != null && layout.visibleToUtc != null) {
+    return utcLogical;
+  }
   const barLogical = computeViewportBarLayoutLogical(pane, layout);
   if (barLogical) return barLogical;
-  return computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
+  return utcLogical;
+}
+
+/**
+ * Keep viewport tail anchored to the host replay cursor (not HTF right-offset whitespace).
+ * @param {object} pane
+ * @param {{ from: number, to: number }} logicalRange
+ * @param {number} anchorSec
+ */
+function clampLogicalRangeToPlaybackAnchor(pane, logicalRange, anchorSec) {
+  if (!logicalRange || !pane?.bars?.length || !Number.isFinite(anchorSec)) return logicalRange;
+
+  let anchorIdx = pane.bars.length - 1;
+  for (let i = pane.bars.length - 1; i >= 0; i -= 1) {
+    if (pane.bars[i].time <= anchorSec) {
+      anchorIdx = i;
+      break;
+    }
+  }
+
+  const width = logicalRange.to - logicalRange.from;
+  const tail = logicalRange.to - anchorIdx;
+  let to = anchorIdx + Math.max(0, tail);
+  let from = to - width;
+  if (from < 0) {
+    to -= from;
+    from = 0;
+  }
+  return { from, to };
 }
 
 /**
@@ -71,23 +105,56 @@ function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
  * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} savedLayout
  */
 export function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
-  const logicalRange = resolveTimeframeSwitchLogicalRange(pane, savedLayout, ctx);
+  const useUtc =
+    savedLayout?.visibleFromUtc != null && savedLayout?.visibleToUtc != null;
+  let logicalRange = resolveTimeframeSwitchLogicalRange(pane, savedLayout, ctx);
+  if (logicalRange && ctx.opts?.replayHostControlled) {
+    const anchorSec = ctx.opts?.getPlaybackAnchorSec?.(pane.resolution);
+    if (anchorSec != null && Number.isFinite(anchorSec)) {
+      logicalRange = clampLogicalRangeToPlaybackAnchor(pane, logicalRange, anchorSec);
+      let anchorIdx = pane.bars.length - 1;
+      for (let i = pane.bars.length - 1; i >= 0; i -= 1) {
+        if (pane.bars[i].time <= anchorSec) {
+          anchorIdx = i;
+          break;
+        }
+      }
+      pane.replayCursorEndIndex = anchorIdx;
+    }
+  }
   ctx.refreshPaneCandleData?.(pane, {
     logicalRange: logicalRange ?? undefined,
     avoidPreserveViewport: !logicalRange,
     deferSessionBg: true,
   });
   ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
-  if (!savedLayout) return;
-  restoreViewportBarLayout(
-    pane,
-    savedLayout,
-    ctx.settingsStore,
-    ctx.resolutions,
-    "timeframe",
-    ctx.activePriceScaleId,
-    { skipLogical: Boolean(logicalRange) },
-  );
+  if (savedLayout) {
+    const restoreOpts = { skipLogical: Boolean(logicalRange) };
+    if (useUtc) {
+      restoreViewportBarLayoutFromUtc(
+        pane,
+        savedLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "timeframe",
+        ctx.activePriceScaleId,
+        restoreOpts,
+      );
+    } else {
+      restoreViewportBarLayout(
+        pane,
+        savedLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "timeframe",
+        ctx.activePriceScaleId,
+        restoreOpts,
+      );
+    }
+  }
+  if (pane.chart && pane.series) {
+    ctx.applySettingsToChartLocal?.(pane.chart, pane.series, pane);
+  }
 }
 
 /** @param {object | object[]} panes */
@@ -189,6 +256,9 @@ export async function finishSeriesReload(ctx, panes) {
   ctx.refreshIndicatorsImmediate?.();
   for (const pane of panes) {
     pane.priceLineLabel?.requestRefresh();
+    if (pane.chart && pane.series) {
+      ctx.applySettingsToChartLocal?.(pane.chart, pane.series, pane);
+    }
   }
   ctx.refreshIndicatorLegends?.();
 }
@@ -310,6 +380,38 @@ export async function wireSymbolAndTimeframePickers(ctx) {
       onChange: async (res) => {
         const gen = ++tfChangeGen;
         const sync = ctx.layoutManager?.getSync();
+        const paneForValidate = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
+        const fromRes = paneForValidate?.resolution ?? ctx.resolution;
+        if (typeof ctx.opts?.validateResolutionChange === "function") {
+          const symbol = paneForValidate?.symbol ?? ctx.symbol;
+          try {
+            const verdict = await ctx.opts.validateResolutionChange({
+              from: fromRes,
+              to: res,
+              symbol,
+            });
+            const rejected =
+              verdict === false || (verdict && typeof verdict === "object" && verdict.ok === false);
+            if (rejected) {
+              const text =
+                (verdict && typeof verdict === "object" && verdict.message) ||
+                `No ${res} data at the current replay time.`;
+              showChartError(ctx, paneForValidate, {
+                title: "No data",
+                text,
+              });
+              return;
+            }
+            hideChartError(ctx, paneForValidate);
+          } catch (err) {
+            console.error("[BWC] validateResolutionChange failed:", err);
+            showChartError(ctx, paneForValidate, {
+              title: "No data",
+              text: "Could not verify data for this interval.",
+            });
+            return;
+          }
+        }
         if (ctx.layoutManager && sync?.interval) {
           const from = ctx.resolution;
           const panes = ctx.getAllChartPanes();
@@ -330,6 +432,11 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           ctx.resolution = res;
           ctx.refreshWatermark();
           ctx.refreshStatusLine();
+          try {
+            ctx.opts?.onIntervalChange?.(res);
+          } catch (err) {
+            console.error("[BWC] onIntervalChange failed:", err);
+          }
           const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
           suppressPaneHistoryPrefetch(panes);
           await showChartPendingOverlay(ctx, panes);
@@ -374,9 +481,15 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         ctx.stashPaneResolutionCache(pane, pane.resolution);
         pane.resolution = res;
         if (pane.index === 0) ctx.chartPanes.get(0).resolution = res;
-        ctx.resolution = res;
+        const activeIdx = ctx.getActivePane?.()?.index ?? 0;
+        if (pane.index === activeIdx) ctx.resolution = res;
         ctx.refreshWatermark();
         ctx.refreshStatusLine();
+        try {
+          ctx.opts?.onIntervalChange?.(res);
+        } catch (err) {
+          console.error("[BWC] onIntervalChange failed:", err);
+        }
         const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
         suppressPaneHistoryPrefetch(pane);
         await showChartPendingOverlay(ctx, pane);

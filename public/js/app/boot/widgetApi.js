@@ -1,4 +1,4 @@
-import { chartDebug } from "../../debug/chart/index.js";
+import { chartDebug, destroyDebugHud } from "../../debug/chart/index.js";
 import { getChartViewportStats } from "../../debug/chart/viewportStats.js";
 import {
   captureViewportBarLayout,
@@ -175,6 +175,14 @@ export function createChartWidgetApi(ctx) {
       return getBarsSnapshot();
     },
 
+    getAllChartPanes() {
+      return getAllChartPanes();
+    },
+
+    syncHostReplayPanes() {
+      replayEngine?.syncHostReplayAllPanes?.();
+    },
+
     getSymbol,
     getResolution,
 
@@ -289,29 +297,53 @@ export function createChartWidgetApi(ctx) {
         const sync = layoutManager?.getSync();
         const loadAll = sync?.symbol || sync?.interval || panes.length > 1;
         const targets = loadAll ? panes : [getActivePane()].filter(Boolean);
-        chartDebug("data", "widget.reset", { mode: "data", panes: targets.length });
         const resetViewport = opts.viewport !== false;
+        const preserveViewport = !resetViewport;
+        chartDebug("data", "widget.reset", {
+          mode: "data",
+          panes: targets.length,
+          preserveViewport,
+        });
+        const savedLayouts = preserveViewport
+          ? targets.map((p) => captureViewportBarLayout(p, settingsStore, resolutions))
+          : null;
+
         await loadBarsForPanes(targets, {
           force: true,
-          // Session/date reloads must not restore the previous visible time range after setData.
           avoidPreserveViewport: resetViewport,
+          deferChartRefresh: preserveViewport,
+          skipPriceScaleMargins: preserveViewport,
         });
-        if (resetViewport) {
-          const resetPrice = opts.price !== false;
-          const resetTime = opts.time !== false;
-          if (resetPrice) resetChartView();
-          else if (resetTime) resetTimeScale();
-          else scrollToLatest(getBarsSnapshot().length);
-        }
+
         try {
-          const panes = getAllChartPanes();
-          await Promise.all(
-            panes.map((pane) =>
-              ensureIndicatorChartHistory?.(pane) ?? Promise.resolve(),
-            ),
-          );
-          refreshIndicatorsImmediate?.();
-          refreshIndicatorLegends?.();
+          const indicatorPanes = getAllChartPanes();
+          if (preserveViewport && savedLayouts) {
+            for (let i = 0; i < targets.length; i += 1) {
+              paintPaneAfterTimeframeLoad(tfSwitchCtx, targets[i], savedLayouts[i]);
+            }
+            await Promise.all(
+              indicatorPanes.map((pane) =>
+                ensureIndicatorChartHistory?.(pane) ?? Promise.resolve(),
+              ),
+            );
+            refreshIndicatorsImmediate?.();
+            refreshIndicatorLegends?.();
+          } else {
+            await Promise.all(
+              indicatorPanes.map((pane) =>
+                ensureIndicatorChartHistory?.(pane) ?? Promise.resolve(),
+              ),
+            );
+            if (resetViewport) {
+              const resetPrice = opts.price !== false;
+              const resetTime = opts.time !== false;
+              if (resetPrice) resetChartView();
+              else if (resetTime) resetTimeScale();
+              else scrollToLatest(getBarsSnapshot().length);
+              refreshIndicatorsImmediate?.();
+              refreshIndicatorLegends?.();
+            }
+          }
         } catch (err) {
           chartDebug("data", "widget.reset indicators refresh failed", { err: String(err) });
         }
@@ -544,11 +576,12 @@ export function createChartWidgetApi(ctx) {
       return getOrderLineTheme();
     },
 
-    /** Tear down host-global side effects (touch scroll lock, clocks). */
+    /** Tear down host-global side effects (touch scroll lock, clocks, debug HUD). */
     destroy() {
       widget.positionOverlay?.destroy?.();
       toolbar.destroy?.();
       releaseTouchScrollLock?.();
+      destroyDebugHud();
       ctx.tzClock?.destroy?.();
       if (typeof window !== "undefined" && window.__BWC_WIDGET__ === widget) {
         delete window.__BWC_WIDGET__;

@@ -16,6 +16,7 @@ import { mountHeaderToolbar } from "../../../ui/header/toolbar/index.js";
 import { buildChartShareUrl } from "../../../datafeed/client.js";
 import { chartDebug } from "../../../debug/chart/index.js";
 import { createSecondaryPaneFactory } from "./secondaryPane.js";
+import { wirePaneActivation } from "./paneActivation.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -52,7 +53,7 @@ export function wireLayoutChrome(ctx) {
     },
   });
 
-  ctx.chartWrap.addEventListener("mousedown", () => ctx.layoutManager?.setActivePane(0));
+  wirePaneActivation(ctx.chartWrap, 0, (index) => ctx.layoutManager?.setActivePane(index));
 
   const toolbarRight = ctx.chromeEl.querySelector(".tv-toolbar__right");
   if (!toolbarRight) return;

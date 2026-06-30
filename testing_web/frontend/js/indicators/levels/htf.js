@@ -43,7 +43,7 @@ export class LevelsHtf {
     const sessions = resolveSessionLevels(inputs).some((r) => r.enabled);
     return Math.max(
       requiredChartBarsWhenNoHtf(htf, inputs),
-      requiredChartBarsForSessions(inputs, sessions),
+      requiredChartBarsForSessions(inputs, sessions, chartResolution),
     );
   }
 }

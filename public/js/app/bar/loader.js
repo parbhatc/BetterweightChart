@@ -376,7 +376,9 @@ export function createBarLoader(opts) {
       invalidatePaneChartView(pane);
       refreshPaneCandleData(pane, { deferSessionBg: true });
     }
-    restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
+    if (opts.adjustViewport !== false) {
+      restoreViewportAfterPrepend(pane.chart, captured, capturedLogical, added);
+    }
     if (pane.index === 0) setPrimaryBars(pane);
     publishResolutionCache(pane);
 
@@ -484,7 +486,7 @@ export function createBarLoader(opts) {
    * @param {object} pane
    * @param {number} [chunk]
    */
-  async function prependHistory(pane, chunk = historyChunk) {
+  async function prependHistory(pane, chunk = historyChunk, opts = {}) {
     if (pane._historyFetchInFlight || pane._loadingHistory || !pane.bars.length) return false;
     if (pane._historyErrorUntil && Date.now() < pane._historyErrorUntil) return false;
     await ensurePaneSymbolInfo(pane);
@@ -527,7 +529,10 @@ export function createBarLoader(opts) {
         return false;
       }
 
-      const added = mergeOlderBarsIntoPane(pane, older, { reason: "history prepended", adjustViewport: true });
+      const added = mergeOlderBarsIntoPane(pane, older, {
+        reason: "history prepended",
+        adjustViewport: !opts.skipViewportAdjust,
+      });
       if (added <= 0) {
         pane._historyExhausted = true;
         return false;
@@ -620,14 +625,14 @@ export function createBarLoader(opts) {
     return pending;
   }
 
-  async function ensureIndicatorChartHistory(pane) {
+  async function ensureIndicatorChartHistory(pane, opts = {}) {
     const want = Math.max(0, Number(getRequiredChartBarsForPane?.(pane)) || 0);
     if (!want || pane.bars.length >= want) return;
     if (pane._historyExhausted || pane._suppressHistoryPrefetch) return;
     let guard = 0;
     while (pane.bars.length < want && !pane._historyExhausted && guard < 16) {
       if (isPanning()) return;
-      const got = await prependHistory(pane);
+      const got = await prependHistory(pane, historyChunk, opts);
       if (!got) break;
       guard += 1;
     }
@@ -712,6 +717,13 @@ export function createBarLoader(opts) {
       async function tryReplayCacheLoad(loadOpts) {
         if (replayCtx) return null;
         if (!tryRestorePaneResolutionCache(pane)) return null;
+        if (replayCapTo != null && Number.isFinite(replayCapTo) && pane.bars.length) {
+          const last = pane.bars.at(-1)?.time;
+          if (last == null || last < replayCapTo) {
+            clearPaneBarState(pane);
+            return null;
+          }
+        }
         chartDebug("data", "loadPaneBars restored from cache", {
           pane: pane.index,
           symbol: pane.symbol,

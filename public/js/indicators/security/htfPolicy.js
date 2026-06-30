@@ -1,5 +1,7 @@
 import { getSecuritySeries, requestSecuritySeries } from "./htfAccess.js";
 
+import { resolutionSec } from "/js/chart/resolutions.js";
+
 /** @param {object} inputs @param {number} [fallback] */
 export function requiredHtfBars(inputs, fallback = 300) {
   return Math.max(10, Number(inputs.maxBarsBack) || fallback);
@@ -13,13 +15,18 @@ export function requiredChartBarsWhenNoHtf(enabledHtfs, inputs, fallback = 300) 
 
 /**
  * Chart bars needed for session-style levels that scan the pane series (not HTF security).
+ * Sessions use ET clock windows and may start the prior evening (e.g. Asia), so load ~30h of data.
  * @param {object} inputs
  * @param {boolean} [sessionsEnabled]
+ * @param {string} [chartResolution]
  * @param {number} [fallback]
  */
-export function requiredChartBarsForSessions(inputs, sessionsEnabled, fallback = 300) {
+export function requiredChartBarsForSessions(inputs, sessionsEnabled, chartResolution = "1", fallback = 300) {
   if (!sessionsEnabled) return 0;
-  return requiredHtfBars(inputs, fallback);
+  const base = requiredHtfBars(inputs, fallback);
+  const chartSec = Math.max(60, resolutionSec(chartResolution) || 60);
+  const sessionDayBars = Math.ceil((30 * 3600) / chartSec);
+  return Math.max(base, sessionDayBars);
 }
 
 /**

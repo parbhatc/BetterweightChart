@@ -25,6 +25,7 @@ export function createReplayControlApi(deps) {
       setSpeed: noop,
       setStepInterval: noop,
       setAutoSelectInterval: noop,
+      setReplayPosition: noop,
       getMaxBarIndex: () => null,
       hasForwardBars: () => false,
       getCursorBarIndex: () => null,
@@ -52,6 +53,7 @@ export function createReplayControlApi(deps) {
     setSpeed: (speed) => replay.setSpeed(speed),
     setStepInterval: (stepInterval) => replay.setStepInterval(stepInterval),
     setAutoSelectInterval: (on) => replay.setAutoSelectInterval(on),
+    setReplayPosition: (pos) => replay.setReplayPosition?.(pos),
     getMaxBarIndex: () => replayEngine?.getMaxBarIndex?.() ?? null,
     hasForwardBars: () => replayEngine?.hasForwardBars?.() ?? false,
     getCursorBarIndex: () =>

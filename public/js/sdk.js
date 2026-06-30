@@ -38,6 +38,7 @@ export {
   createPanFpsMonitor,
   enableChartDebug,
   disableChartDebug,
+  destroyDebugHud,
   getChartDebugStats,
   clearChartDebugStats,
   installChartDebugGlobal,

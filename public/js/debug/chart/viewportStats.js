@@ -35,6 +35,81 @@ function logicalToUtc(ta, mapBars, barSec, logical) {
   return ta.time.toUtc(chartTime);
 }
 
+/** @param {number | null | undefined} t */
+function finiteUtc(t) {
+  return t != null && Number.isFinite(t) ? t : null;
+}
+
+/** @param {object} pane @param {object[]} utcBars */
+function latestLoadedUtc(pane, utcBars) {
+  return finiteUtc(utcBars.at(-1)?.time) ?? finiteUtc(pane.bars?.at(-1)?.time) ?? null;
+}
+
+/**
+ * Resolve replay/live anchor for viewport stats (cursor may be unset right after entering replay).
+ * @param {object} deps
+ * @param {import("../../replay/mode.js").ReplayState | null} replayState
+ * @param {object} pane
+ * @param {object | null} snap
+ * @param {object[]} utcBars
+ * @param {ReturnType<import("../../chart/time/timeAdapter.js").createTimeAdapter>} ta
+ */
+function resolveViewportCursor(deps, replayState, pane, snap, utcBars, ta) {
+  const replayMode = Boolean(replayState?.active);
+  const latestUtc = latestLoadedUtc(pane, utcBars);
+  const explicitUtc = finiteUtc(replayState?.currentBarTime) ?? finiteUtc(replayState?.selectedBarTime);
+  const snapUtc = finiteUtc(snap?.cursorTime) ?? finiteUtc(snap?.bars?.at(-1)?.time);
+
+  let cursorUtc = replayMode ? explicitUtc ?? snapUtc : null;
+  let cursorIndex = replayMode
+    ? (replayState?.currentBarIndex ??
+      replayState?.selectedBarIndex ??
+      (pane.replayCursorEndIndex != null && pane.replayCursorEndIndex >= 0 ? pane.replayCursorEndIndex : null))
+    : null;
+
+  const engineIdx = replayMode ? deps.replayEngine?.getCursorBarIndex?.() : null;
+  if (cursorIndex == null && engineIdx != null && Number.isFinite(engineIdx)) {
+    cursorIndex = engineIdx;
+  }
+
+  if (cursorUtc == null && cursorIndex != null && Number.isFinite(cursorIndex)) {
+    cursorUtc =
+      finiteUtc(utcBars[cursorIndex]?.time) ??
+      finiteUtc(snap?.bars?.[cursorIndex]?.time) ??
+      finiteUtc(pane.bars?.[cursorIndex]?.time) ??
+      null;
+  }
+
+  if (cursorUtc == null) {
+    cursorUtc = latestUtc;
+    if (cursorIndex == null && utcBars.length > 0 && cursorUtc === latestUtc) {
+      cursorIndex = utcBars.length - 1;
+    }
+  }
+
+  if (cursorUtc != null && cursorIndex == null) {
+    cursorIndex =
+      ta.index.utc(cursorUtc) ??
+      (replayMode && pane.replayCursorEndIndex != null ? pane.replayCursorEndIndex : null);
+    if (cursorIndex == null && latestUtc != null && cursorUtc === latestUtc && utcBars.length > 0) {
+      cursorIndex = utcBars.length - 1;
+    }
+  }
+
+  const liveEndUtc =
+    finiteUtc(snap?.liveEndBarTime) ??
+    (replayMode ? finiteUtc(pane.bars?.at(-1)?.time) ?? latestUtc : null);
+
+  return {
+    replayMode,
+    awaitingSelection: replayMode && explicitUtc == null && snapUtc == null,
+    cursorUtc,
+    cursorIndex,
+    liveEndUtc,
+    latestUtc,
+  };
+}
+
 /**
  * Console-friendly viewport + replay bar stats for the active pane.
  * @param {object} deps
@@ -69,10 +144,8 @@ export function getChartViewportStats(deps, opts = {}) {
 
   const replayState = deps.getReplayState?.() ?? null;
   const snap = pane._replaySnapshot ?? null;
-  const cursorUtc = replayState?.active ? replayState.currentBarTime : utcBars.at(-1)?.time ?? null;
-  const cursorIndex =
-    cursorUtc != null ? (ta.index.utc(cursorUtc) ?? pane.replayCursorEndIndex ?? null) : null;
-  const liveEndUtc = snap?.liveEndBarTime ?? null;
+  const cursorCtx = resolveViewportCursor(deps, replayState, pane, snap, utcBars, ta);
+  const { replayMode, awaitingSelection, cursorUtc, cursorIndex, liveEndUtc } = cursorCtx;
 
   const loadedFirst = pane.bars[0]?.time ?? null;
   const loadedLast = pane.bars.at(-1)?.time ?? null;
@@ -125,9 +198,11 @@ export function getChartViewportStats(deps, opts = {}) {
 
   const realCount = utcBars.length;
   const anchorIndex =
-    pane.replayCursorEndIndex != null && pane.replayCursorEndIndex >= 0
+    replayMode && pane.replayCursorEndIndex != null && pane.replayCursorEndIndex >= 0
       ? pane.replayCursorEndIndex + 1
-      : pane.bars?.length ?? realCount;
+      : realCount > 0
+        ? realCount
+        : pane.bars?.length ?? 0;
   const viewportLayout =
     logical && Number.isFinite(logical.to)
       ? {
@@ -157,13 +232,14 @@ export function getChartViewportStats(deps, opts = {}) {
     ok: true,
     resolution: pane.resolution ?? null,
     barSec,
-    replay: replayState?.active
+    replay: replayMode
       ? {
           active: true,
+          awaitingSelection,
           cursorUtc,
           cursorLabel: utcLabel(cursorUtc),
           cursorIndex,
-          selectedUtc: replayState.selectedBarTime ?? null,
+          selectedUtc: replayState?.selectedBarTime ?? null,
           liveEndUtc,
           liveEndLabel: utcLabel(liveEndUtc),
           forwardBarsRemaining,
@@ -206,9 +282,15 @@ export function getChartViewportStats(deps, opts = {}) {
       `  loaded: ${stats.loaded.count} bars (${stats.loaded.firstLabel ?? "?"} → ${stats.loaded.lastLabel ?? "?"})`,
     ];
     if (stats.replay.active) {
-      lines.push(
-        `  replay latest: ${stats.replay.cursorLabel ?? "?"} (index ${stats.replay.cursorIndex ?? "?"})`,
-      );
+      if (stats.replay.awaitingSelection) {
+        lines.push(
+          `  replay: on — no start bar yet (anchor = latest loaded: ${stats.replay.cursorLabel ?? "?"})`,
+        );
+      } else {
+        lines.push(
+          `  replay cursor: ${stats.replay.cursorLabel ?? "?"} (index ${stats.replay.cursorIndex ?? "?"})`,
+        );
+      }
       if (stats.replay.liveEndLabel) {
         lines.push(
           `  replay live end: ${stats.replay.liveEndLabel} (${stats.replay.forwardBarsRemaining ?? "?"} bars forward)`,
@@ -224,7 +306,11 @@ export function getChartViewportStats(deps, opts = {}) {
       `  left edge:  ${stats.visible.fromLabel ?? "?"}`,
       `  right edge: ${stats.visible.toLabel ?? "?"} (farthest you can see)`,
     );
-    const anchor = stats.replay.active ? "replay cursor" : "latest bar";
+    const anchor = stats.replay.active
+      ? stats.replay.awaitingSelection
+        ? "latest loaded bar"
+        : "replay cursor"
+      : "latest bar";
     lines.push(
       `  vs ${anchor}: ${stats.relativeToLatest.timeBefore ?? "?"} left, ${stats.relativeToLatest.timeAfterVisible ?? "?"} to visible right (${stats.relativeToLatest.barsAfterVisible ?? "?"} bars)`,
     );

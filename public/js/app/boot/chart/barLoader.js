@@ -15,7 +15,23 @@ import { getIndicatorClass } from "../../../indicators/catalog.js";
 export function attachBarLoader(ctx) {
   /** @param {object} pane */
   function replayLoadContextForPane(pane) {
-    if (ctx.opts?.replayHostControlled) return null;
+    if (ctx.opts?.replayHostControlled) {
+      const anchorSec =
+        typeof ctx.opts?.getPlaybackAnchorSec === "function"
+          ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+          : null;
+      const state = ctx.replay?.getState?.();
+      const cap =
+        anchorSec != null && Number.isFinite(anchorSec)
+          ? anchorSec
+          : state?.currentBarTime ?? null;
+      if (cap == null || !Number.isFinite(cap)) return null;
+      return {
+        anchorFrom: cap,
+        loadTo: cap,
+        capDisplay: cap,
+      };
+    }
 
     const sym = pane?.symbol ?? ctx.symbol ?? "";
     const res = pane?.resolution ?? ctx.resolution ?? "";

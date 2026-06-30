@@ -1383,9 +1383,202 @@ export function attachReplayEngine(ctx, replay) {
     return barsCoverReplayAnchor(pane.bars, cutUtc, barSec);
   }
 
+  /** @param {object} pane */
+  function applyHostReplayCursorToPane(pane) {
+    if (!pane?.bars?.length) return null;
+
+    const anchorUtc =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
+    if (anchorUtc == null || !Number.isFinite(anchorUtc)) return null;
+
+    const layout =
+      pane.chart && ctx.settingsStore && ctx.resolutions
+        ? captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions)
+        : null;
+
+    let bars = pane.bars;
+    let cursorUtc = anchorUtc;
+    const lastBarTime = bars.at(-1)?.time;
+    let didRefresh = false;
+    if (lastBarTime != null && lastBarTime > cursorUtc) {
+      const trimIdx = replayBarIndexForUtcTime(bars, cursorUtc);
+      if (trimIdx != null && trimIdx < bars.length - 1) {
+        pane.bars = bars.slice(0, trimIdx + 1);
+        invalidatePaneChartView(pane);
+        const logicalRange = layout
+          ? computeViewportBarLayoutLogical(pane, layout)
+          : null;
+        ctx.refreshPaneCandleData?.(pane, {
+          logicalRange: logicalRange ?? undefined,
+          avoidPreserveViewport: !logicalRange,
+          deferSessionBg: true,
+        });
+        didRefresh = true;
+        bars = pane.bars;
+      }
+    }
+
+    const prevEndIndex = pane.replayCursorEndIndex;
+    const currentIdx = replayBarIndexForUtcTime(bars, cursorUtc) ?? bars.length - 1;
+    cursorUtc = bars[currentIdx]?.time ?? cursorUtc;
+    pane.replayCursorEndIndex = currentIdx;
+
+    if (layout && pane.chart && (prevEndIndex !== currentIdx || didRefresh)) {
+      restoreViewportBarLayout(
+        pane,
+        layout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "host-replay-step",
+        ctx.activePriceScaleId,
+        { skipPrice: true },
+      );
+    }
+
+    ctx.replayFutureDim?.refreshAll?.();
+    pane.sessionBg?.requestRefresh?.();
+
+    return { cursorUtc, currentIdx, bars };
+  }
+
+  function syncHostReplayAllPanes() {
+    const state = replay.getState();
+    if (!state.active || !isReplayHostControlled(ctx)) return;
+
+    const panes = ctx.getAllChartPanes?.() ?? [];
+    const activePane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
+    let activeResult = null;
+
+    for (const pane of panes) {
+      const result = applyHostReplayCursorToPane(pane);
+      if (pane === activePane) activeResult = result;
+    }
+
+    if (activeResult) {
+      const { cursorUtc, currentIdx, bars } = activeResult;
+      replay.setReplayPosition({
+        selectedBarIndex: currentIdx,
+        currentBarIndex: currentIdx,
+        selectedBarTime: bars[currentIdx]?.time ?? cursorUtc,
+        currentBarTime: cursorUtc,
+      });
+      lastAppliedEndIndex = currentIdx;
+      lastAppliedBarTime = cursorUtc;
+    }
+
+    replayDebug("syncHostReplayAllPanes", {
+      panes: panes.map((p) => ({
+        index: p.index,
+        symbol: p.symbol,
+        resolution: p.resolution,
+        last: p.bars?.at(-1)?.time,
+      })),
+    });
+  }
+
   async function onChartResolutionChange() {
     const state = replay.getState();
-    if (!state.active || state.currentBarTime == null) return;
+    if (!state.active) return;
+
+    if (isReplayHostControlled(ctx)) {
+      const activePane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
+      if (!activePane?.bars?.length) return;
+
+      const anchorUtc =
+        (typeof ctx.opts?.getPlaybackAnchorSec === "function"
+          ? ctx.opts.getPlaybackAnchorSec(activePane.resolution)
+          : null) ?? state.currentBarTime;
+
+      const rawAnchorUtc =
+        (typeof ctx.opts?.getPlaybackAnchorRawSec === "function"
+          ? ctx.opts.getPlaybackAnchorRawSec()
+          : null) ?? anchorUtc;
+
+      let bars = activePane.bars;
+      let cursorUtc = anchorUtc ?? bars.at(-1)?.time;
+      if (cursorUtc == null) return;
+
+      if (
+        ltBarsBeforeTfSwitch?.length &&
+        ltResolutionBeforeTfSwitch &&
+        rawAnchorUtc != null
+      ) {
+        const fromSec = resolutionSec(ltResolutionBeforeTfSwitch);
+        const toSec = resolutionSec(activePane.resolution);
+        if (toSec > fromSec) {
+          const snap = { bars: activePane.bars };
+          const patch = patchReplayHtfFormingBar(
+            activePane,
+            rawAnchorUtc,
+            snap,
+            ltBarsBeforeTfSwitch,
+            ltResolutionBeforeTfSwitch,
+            replayBarIndexForUtcTime,
+          );
+          if (patch.ok) {
+            activePane.bars = snap.bars;
+            invalidatePaneChartView(activePane);
+            ctx.refreshPaneCandleData?.(activePane);
+            bars = activePane.bars;
+            replayDebug("forming.patch.host", patch);
+          }
+        }
+      }
+      clearLtBarsStash();
+
+      const lastBarTime = bars.at(-1)?.time;
+      if (lastBarTime != null && lastBarTime > cursorUtc) {
+        const trimIdx = replayBarIndexForUtcTime(bars, cursorUtc);
+        if (trimIdx != null && trimIdx < bars.length - 1) {
+          activePane.bars = bars.slice(0, trimIdx + 1);
+          invalidatePaneChartView(activePane);
+          bars = activePane.bars;
+        }
+      }
+
+      const currentIdx = replayBarIndexForUtcTime(bars, cursorUtc) ?? bars.length - 1;
+      cursorUtc = bars[currentIdx]?.time ?? cursorUtc;
+
+      const selectedUtc =
+        anchorUtc != null && Number.isFinite(anchorUtc)
+          ? cursorUtc
+          : (state.selectedBarTime ?? cursorUtc);
+      const selectedIdx =
+        anchorUtc != null && Number.isFinite(anchorUtc)
+          ? currentIdx
+          : (replayBarIndexForUtcTime(bars, selectedUtc) ?? currentIdx);
+
+      activePane.replayCursorEndIndex = currentIdx;
+
+      replay.setReplayPosition({
+        selectedBarIndex: selectedIdx,
+        currentBarIndex: currentIdx,
+        selectedBarTime: bars[selectedIdx]?.time ?? selectedUtc,
+        currentBarTime: cursorUtc,
+      });
+
+      lastAppliedEndIndex = currentIdx;
+      lastAppliedBarTime = cursorUtc;
+
+      replayDebug("resolutionChange.hostControlled", {
+        cursorUtc,
+        bars: bars.length,
+        last: bars.at(-1)?.time,
+        close: bars.at(-1)?.close,
+        resolution: activePane.resolution,
+      });
+
+      if (activePane.chart && activePane.series) {
+        ctx.applySettingsToChartLocal?.(activePane.chart, activePane.series, activePane);
+      }
+      ctx.replayFutureDim?.refreshAll?.();
+      activePane.sessionBg?.requestRefresh();
+      return;
+    }
+
+    if (state.currentBarTime == null) return;
 
     replayTfChangeInFlight = true;
     replaySkipSyncApply = true;
@@ -1575,6 +1768,18 @@ export function attachReplayEngine(ctx, replay) {
     }
   }
 
+  /** @param {import("./mode.js").ReplayState} state @param {object | null | undefined} pane */
+  function hostControlledCursorIndex(state, pane) {
+    if (state.currentBarIndex != null && Number.isFinite(state.currentBarIndex)) {
+      return state.currentBarIndex;
+    }
+    if (state.selectedBarIndex != null && Number.isFinite(state.selectedBarIndex)) {
+      return state.selectedBarIndex;
+    }
+    const len = pane?.bars?.length ?? 0;
+    return len > 0 ? len - 1 : 0;
+  }
+
   return {
     isReplayLocked: () => {
       if (isReplayHostControlled(ctx)) return false;
@@ -1586,7 +1791,8 @@ export function attachReplayEngine(ctx, replay) {
     getCursorBarIndex: () => {
       const state = replay.getState();
       if (isReplayHostControlled(ctx)) {
-        return state.currentBarIndex ?? state.selectedBarIndex ?? 0;
+        const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
+        return hostControlledCursorIndex(state, pane);
       }
       const snap = (ctx.getActivePane?.() ?? ctx.chartPanes.get(0))?._replaySnapshot;
       if (!snap?.bars?.length || state.currentBarTime == null) return state.currentBarIndex ?? 0;
@@ -1603,7 +1809,7 @@ export function attachReplayEngine(ctx, replay) {
       if (isReplayHostControlled(ctx)) {
         const state = replay.getState();
         const pane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
-        const cursor = state.currentBarIndex ?? state.selectedBarIndex ?? 0;
+        const cursor = hostControlledCursorIndex(state, pane);
         return cursor < Math.max(0, (pane?.bars?.length ?? 0) - 1);
       }
       return hasForwardBars();
@@ -1612,6 +1818,7 @@ export function attachReplayEngine(ctx, replay) {
     restoreSession,
     onChartResolutionChange,
     beforeResolutionChange,
+    syncHostReplayAllPanes,
     stepForward: async () => {
       const state = replay.getState();
       if (!state.active) return;

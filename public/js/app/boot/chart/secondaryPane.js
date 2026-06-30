@@ -1,6 +1,7 @@
 import { createTvChart } from "../../../chart/view/index.js";
 import { getPaneSymbol } from "../../../ui/chart/symbol/store.js";
 import { wirePaneContextMenus } from "../../wire/contextMenus.js";
+import { wirePaneActivation } from "./paneActivation.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -46,7 +47,7 @@ export function createSecondaryPaneFactory(ctx) {
     ctx.refreshPaneStatusLine(paneState);
     ctx.attachPaneDrawings(paneState);
     wirePaneContextMenus(ctx.buildPaneContextMenuOpts(paneState, wrap));
-    wrap.addEventListener("mousedown", () => ctx.layoutManager?.setActivePane(paneIndex));
+    wirePaneActivation(wrap, paneIndex, (index) => ctx.layoutManager?.setActivePane(index));
 
     return {
       chart: paneChart.chart,

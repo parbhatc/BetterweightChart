@@ -24,6 +24,11 @@ import { resolutionSec } from "../resolutions.js";
 /** Label formatters treat display-shifted timestamps as UTC wall clock. */
 const CHART_TIME_LABEL_TZ = "Etc/UTC";
 
+/** @param {object} pane */
+function barSecForPaneLabels(pane) {
+  return pane._chartView?.barSec ?? resolutionSec(pane.resolution) ?? 60;
+}
+
 /** @param {object} sc @param {object} cv @param {string} activeScale */
 function priceScaleSettingsKey(sc, cv, activeScale) {
   return [
@@ -75,7 +80,7 @@ export function applySettingsToChart(opts) {
   const timeZone = resolveTimezone(sym.timezone, paneSymbolInfo);
   const timezoneProvider = createTimezoneProvider(timeZone);
   pane._timezoneProvider = timezoneProvider;
-  const barSec = pane._chartView?.barSec ?? resolutionSec(pane.resolution) ?? 60;
+  const barSec = barSecForPaneLabels(pane);
   const showSeconds = barSec < 60;
 
   targetChart.applyOptions({
@@ -116,6 +121,7 @@ export function applySettingsToChart(opts) {
       secondsVisible: showSeconds,
       tickMarkFormatter: (time, tickMarkType) => {
         const displayTime = toDisplayTime(time, timezoneProvider);
+        const showSecondsNow = barSecForPaneLabels(pane) < 60;
         switch (tickMarkType) {
           case TickMarkType.Year:
             return String(toDate(displayTime).getUTCFullYear());
@@ -124,7 +130,7 @@ export function applySettingsToChart(opts) {
           case TickMarkType.DayOfMonth:
             return formatAxisDateTick(displayTime, sc, CHART_TIME_LABEL_TZ);
           case TickMarkType.Time:
-            return formatAxisTimeTick(toDate(displayTime), CHART_TIME_LABEL_TZ, sc, showSeconds);
+            return formatAxisTimeTick(toDate(displayTime), CHART_TIME_LABEL_TZ, sc, showSecondsNow);
           default:
             return "";
         }
@@ -136,9 +142,10 @@ export function applySettingsToChart(opts) {
       priceFormatter: (price) => formatDisplayPrice(price, precisionFromSettings(s, paneSymbolInfo)),
       timeFormatter: (t) => {
         const displayTime = toDisplayTime(t, timezoneProvider);
+        const barSecNow = barSecForPaneLabels(pane);
         return formatChartTimeLabel(displayTime, sc, CHART_TIME_LABEL_TZ, {
-          includeTime: barSec < 86400,
-          withSeconds: showSeconds,
+          includeTime: barSecNow < 86400,
+          withSeconds: barSecNow < 60,
         });
       },
     },

@@ -49,8 +49,8 @@ function createMatrix() {
   return { active: [], swept: [] };
 }
 
-/** @param {LiqLine} lvl @param {number} utc @param {number} [chartTime] */
-function markSwept(lvl, utc, chartTime) {
+/** @param {LiqLine} lvl @param {number} utc @param {number} [chartTime] @param {Set<string>} [takenLiquidity] */
+function markSwept(lvl, utc, chartTime, takenLiquidity) {
   lvl.swept = true;
   lvl.sweepTime = utc;
   lvl.endTime = utc;
@@ -58,6 +58,46 @@ function markSwept(lvl, utc, chartTime) {
     lvl.sweepChartTime = chartTime;
     lvl.endChartTime = chartTime;
   }
+  takenLiquidity?.add(`${lvl.kind}|${Math.round(lvl.price * 100)}`);
+}
+
+/** @param {LiqLine} level @param {number} proximity @param {Set<string>} [takenLiquidity] */
+function isLiquidityPriceTaken(level, proximity, takenLiquidity) {
+  if (!takenLiquidity?.size) return false;
+  const priceKey = Math.round(level.price * 100);
+  for (const key of takenLiquidity) {
+    const [kind, priceStr] = key.split("|");
+    if (kind !== level.kind) continue;
+    if (Math.abs(priceKey - Number(priceStr)) <= Math.round(proximity * 100)) return true;
+  }
+  return false;
+}
+
+/**
+ * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix
+ * @param {LiqLine} level
+ * @param {number} proximity
+ */
+function hasDuplicatePivot(matrix, level, proximity) {
+  const pool = [...matrix.active, ...matrix.swept];
+  return pool.some(
+    (l) =>
+      l.kind === level.kind &&
+      l.startTime === level.startTime &&
+      Math.abs(l.price - level.price) <= proximity,
+  );
+}
+
+/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {LiqLine} level @param {number} proximity @param {Set<string>} [takenLiquidity] */
+function hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity) {
+  if (isLiquidityPriceTaken(level, proximity, takenLiquidity)) return true;
+  return matrix.swept.some(
+    (l) =>
+      l.kind === level.kind &&
+      l.swept &&
+      l.sweepTime != null &&
+      Math.abs(l.price - level.price) <= proximity,
+  );
 }
 
 /**
@@ -65,8 +105,11 @@ function markSwept(lvl, utc, chartTime) {
  * @param {LiqLine} level
  * @param {number} maxUnswept
  * @param {number} proximity
+ * @param {Set<string>} [takenLiquidity]
  */
-function birthLevel(matrix, level, maxUnswept, proximity) {
+function birthLevel(matrix, level, maxUnswept, proximity, takenLiquidity) {
+  if (hasDuplicatePivot(matrix, level, proximity)) return null;
+  if (hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity)) return null;
   const last = matrix.active[matrix.active.length - 1];
   if (last && Math.abs(last.price - level.price) <= proximity) return null;
   matrix.active.push({ ...level, swept: false });
@@ -81,20 +124,12 @@ function levelBornTime(lvl) {
 
 /** @param {object} bar @param {"high"|"low"} kind @param {number} price */
 function barSweepsLevel(bar, kind, price) {
-  return kind === "high" ? bar.high > price : bar.low < price;
+  return kind === "high" ? bar.high >= price : bar.low <= price;
 }
 
-/**
- * HTF pivots confirm late — only sweep bars after the level is born (HTF close), not pivot open.
- * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix
- * @param {LiqLine | null} lvl
- * @param {object[]} bars
- * @param {object[]} chartBars
- * @param {number} toBarIndex
- * @param {number} maxSwept
- */
-function retroactiveSweep(matrix, lvl, bars, chartBars, toBarIndex, maxSwept) {
-  if (!lvl || lvl.swept || toBarIndex < 0) return;
+/** @param {LiqLine} lvl @param {object[]} bars @param {object[]} chartBars @param {number} toBarIndex @param {Set<string>} [takenLiquidity] @returns {boolean} */
+function retroactiveSweepLine(lvl, bars, chartBars, toBarIndex, takenLiquidity) {
+  if (!lvl || lvl.swept || toBarIndex < 0) return false;
   const born = levelBornTime(lvl);
   const fromIdx = firstBarIndexAtOrAfter(bars, born + 1);
   for (let j = fromIdx; j <= toBarIndex; j++) {
@@ -102,31 +137,58 @@ function retroactiveSweep(matrix, lvl, bars, chartBars, toBarIndex, maxSwept) {
     if (!b || b.time <= born) continue;
     const chartTime = chartBars[j]?.time ?? b.time;
     if (!barSweepsLevel(b, lvl.kind, lvl.price)) continue;
-    markSwept(lvl, b.time, chartTime);
-    const idx = matrix.active.indexOf(lvl);
-    if (idx >= 0) {
-      const moved = matrix.active.splice(idx, 1)[0];
-      matrix.swept.push(moved);
-      while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
-    }
-    return;
+    markSwept(lvl, b.time, chartTime, takenLiquidity);
+    return true;
   }
+  return false;
 }
 
 /**
- * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix
- * @param {object} bar
- * @param {number} chartTime
- * @param {"high"|"low"} kind
- * @param {number} maxSwept
+ * Session highs/lows are running extremes — only mark swept after the session window ends.
+ * @param {LiqLine} sl
+ * @param {{ label: string; startH: number; startM: number; endH: number; endM: number; crossesMidnight: boolean }[]} sessions
+ * @param {object[]} bars
+ * @param {object[]} chartBars
+ * @param {number} toBarIndex
+ * @param {Set<string>} [takenLiquidity]
  */
-function sweepMatrix(matrix, bar, chartTime, kind, maxSwept) {
+function retroactiveSweepSessionLine(sl, sessions, bars, chartBars, toBarIndex, takenLiquidity) {
+  if (!sl || sl.swept || toBarIndex < 0) return false;
+  const cfg = sessions.find((c) => sl.label.startsWith(c.label));
+  const born = levelBornTime(sl);
+  const fromIdx = firstBarIndexAtOrAfter(bars, born + 1);
+  for (let j = fromIdx; j <= toBarIndex; j++) {
+    const b = bars[j];
+    if (!b || b.time <= born) continue;
+    if (cfg && inSession(b.time, cfg)) continue;
+    const chartTime = chartBars[j]?.time ?? b.time;
+    if (!barSweepsLevel(b, sl.kind, sl.price)) continue;
+    markSwept(sl, b.time, chartTime, takenLiquidity);
+    return true;
+  }
+  return false;
+}
+
+/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {LiqLine | null} lvl @param {object[]} bars @param {object[]} chartBars @param {number} toBarIndex @param {number} maxSwept @param {Set<string>} [takenLiquidity] */
+function retroactiveSweep(matrix, lvl, bars, chartBars, toBarIndex, maxSwept, takenLiquidity) {
+  if (!lvl || lvl.swept || toBarIndex < 0) return;
+  if (!retroactiveSweepLine(lvl, bars, chartBars, toBarIndex, takenLiquidity)) return;
+  const idx = matrix.active.indexOf(lvl);
+  if (idx >= 0) {
+    const moved = matrix.active.splice(idx, 1)[0];
+    matrix.swept.push(moved);
+    while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
+  }
+}
+
+/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {object} bar @param {number} chartTime @param {"high"|"low"} kind @param {number} maxSwept @param {Set<string>} [takenLiquidity] */
+function sweepMatrix(matrix, bar, chartTime, kind, maxSwept, takenLiquidity) {
   for (let i = matrix.active.length - 1; i >= 0; i--) {
     const lvl = matrix.active[i];
     if (lvl.kind !== kind) continue;
     if (bar.time <= levelBornTime(lvl)) continue;
     if (!barSweepsLevel(bar, kind, lvl.price)) continue;
-    markSwept(lvl, bar.time, chartTime);
+    markSwept(lvl, bar.time, chartTime, takenLiquidity);
     const moved = matrix.active.splice(i, 1)[0];
     matrix.swept.push(moved);
     while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
@@ -136,6 +198,7 @@ function sweepMatrix(matrix, bar, chartTime, kind, maxSwept) {
 /** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {number} utc @param {number} chartTime */
 function extendMatrix(matrix, utc, chartTime) {
   for (const lvl of matrix.active) {
+    if (lvl.swept) continue;
     lvl.endTime = utc;
     lvl.endChartTime = chartTime;
   }
@@ -163,8 +226,10 @@ function htfBucketCompleteAt(bucketOpen, tfSec) {
  * @param {(number | undefined)[]} chartTimes parallel chart times for agg bars
  * @param {object[]} bars chart UTC bars
  * @param {object[]} chartBars aligned chart bars
- * @param {number} barIndex current bar index in chart walk
+ * @param {number} barIndex chart bar index when level becomes active
  * @param {number} maxSwept
+ * @param {Set<string>} [takenLiquidity]
+ * @param {number} scanToBarIdx retroactive sweep scans through this bar (usually walk end)
  */
 function onHtfBarClose(
   agg,
@@ -185,6 +250,8 @@ function onHtfBarClose(
   chartBars,
   barIndex,
   maxSwept,
+  takenLiquidity,
+  scanToBarIdx,
 ) {
   const c = agg[idx];
   hist.h.push(c.high);
@@ -229,8 +296,9 @@ function onHtfBarClose(
       },
       maxUnswept,
       proximity,
+      takenLiquidity,
     );
-    retroactiveSweep(matrixH, born, bars, chartBars, barIndex, maxSwept);
+    retroactiveSweep(matrixH, born, bars, chartBars, scanToBarIdx, maxSwept, takenLiquidity);
   }
   if (isLow) {
     const born = birthLevel(
@@ -251,8 +319,9 @@ function onHtfBarClose(
       },
       maxUnswept,
       proximity,
+      takenLiquidity,
     );
-    retroactiveSweep(matrixL, born, bars, chartBars, barIndex, maxSwept);
+    retroactiveSweep(matrixL, born, bars, chartBars, scanToBarIdx, maxSwept, takenLiquidity);
   }
 }
 
@@ -323,33 +392,42 @@ function applyClusterConfluence(lines, proximity, confHi, confLo) {
     }
     const side = group[0].kind === "high" ? "High" : "Low";
     const confColor = group[0].kind === "high" ? confHi : confLo;
+    const sweptMembers = group.filter((l) => l.swept && l.sweepTime != null);
     let survivor = group.find((l) => !l.swept) ?? group[0];
     for (const l of group) {
-      if (l.endTime > survivor.endTime) {
-        survivor.endTime = l.endTime;
-        survivor.endChartTime = l.endChartTime;
-      }
       if (l.startTime < survivor.startTime) {
         survivor.startTime = l.startTime;
         survivor.startChartTime = l.startChartTime;
+      }
+      if (!sweptMembers.length && l.endTime > survivor.endTime) {
+        survivor.endTime = l.endTime;
+        survivor.endChartTime = l.endChartTime;
       }
     }
     survivor.label = formatMergedTags(tags, side);
     survivor.color = confColor;
     survivor.lineWidth = 3;
-    if (group.every((l) => l.swept)) {
-      const times = group.map((l) => l.sweepTime ?? l.endTime).filter((t) => t != null);
-      const chartTimes = group.map((l) => l.sweepChartTime ?? l.endChartTime).filter((t) => t != null);
-      if (times.length) {
-        survivor.swept = true;
-        survivor.sweepTime = Math.max(...times);
-        survivor.endTime = survivor.sweepTime;
-        if (chartTimes.length) {
-          survivor.sweepChartTime = Math.max(...chartTimes);
-          survivor.endChartTime = survivor.sweepChartTime;
-        }
+    if (sweptMembers.length) {
+      const times = sweptMembers.map((l) => l.sweepTime).filter((t) => t != null);
+      const chartTimes = sweptMembers.map((l) => l.sweepChartTime ?? l.endChartTime).filter((t) => t != null);
+      survivor.swept = true;
+      survivor.sweepTime = Math.min(...times);
+      survivor.endTime = survivor.sweepTime;
+      if (chartTimes.length) {
+        const bySweep = sweptMembers
+          .map((l) => ({ sweep: l.sweepTime, chart: l.sweepChartTime ?? l.endChartTime }))
+          .filter((x) => x.sweep != null && x.chart != null);
+        const match = bySweep.find((x) => x.sweep === survivor.sweepTime) ?? bySweep[0];
+        survivor.sweepChartTime = match?.chart ?? Math.min(...chartTimes);
+        survivor.endChartTime = survivor.sweepChartTime;
       }
     } else {
+      for (const l of group) {
+        if (l.endTime > survivor.endTime) {
+          survivor.endTime = l.endTime;
+          survivor.endChartTime = l.endChartTime;
+        }
+      }
       survivor.swept = false;
       survivor.sweepTime = undefined;
       survivor.sweepChartTime = undefined;
@@ -593,8 +671,13 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
   const releaseLines = [];
   /** @type {Set<string>} */
   const releaseBornDays = new Set();
+  /** @type {Set<string>} */
+  const takenLiquidity = new Set();
   const releasePlan = opts.releasePlan instanceof Map ? opts.releasePlan : buildReleasePlan(opts.newsByDay ?? {}, opts.newsRows ?? []);
   const chartSec = Math.max(60, Number(opts.chartSec) || 60);
+  const sessionLookback = sessions.length
+    ? Math.max(maxBarsBack, Math.ceil((30 * 3600) / chartSec))
+    : maxBarsBack;
 
   let startIdx = 19;
   for (const cfg of htf) {
@@ -604,7 +687,7 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     startIdx = Math.max(startIdx, firstBarIndexAtOrAfter(bars, first - pivotBuf));
   }
   if (sessions.length) {
-    startIdx = Math.max(startIdx, Math.max(19, endIdx - maxBarsBack + 1));
+    startIdx = Math.max(startIdx, Math.max(19, endIdx - sessionLookback + 1));
   }
   if (startIdx > endIdx) return { lines: [], htfState };
 
@@ -628,6 +711,13 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
         }
         if (closeIdx >= agg.length) break;
         if (bar.time < htfBucketCompleteAt(agg[closeIdx].time, tfSec)) break;
+        const confirmUtc = htfBucketCompleteAt(agg[closeIdx].time, tfSec);
+        const confirmBarIdx = Math.min(
+          Math.max(0, firstBarIndexAtOrAfter(bars, confirmUtc)),
+          bars.length - 1,
+        );
+        const confirmChartTime =
+          chartBars[confirmBarIdx]?.time ?? chartTimes[closeIdx] ?? chartTime;
         onHtfBarClose(
           agg,
           closeIdx,
@@ -635,8 +725,8 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
           matrices[`${cfg.slot}H`],
           matrices[`${cfg.slot}L`],
           cfg,
-          bar.time,
-          chartTime,
+          confirmUtc,
+          confirmChartTime,
           maxUnswept,
           proximity,
           showLabels,
@@ -645,8 +735,10 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
           chartTimes,
           bars,
           chartBars,
-          i,
+          confirmBarIdx,
           maxSwept,
+          takenLiquidity,
+          endIdx,
         );
         ptr += 1;
       }
@@ -655,7 +747,7 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
 
     for (const key of Object.keys(matrices)) {
       const m = matrices[key];
-      sweepMatrix(m, bar, chartTime, key.endsWith("H") ? "high" : "low", maxSwept);
+      sweepMatrix(m, bar, chartTime, key.endsWith("H") ? "high" : "low", maxSwept, takenLiquidity);
       extendMatrix(m, bar.time, chartTime);
     }
 
@@ -727,11 +819,13 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
       if (sl.swept) continue;
       const cfg = sessions.find((c) => sl.label.startsWith(c.label));
       const inOwnSession = cfg ? inSession(bar.time, cfg) : false;
-      if (!inOwnSession && bar.time > levelBornTime(sl)) {
-        if (barSweepsLevel(bar, sl.kind, sl.price)) {
-          markSwept(sl, bar.time, chartTime);
-          continue;
-        }
+      if (
+        !inOwnSession &&
+        bar.time > levelBornTime(sl) &&
+        barSweepsLevel(bar, sl.kind, sl.price)
+      ) {
+        markSwept(sl, bar.time, chartTime, takenLiquidity);
+        continue;
       }
       sl.endTime = bar.time;
       sl.endChartTime = chartTime;
@@ -776,7 +870,7 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     for (const rl of releaseLines) {
       if (rl.swept) continue;
       if (bar.time > levelBornTime(rl) && barSweepsLevel(bar, rl.kind, rl.price)) {
-        markSwept(rl, bar.time, chartTime);
+        markSwept(rl, bar.time, chartTime, takenLiquidity);
         continue;
       }
       rl.endTime = bar.time;
@@ -786,8 +880,14 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
 
   for (const m of Object.values(matrices)) {
     for (const lvl of [...m.active]) {
-      retroactiveSweep(m, lvl, bars, chartBars, endIdx, maxSwept);
+      retroactiveSweep(m, lvl, bars, chartBars, endIdx, maxSwept, takenLiquidity);
     }
+  }
+  for (const sl of sessionLines) {
+    retroactiveSweepSessionLine(sl, sessions, bars, chartBars, endIdx, takenLiquidity);
+  }
+  for (const rl of releaseLines) {
+    retroactiveSweepLine(rl, bars, chartBars, endIdx, takenLiquidity);
   }
 
   /** @type {LiqLine[]} */
@@ -818,6 +918,20 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     } else if (lvl.label && !lvl.label.includes("(")) {
       lvl.label = `${lvl.label} (${Number(lvl.price).toFixed(2)})`;
     }
+  }
+
+  const sweptPriceKeys = new Set(
+    out
+      .filter((l) => l.swept)
+      .map((l) => `${l.kind}|${Math.round(l.price * 100)}`),
+  );
+  if (sweptPriceKeys.size) {
+    out = out.filter(
+      (l) =>
+        l.swept ||
+        l.sessionBorn != null ||
+        !sweptPriceKeys.has(`${l.kind}|${Math.round(l.price * 100)}`),
+    );
   }
 
   return { lines: out, htfState };

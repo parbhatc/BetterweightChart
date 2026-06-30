@@ -37,7 +37,8 @@ export function mountMainToolbar(opts) {
   const flyout = createFlyoutHost(toolbarEl);
   const toolbarCollapse = createDrawingToolbarCollapse({ toolbarEl, flyout });
 
-  function maybeExpandToolbar() {
+  function maybeExpandToolbar(opts = {}) {
+    if (opts.skipExpand) return;
     if (NARROW_DRAW_TOOLBAR_MQ.matches && toolbarCollapse.isCollapsed()) {
       toolbarCollapse.expand();
     }
@@ -101,8 +102,8 @@ export function mountMainToolbar(opts) {
     onSelectTool: (type) => {
       controller.armChartPlacementSuppress?.();
       const group = findGroupForTool(type);
-      if (group) selectTool(type, group.id);
-      else if (CURSOR_TOOLS.has(type)) selectCursorTool(type);
+      if (group) selectTool(type, group.id, { skipExpand: true });
+      else if (CURSOR_TOOLS.has(type)) selectCursorTool(type, { skipExpand: true });
     },
   });
 
@@ -176,9 +177,9 @@ export function mountMainToolbar(opts) {
     favoriteToolbar.syncActive();
   }
 
-  function selectCursorTool(type) {
+  function selectCursorTool(type, opts = {}) {
     if (!CURSOR_TOOLS.has(type)) return;
-    maybeExpandToolbar();
+    maybeExpandToolbar(opts);
     cursorSelection = type;
     controller.setActiveTool(type);
     clearActiveUi();
@@ -191,18 +192,18 @@ export function mountMainToolbar(opts) {
     favoriteToolbar.syncActive();
   }
 
-  function selectTool(type, groupId) {
+  function selectTool(type, groupId, opts = {}) {
     if (!type || CURSOR_TOOLS.has(type)) {
-      selectCursorTool(type || "cursor");
+      selectCursorTool(type || "cursor", opts);
       return;
     }
 
     if (controller.getActiveTool() === type) {
-      selectCursorTool("cursor");
+      selectCursorTool("cursor", opts);
       return;
     }
 
-    maybeExpandToolbar();
+    maybeExpandToolbar(opts);
 
     if (SUPPORTED_DRAW_TOOLS.has(type)) {
       controller.setActiveTool(type);

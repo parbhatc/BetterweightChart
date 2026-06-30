@@ -22,6 +22,15 @@ export function emptyStateCopy(meta, pane) {
     };
   }
 
+  if (meta?.title && (meta?.error || meta?.text)) {
+    return {
+      title: String(meta.title),
+      text: String(meta.error ?? meta.text),
+      primary: { label: "Change interval", action: "interval" },
+      secondary: { label: "Change symbol", action: "symbol" },
+    };
+  }
+
   if (meta?.error) {
     return {
       title: "Couldn't load chart data",
@@ -116,4 +125,53 @@ export function syncPaneEmptyState(pane, opts = {}) {
 
   root.hidden = false;
   wrap?.classList.add("tv-chart-wrap--empty");
+}
+
+/**
+ * Full-chart error when interval/symbol has no data at the replay cursor.
+ * @param {object} pane
+ * @param {{ title?: string, text: string, onChangeSymbol?: () => void, onChangeInterval?: () => void }} opts
+ */
+export function showPaneChartError(pane, opts) {
+  const text = String(opts?.text ?? "").trim();
+  if (!text) return;
+  syncPaneEmptyState(pane, {
+    show: true,
+    meta: { title: opts.title ?? "No data", error: text },
+    onChangeSymbol: opts.onChangeSymbol,
+    onChangeInterval: opts.onChangeInterval,
+  });
+}
+
+/** @param {object | object[]} panesOrPane */
+export function hidePaneChartError(panesOrPane) {
+  const panes = Array.isArray(panesOrPane) ? panesOrPane : [panesOrPane];
+  for (const pane of panes) {
+    if (!pane) continue;
+    syncPaneEmptyState(pane, { show: false });
+  }
+}
+
+/**
+ * @param {object} ctx
+ * @param {object | object[]} panesOrPane
+ * @param {{ title?: string, text: string }} opts
+ */
+export function showChartError(ctx, panesOrPane, opts) {
+  const panes = Array.isArray(panesOrPane) ? panesOrPane : [panesOrPane];
+  for (const pane of panes) {
+    if (!pane) continue;
+    showPaneChartError(pane, {
+      title: opts.title,
+      text: opts.text,
+      onChangeSymbol: () => ctx.symbolSearchUi?.open?.(),
+      onChangeInterval: () => ctx.tfPickerUi?.openPanel?.(),
+    });
+  }
+}
+
+/** @param {object} ctx @param {object | object[]} panesOrPane */
+export function hideChartError(ctx, panesOrPane) {
+  void ctx;
+  hidePaneChartError(panesOrPane);
 }
