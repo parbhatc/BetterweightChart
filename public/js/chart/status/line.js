@@ -180,7 +180,7 @@ export function renderStatusLine(el, opts) {
     const { change: barChg, pct: barPct } = barChangeFromPrevClose(bar, prevBar);
     const sign = barChg >= 0 ? "+" : "−";
     const pctSign = barPct >= 0 ? "+" : "−";
-    const chgUp = barChg >= 0;
+    const chgUp = isBarUp(bar, prevBar, colorOnPrev);
     const chgCls = barPriceClass(chgUp);
     const chgColor = candleValueColor(sym, chgUp);
     valueParts.push(

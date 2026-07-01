@@ -155,6 +155,70 @@
   }
 }
 
+/* ── News panel (mobile sheet) ── */
+@media (max-width: 768px) {
+  body.tv-news-shell-open {
+    overflow: hidden;
+  }
+
+  .tv-news-shell:not([hidden]) {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    position: fixed;
+    inset: 0;
+    z-index: 10050;
+    padding:
+      max(var(--safe-top), var(--space-2))
+      var(--space-2)
+      max(var(--safe-bottom), var(--space-2));
+  }
+
+  .tv-news-shell__backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    background: color-mix(in srgb, var(--tv-bg) 55%, transparent);
+    backdrop-filter: blur(3px);
+    touch-action: manipulation;
+  }
+
+  .tv-news-shell .tv-news-panel {
+    position: relative;
+    left: auto !important;
+    top: auto !important;
+    width: 100%;
+    max-width: 28rem;
+    max-height: min(85dvh, 36rem);
+    z-index: 1;
+  }
+
+  .tv-news-toolbar__btn {
+    min-width: var(--touch-min);
+    min-height: var(--touch-min);
+  }
+
+  .tv-news-filter-chip {
+    min-height: var(--touch-min);
+    padding: 0 var(--space-3);
+  }
+
+  .tv-news-panel__close {
+    width: var(--touch-min);
+    height: var(--touch-min);
+  }
+
+  .tv-news-list__item {
+    flex-wrap: wrap;
+    min-height: var(--touch-min);
+  }
+
+  .tv-news-panel__filter-chips--scroll,
+  .tv-chart-bottom-bar {
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
 /* ── Timeframe bar ── */
 @media (max-width: 768px) {
   body.tv-tf-panel-open {

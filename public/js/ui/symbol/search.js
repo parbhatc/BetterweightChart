@@ -314,6 +314,7 @@ export function mountSymbolSearch(opts) {
     close();
     trigger?.focus();
     if (matchesActiveSymbol(sym, meta, activeSymbol)) return;
+    activeSymbol = sym;
     setDisplay(sym, meta);
     onSelect(sym, meta);
   });
@@ -353,6 +354,7 @@ export function mountSymbolSearch(opts) {
       }
     },
     setSymbol(sym, meta) {
+      activeSymbol = sym;
       const resolved = meta ?? metaBySymbol.get(sym) ?? { symbol: sym };
       setDisplay(sym, resolved);
     },

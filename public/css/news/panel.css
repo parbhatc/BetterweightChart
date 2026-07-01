@@ -35,7 +35,7 @@
   position: fixed;
   z-index: 420;
   width: min(22rem, calc(100vw - 1rem));
-  max-height: min(24rem, calc(100vh - 6rem));
+  max-height: min(28rem, calc(100vh - 6rem));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -45,17 +45,166 @@
   box-shadow: var(--shadow-lg);
 }
 
+.tv-news-shell {
+  display: contents;
+}
+
+.tv-news-shell[hidden] {
+  display: none !important;
+}
+
+.tv-news-shell__backdrop {
+  display: none;
+}
+
 .tv-news-panel[hidden] {
   display: none !important;
 }
 
 .tv-news-panel__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid var(--tv-border-subtle);
+  flex-shrink: 0;
+}
+
+.tv-news-panel__head-main {
+  min-width: 0;
+}
+
+.tv-news-panel__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--tv-muted);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tv-news-panel__close:hover,
+.tv-news-panel__close:focus-visible {
+  color: var(--tv-text);
+  background: var(--tv-surface-hover);
+}
+
+.tv-news-panel__filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--tv-border-subtle);
+  background: color-mix(in srgb, var(--tv-surface) 35%, transparent);
+  flex-shrink: 0;
+}
+
+.tv-news-panel__filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.tv-news-panel__filter-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.tv-news-panel__filter-label {
+  font-size: 0.625rem;
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--tv-muted);
+}
+
+.tv-news-filter-clear {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--tv-accent, #2962ff);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.tv-news-filter-clear:hover,
+.tv-news-filter-clear:focus-visible {
+  text-decoration: underline;
+}
+
+.tv-news-panel__filter-hint {
+  margin: 0;
+  font-size: 0.625rem;
+  line-height: 1.35;
+  color: var(--tv-muted);
+}
+
+.tv-news-panel__filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.tv-news-panel__filter-chips--scroll {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 1px;
+}
+
+.tv-news-panel__filter-chips--scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.tv-news-filter-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.625rem;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--tv-border-subtle);
+  border-radius: 999px;
+  background: var(--tv-surface);
+  color: var(--tv-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition-colors);
+}
+
+.tv-news-filter-chip.is-active {
+  color: var(--tv-text);
+  border-color: color-mix(in srgb, var(--tv-accent, #2962ff) 45%, var(--tv-border-subtle));
+  background: color-mix(in srgb, var(--tv-accent, #2962ff) 12%, var(--tv-surface));
+}
+
+.tv-news-filter-chip--high.is-active {
+  border-color: color-mix(in srgb, #f23645 45%, var(--tv-border-subtle));
+  background: color-mix(in srgb, #f23645 12%, var(--tv-surface));
+  color: #f23645;
+}
+
+.tv-news-filter-chip--medium.is-active {
+  border-color: color-mix(in srgb, #ff9800 45%, var(--tv-border-subtle));
+  background: color-mix(in srgb, #ff9800 12%, var(--tv-surface));
+  color: #ff9800;
+}
+
+.tv-news-panel__filter-empty {
+  font-size: var(--text-xs);
+  color: var(--tv-muted);
 }
 
 .tv-news-panel__title {
@@ -72,6 +221,9 @@
 .tv-news-panel__body {
   overflow: auto;
   padding: var(--space-2) var(--space-3);
+  min-height: 0;
+  flex: 1 1 auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .tv-news-panel__settings {

@@ -36,6 +36,7 @@ export function mountNewsToolbar(opts) {
 
   const panel = createNewsPanel({
     anchor: btn,
+    anchorRoot: wrap,
     getChartDayYmd: () => chartDayFromPane(getActivePane(), getReplayState?.()),
     getNewsByDay,
     newsStore,

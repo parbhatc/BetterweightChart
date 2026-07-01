@@ -2,14 +2,34 @@ import { DEFAULT_NEWS_LEVELS, NEWS_SOURCE_OPTIONS, normalizeNewsLevels } from ".
 
 const STORAGE_KEY = "bwc-news-settings";
 
-/** @typedef {{ enabled: boolean, source: string, eventTypes: import("./events.js").NewsLevelRow[] }} NewsSettings */
+/** @typedef {{ enabled: boolean, source: string, eventTypes: import("./events.js").NewsLevelRow[], displayCurrencies: string[], displayImpacts: string[] }} NewsSettings */
+
+const IMPACT_OPTIONS = ["high", "medium", "low"];
 
 /** @type {NewsSettings} */
 const DEFAULT_NEWS_SETTINGS = {
   enabled: true,
   source: "forexfactory",
   eventTypes: DEFAULT_NEWS_LEVELS.map((r) => ({ ...r })),
+  displayCurrencies: [],
+  displayImpacts: [],
 };
+
+/** @param {unknown} raw @returns {string[]} */
+function normalizeImpactFilter(raw) {
+  if (!Array.isArray(raw)) return [];
+  const allowed = new Set(IMPACT_OPTIONS);
+  const next = raw.map((v) => String(v || "").trim().toLowerCase()).filter((v) => allowed.has(v));
+  // Legacy: all three explicit = no filter (same as empty).
+  if (next.length === IMPACT_OPTIONS.length) return [];
+  return next;
+}
+
+/** @param {unknown} raw @returns {string[]} */
+function normalizeCurrencyFilter(raw) {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.map((v) => String(v || "").trim().toUpperCase()).filter(Boolean))];
+}
 
 /** @returns {NewsSettings} */
 function loadNewsSettings() {
@@ -21,6 +41,8 @@ function loadNewsSettings() {
       enabled: parsed.enabled !== false,
       source: parsed.source ?? "forexfactory",
       eventTypes: normalizeNewsLevels(parsed.eventTypes ?? parsed.newsLevels),
+      displayCurrencies: normalizeCurrencyFilter(parsed.displayCurrencies),
+      displayImpacts: normalizeImpactFilter(parsed.displayImpacts),
     };
   } catch {
     return structuredClone(DEFAULT_NEWS_SETTINGS);
@@ -64,6 +86,12 @@ export function createNewsSettings() {
       if (patch.enabled != null) state.enabled = patch.enabled !== false;
       if (patch.source != null) state.source = String(patch.source);
       if (patch.eventTypes != null) state.eventTypes = normalizeNewsLevels(patch.eventTypes);
+      if (patch.displayCurrencies != null) {
+        state.displayCurrencies = normalizeCurrencyFilter(patch.displayCurrencies);
+      }
+      if (patch.displayImpacts != null) {
+        state.displayImpacts = normalizeImpactFilter(patch.displayImpacts);
+      }
       saveNewsSettings(state);
       emit();
     },

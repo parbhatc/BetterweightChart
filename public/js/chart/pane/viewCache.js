@@ -1,4 +1,4 @@
-import { buildCandleSeriesData } from "../bar/data.js";
+import { buildCandleSeriesData, buildCandleBarEntry } from "../bar/data.js";
 import { isElectronicSession } from "../../primitives/session/background.js";
 import { chartTimeZoneForPane } from "../timezone/chartTime.js";
 import { resolveTimezone } from "../timezone/list.js";
@@ -152,7 +152,8 @@ export function patchFormingBarInView(pane, utcBar, settingsStore, symbolInfo, r
   view.chartBars[idx] = chartBar;
 
   const sym = settingsStore.get().symbol ?? {};
-  const candle = buildCandleSeriesData([chartBar], sym)[0] ?? null;
+  const prevUtcBar = idx > 0 ? view.utcBars[idx - 1] : undefined;
+  const candle = buildCandleBarEntry(chartBar, prevUtcBar, sym);
   if (candle && view.seriesData[idx] != null) {
     view.seriesData[idx] = candle;
   }
