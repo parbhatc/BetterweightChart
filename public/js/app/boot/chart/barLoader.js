@@ -123,6 +123,11 @@ export function attachBarLoader(ctx) {
       }
       refreshCompareDependentOverlays(pane);
       if (meta.isNewBar) {
+        if (ctx.opts?.replayHostControlled && ctx.ensureIndicatorDataThenOverlay) {
+          ctx.ensureIndicatorDataThenOverlay(pane);
+          return;
+        }
+        ctx.ensureIndicatorData?.();
         if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
           ctx.refreshIndicatorsImmediate?.(pane.index);
         } else {
@@ -133,6 +138,7 @@ export function attachBarLoader(ctx) {
       }
     },
     onHistoryPrepended: (pane) => {
+      if (pane._indicatorHistoryBulkLoad) return;
       const added = ctx.replayEngine?.mergeHistoryIntoSnapshot?.(pane) ?? 0;
       if (added > 0) ctx.replayFutureDim?.refreshAll?.();
       ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
@@ -150,6 +156,7 @@ export function attachBarLoader(ctx) {
       ctx.syncLayoutDateRangeFrom(source.chart);
     },
     onPaneHistoryDataUpdated: (pane) => {
+      if (pane._indicatorHistoryBulkLoad) return;
       if (pane._historyRestorePending || pane._loadingHistory) return;
       ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
       refreshCompareDependentOverlays(pane);

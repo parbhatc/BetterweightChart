@@ -9,6 +9,7 @@ let lastOverlaySig = "";
 let lastEngineSig = "";
 let lastTimeMapSig = "";
 let lastPriceWarnSig = "";
+let lastReplayStepSig = "";
 
 /** @param {unknown} sec */
 function fmtUnix(sec) {
@@ -147,6 +148,47 @@ export function debugLevelsEngineResult(bars, anchorUnix, opts, lines, htfState)
     },
     2000,
   );
+}
+
+/**
+ * Log when levels change on replay step (enable: ?debug=levels or localStorage bwc-debug=levels).
+ * @param {number} anchorUnix
+ * @param {object[]} lines
+ * @param {Record<string, { agg?: object[], source?: string }>} htfState
+ */
+export function debugLevelsReplayStep(anchorUnix, lines, htfState) {
+  if (!isChartDebugEnabled()) return;
+
+  const lineSig = (lines ?? [])
+    .map((l) => `${l.label}:${l.kind}:${Number(l.price).toFixed(2)}:${l.swept ? 1 : 0}`)
+    .sort()
+    .join("|");
+  const htfSig = Object.entries(htfState ?? {})
+    .map(([slot, state]) => `${slot}:${state.source ?? "?"}:${state.agg?.length ?? 0}`)
+    .sort()
+    .join(",");
+  const combined = `${anchorUnix}|${lineSig}|${htfSig}`;
+  if (combined === lastReplayStepSig) return;
+  lastReplayStepSig = combined;
+
+  /** @type {Record<string, { aggBars: number, source?: string }>} */
+  const htfSummary = {};
+  for (const [slot, state] of Object.entries(htfState ?? {})) {
+    htfSummary[slot] = {
+      aggBars: state.agg?.length ?? 0,
+      source: state.source,
+    };
+  }
+
+  chartDebug("levels", "replay-step", {
+    anchor: fmtUnix(anchorUnix),
+    lineCount: lines?.length ?? 0,
+    active: lines?.filter((l) => !l.swept).length ?? 0,
+    activeLevels: (lines ?? [])
+      .filter((l) => !l.swept)
+      .map((l) => `${l.label} @ ${Number(l.price).toFixed(2)}`),
+    htf: htfSummary,
+  });
 }
 
 /**

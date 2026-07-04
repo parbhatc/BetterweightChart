@@ -625,16 +625,36 @@ export function createBarLoader(opts) {
     return pending;
   }
 
+  /** @param {object} pane */
+  function waitHistoryRestoreSettled(pane) {
+    if (!pane._historyRestorePending) return Promise.resolve();
+    return new Promise((resolve) => {
+      const tick = () => {
+        if (!pane._historyRestorePending) resolve();
+        else requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+  }
+
   async function ensureIndicatorChartHistory(pane, opts = {}) {
     const want = Math.max(0, Number(getRequiredChartBarsForPane?.(pane)) || 0);
     if (!want || pane.bars.length >= want) return;
-    if (pane._historyExhausted || pane._suppressHistoryPrefetch) return;
-    let guard = 0;
-    while (pane.bars.length < want && !pane._historyExhausted && guard < 16) {
-      if (isPanning()) return;
-      const got = await prependHistory(pane, historyChunk, opts);
-      if (!got) break;
-      guard += 1;
+    if (pane._historyExhausted) return;
+    // ponytail: TF switch suppresses edge prefetch during load; indicators still need ~30h depth
+    const restoreSuppress = pane._suppressHistoryPrefetch === true;
+    if (restoreSuppress) delete pane._suppressHistoryPrefetch;
+    try {
+      let guard = 0;
+      while (pane.bars.length < want && !pane._historyExhausted && guard < 16) {
+        if (isPanning()) return;
+        const got = await prependHistory(pane, historyChunk, opts);
+        if (!got) break;
+        await waitHistoryRestoreSettled(pane);
+        guard += 1;
+      }
+    } finally {
+      if (restoreSuppress) pane._suppressHistoryPrefetch = true;
     }
   }
 
@@ -715,7 +735,6 @@ export function createBarLoader(opts) {
 
       /** @param {object} loadOpts */
       async function tryReplayCacheLoad(loadOpts) {
-        if (replayCtx) return null;
         if (!tryRestorePaneResolutionCache(pane)) return null;
         if (replayCapTo != null && Number.isFinite(replayCapTo) && pane.bars.length) {
           const last = pane.bars.at(-1)?.time;
@@ -729,6 +748,7 @@ export function createBarLoader(opts) {
           symbol: pane.symbol,
           resolution: pane.resolution,
           bars: pane.bars.length,
+          replay: Boolean(replayCtx),
         });
         applyReplayCapAfterLoad(loadOpts);
         return finishPaneAfterBarsLoaded(pane, loadOpts);

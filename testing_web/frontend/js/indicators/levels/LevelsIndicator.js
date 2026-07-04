@@ -83,11 +83,16 @@ class LevelsIndicator extends BarScriptIndicator {
   /** @param {import("../../types.js").IndicatorInstance} instance @param {{ symbol?: string, resolution?: string, bars?: object[] }} pane */
   collectDataNeeds(instance, pane) {
     const inputs = instance.inputs;
-    const htfPad = levelsHtf.requiredHtfBars(inputs) + 20;
+    const chartRes = pane.resolution ?? "1";
+    const chartBars = pane.bars?.length ?? 300;
     /** @type {import("../../security/indicatorDataNeeds.js").IndicatorDataNeeds} */
     const needs = { htf: [] };
-    for (const { tfId } of levelsHtf.enabledResolutions(inputs, pane.resolution ?? "1")) {
-      needs.htf.push({ symbol: pane.symbol ?? "", resolution: tfId, countBack: htfPad });
+    for (const { tfId, tfSec } of levelsHtf.enabledResolutions(inputs, chartRes)) {
+      needs.htf.push({
+        symbol: pane.symbol ?? "",
+        resolution: tfId,
+        countBack: levelsHtf.requiredHtfCountForLayer(inputs, chartBars, chartRes, tfSec),
+      });
     }
     return needs;
   }

@@ -27,7 +27,7 @@ import {
   finishSeriesReload,
   paintPaneAfterTimeframeLoad,
   preparePanesForSeriesReload,
-  seedPaneResolutionAsHtf,
+  prepareHtfBeforeTimeframeSwitch,
 } from "./chart/pickers.js";
 
 /**
@@ -436,7 +436,7 @@ export function createChartWidgetApi(ctx) {
           captureViewportBarLayout(p, settingsStore, resolutions),
         );
         for (const pane of panes) {
-          seedPaneResolutionAsHtf(tfSwitchCtx, pane);
+          prepareHtfBeforeTimeframeSwitch(tfSwitchCtx, pane, res);
           replayEngine?.beforeResolutionChange?.(pane);
           stashPaneResolutionCache(pane, pane.resolution);
           pane.resolution = res;
@@ -480,7 +480,7 @@ export function createChartWidgetApi(ctx) {
       if (!pane) return;
       const savedLayout = captureViewportBarLayout(pane, settingsStore, resolutions);
       preparePanesForSeriesReload(tfSwitchCtx, [pane]);
-      seedPaneResolutionAsHtf(tfSwitchCtx, pane);
+      prepareHtfBeforeTimeframeSwitch(tfSwitchCtx, pane, res);
       replayEngine?.beforeResolutionChange?.(pane);
       stashPaneResolutionCache(pane, pane.resolution);
       pane.resolution = res;

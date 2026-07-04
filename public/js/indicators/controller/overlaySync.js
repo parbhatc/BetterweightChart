@@ -171,7 +171,10 @@ export function createOverlaySync(deps) {
       typeof Indicator.shouldRefreshOverlayOnCacheHit === "function" &&
       Indicator.shouldRefreshOverlayOnCacheHit(instance, overlayCtx);
     if (hookPending === true) {
-      overlayData = [];
+      overlayData =
+        Array.isArray(instance._overlayBoxCache) && instance._overlayBoxCache.length
+          ? instance._overlayBoxCache
+          : [];
     } else if (cacheHit && !refreshLiveOnCacheHit) {
       overlayData = instance._overlayBoxCache;
     } else {
@@ -215,7 +218,7 @@ export function createOverlaySync(deps) {
     };
     const timeCtxKey = overlayTimeCtxKey(timeCtx);
 
-    const syncToken = `${recomputeKey}|${geomKey}|${timeCtxKey}|${pane._historyRestorePending ? 1 : 0}|${instance._initPending ? 1 : 0}`;
+    const syncToken = `${recomputeKey}|${geomKey}|${timeCtxKey}|${pane._historyRestorePending ? 1 : 0}`;
     if (instance._overlayLastSyncToken === syncToken) {
       return;
     }

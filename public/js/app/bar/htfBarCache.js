@@ -22,6 +22,33 @@ export function getHtfBars(symbol, resolution) {
 }
 
 /**
+ * HTF cache fetched at an earlier replay anchor may end before buckets needed now
+ * (e.g. 9:15 15m bar cached at 9:29 — 9:30 bucket missing until anchor passes 9:45).
+ * @param {string} symbol
+ * @param {string} resolution
+ * @param {number} anchorSec replay playback anchor (1m UTC)
+ */
+export function htfCacheStaleForAnchor(symbol, resolution, anchorSec) {
+  const tfSec = resolutionSec(resolution);
+  if (!symbol || !resolution || anchorSec == null || !tfSec) return false;
+  const entry = getHtfBars(symbol, resolution);
+  if (!entry?.utcBars?.length) return false;
+  const lastOpen = entry.utcBars.at(-1)?.time;
+  if (lastOpen == null) return false;
+  const anchorOpen = alignBarTime(anchorSec, tfSec);
+  // ponytail: pivot-right needs the next HTF bucket closed through anchor
+  return lastOpen < anchorOpen - tfSec;
+}
+
+/** @param {string} symbol @param {string} resolution @param {number} anchorSec */
+export function clearHtfIfStaleForAnchor(symbol, resolution, anchorSec) {
+  if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec)) return false;
+  store.delete(htfCacheKey(symbol, resolution));
+  chartDebug("data", "htf cache stale for anchor", { symbol, resolution, anchorSec });
+  return true;
+}
+
+/**
  * Publish bars into the shared HTF store (from pane / resolution cache / another indicator).
  * @param {string} symbol
  * @param {string} resolution
@@ -78,14 +105,24 @@ export async function ensureHtfBars(opts) {
     opts;
   const key = htfCacheKey(symbol, resolution);
   const want = Math.max(50, Math.min(2000, Number(countBack) || 300));
+  const anchorSec = opts.playbackAnchorSec;
+
+  if (anchorSec != null) {
+    clearHtfIfStaleForAnchor(symbol, resolution, anchorSec);
+  }
 
   const cached = lookupBarsForEnsure(opts, want);
   if (cached?.sufficient) {
     return seedHtfBars(symbol, resolution, cached.utcBars, cached.chartBars, cached.source);
   }
 
-  const existing = store.get(key);
-  if (existing && existing.utcBars.length >= want && !existing.historyExhausted) {
+  let existing = store.get(key);
+  if (
+    existing &&
+    existing.utcBars.length >= want &&
+    !existing.historyExhausted &&
+    (anchorSec == null || !htfCacheStaleForAnchor(symbol, resolution, anchorSec))
+  ) {
     return existing;
   }
 
@@ -102,6 +139,7 @@ export async function ensureHtfBars(opts) {
     settingsStore,
     symbolInfoExtra,
     existing,
+    playbackAnchorSec: anchorSec,
     getAllChartPanes: opts.getAllChartPanes,
     resolutions: opts.resolutions,
   }).finally(() => inFlight.delete(key));
@@ -175,10 +213,13 @@ async function fetchHtfBars(opts) {
 
   if (utcBars.length < want) {
     if (!symbolInfo) return existing ?? null;
+    const playbackAnchorSec = opts.playbackAnchorSec;
     const to =
-      pane.bars?.length > 0
-        ? alignBarTime(pane.bars.at(-1).time, barSec)
-        : alignBarTime(Date.now() / 1000, barSec);
+      playbackAnchorSec != null && Number.isFinite(playbackAnchorSec)
+        ? playbackAnchorSec
+        : pane.bars?.length > 0
+          ? alignBarTime(pane.bars.at(-1).time, barSec)
+          : alignBarTime(Date.now() / 1000, barSec);
     const params = buildInitialPeriodParams(barSec, want);
     params.to = to;
     chartDebug("data", "htf cache fetch", { symbol, resolution, countBack: want, to: params.to });
@@ -189,6 +230,11 @@ async function fetchHtfBars(opts) {
   }
 
   if (!utcBars.length) return existing ?? null;
+
+  // ponytail: never shrink store — unless replay anchor moved forward (handled above)
+  if (existing?.utcBars?.length && utcBars.length <= existing.utcBars.length) {
+    return existing;
+  }
 
   const chartBars = utcBars;
   const entry = {
@@ -259,5 +305,33 @@ export function clearHtfBars(symbol, resolution) {
   }
   for (const k of [...store.keys()]) {
     if (k.startsWith(`${symbol}|`)) store.delete(k);
+  }
+}
+
+/**
+ * Drop HTF entries at or coarser than target after switching to a finer chart TF.
+ * Native coarse chart bars must not stay in the store — they disagree with LTF-aggregated HTF.
+ * @param {string} symbol
+ * @param {string} targetResolution
+ */
+export function clearHtfCoarserThan(symbol, targetResolution) {
+  const targetSec = resolutionSec(targetResolution);
+  if (!symbol || targetSec == null) return;
+  let cleared = 0;
+  for (const k of [...store.keys()]) {
+    if (!k.startsWith(`${symbol}|`)) continue;
+    const res = k.slice(symbol.length + 1);
+    const sec = resolutionSec(res);
+    if (sec != null && sec >= targetSec) {
+      store.delete(k);
+      cleared += 1;
+    }
+  }
+  if (cleared) {
+    chartDebug("data", "htf cache invalidate finer switch", {
+      symbol,
+      targetResolution,
+      cleared,
+    });
   }
 }

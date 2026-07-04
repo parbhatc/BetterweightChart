@@ -1,7 +1,7 @@
 import { resolutionSec } from "/js/chart/resolutions.js";
 import { normalizeResolutionId } from "/js/chart/resolutionFormat.js";
 import { resolveTimeLevels, resolveSessionLevels } from "../ui/levelsLayersPanel.js";
-import { htfPendingForLayers, requiredChartBarsForSessions, requiredChartBarsWhenNoHtf, requiredHtfBars } from "/js/indicators/security/htfPolicy.js";
+import { htfPendingForLayers, requiredChartBarsForSessions, requiredChartBarsWhenNoHtf, requiredHtfBars, requiredHtfBarsForLayer, requiredHtfBarsForViewport } from "/js/indicators/security/htfPolicy.js";
 
 export class LevelsHtf {
   /** @param {object} inputs @param {string} [chartResolution] */
@@ -24,16 +24,53 @@ export class LevelsHtf {
     return requiredHtfBars(inputs);
   }
 
+  /** @param {object} inputs @param {number} chartBarCount @param {string} [chartResolution] @param {number} tfSec */
+  requiredHtfBarsForLayer(inputs, chartBarCount, chartResolution, tfSec) {
+    return requiredHtfBarsForLayer(inputs, chartBarCount, chartResolution, tfSec);
+  }
+
+  /**
+   * HTF bars to fetch — viewport depth AND maxBarsBack pivot scan (confluence needs both).
+   * @param {object} inputs @param {number} chartBarCount @param {string} [chartResolution] @param {number} tfSec
+   */
+  requiredHtfCountForLayer(inputs, chartBarCount, chartResolution, tfSec) {
+    const pivotBack = this.requiredHtfBars(inputs);
+    const viewport =
+      chartBarCount > 0
+        ? this.requiredHtfBarsForLayer(inputs, chartBarCount, chartResolution, tfSec)
+        : pivotBack;
+    return Math.max(pivotBack, viewport);
+  }
+
+  /** @param {object} inputs @param {number} chartBarCount @param {string} [chartResolution] */
+  requiredHtfBarsForViewport(inputs, chartBarCount, chartResolution = "1") {
+    const htfs = this.enabledResolutions(inputs, chartResolution);
+    return requiredHtfBarsForViewport(inputs, chartBarCount, chartResolution, htfs);
+  }
+
   /** @param {object} inputs @param {object} [ctx] */
   htfPending(inputs, ctx = {}) {
-    const htfs = this.enabledResolutions(inputs, ctx.chartResolution ?? "1");
+    const chartResolution = ctx.chartResolution ?? "1";
+    const htfs = this.enabledResolutions(inputs, chartResolution);
     if (!htfs.length) return false;
     const symbol = ctx.primarySymbol ?? ctx.symbol;
+    const chartBarCount = ctx.chartBarCount ?? ctx.utcBars?.length ?? ctx.bars?.length ?? 0;
+    /** @type {Record<string, number>} */
+    const perTfWant = {};
+    for (const { tfId, tfSec } of htfs) {
+      perTfWant[tfId] = this.requiredHtfCountForLayer(
+        inputs,
+        chartBarCount,
+        chartResolution,
+        tfSec,
+      );
+    }
     return htfPendingForLayers(
       ctx,
       symbol,
       htfs.map(({ tfId }) => tfId),
       this.requiredHtfBars(inputs),
+      { strict: true, perTfWant },
     );
   }
 

@@ -1,5 +1,6 @@
 import { resolutionSec } from "../../chart/resolutions.js";
 import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
+import { captureViewportBarLayout } from "../../chart/pane/viewportBarLayout.js";
 import { isReplayHostControlled } from "../hostControl.js";
 import { patchReplayHtfFormingBar, resolveReplayCursorOnTfSwitch } from "../formingBar.js";
 import { barsCoverReplayAnchor, replayBarIndexForUtcTime } from "../persist.js";
@@ -41,44 +42,75 @@ export function createReplayResolutionChange(ctx, replay, state, deps) {
       const activePane = ctx.getActivePane?.() ?? ctx.chartPanes.get(0);
       if (!activePane?.bars?.length) return;
 
-      const anchorUtc =
+      const fromRes = state.ltResolutionBeforeTfSwitch;
+      const rawAnchorUtc =
+        (typeof ctx.opts?.getPlaybackAnchorRawSec === "function"
+          ? ctx.opts.getPlaybackAnchorRawSec()
+          : null) ?? null;
+
+      const fromSec = fromRes ? resolutionSec(fromRes) : null;
+      const toSec = resolutionSec(activePane.resolution);
+
+      let anchorUtc =
         (typeof ctx.opts?.getPlaybackAnchorSec === "function"
           ? ctx.opts.getPlaybackAnchorSec(activePane.resolution)
           : null) ?? rs.currentBarTime;
 
-      const rawAnchorUtc =
-        (typeof ctx.opts?.getPlaybackAnchorRawSec === "function"
-          ? ctx.opts.getPlaybackAnchorRawSec()
-          : null) ?? anchorUtc;
+      // HTF → LTF: keep raw replay cursor (e.g. 9:29), not HTF bucket open (9:15).
+      if (rawAnchorUtc != null && fromSec != null && toSec != null && toSec < fromSec) {
+        anchorUtc = rawAnchorUtc;
+      }
 
       let bars = activePane.bars;
       let cursorUtc = anchorUtc ?? bars.at(-1)?.time;
       if (cursorUtc == null) return;
 
+      if (deps.restorePaneBarsForReplayResolution?.(activePane, cursorUtc)) {
+        invalidatePaneChartView(activePane);
+        bars = activePane.bars;
+      }
+
+      // ponytail: safety net if a coarse series was restored onto a finer TF
+      const expectedSec = toSec ?? resolutionSec(activePane.resolution);
+      if (bars.length >= 2 && expectedSec != null) {
+        const tailGap = bars.at(-1).time - bars.at(-2).time;
+        if (tailGap > expectedSec * 1.5) {
+          replayDebug("resolutionChange.reloadCoarse", {
+            resolution: activePane.resolution,
+            tailGap,
+            expectedSec,
+          });
+          await ctx.loadPaneBars?.(activePane, {
+            force: true,
+            deferChartRefresh: state.replayTfChangeInFlight,
+          });
+          bars = activePane.bars;
+        }
+      }
+
       if (
         state.ltBarsBeforeTfSwitch?.length &&
-        state.ltResolutionBeforeTfSwitch &&
-        rawAnchorUtc != null
+        fromRes &&
+        rawAnchorUtc != null &&
+        fromSec != null &&
+        toSec != null &&
+        toSec > fromSec
       ) {
-        const fromSec = resolutionSec(state.ltResolutionBeforeTfSwitch);
-        const toSec = resolutionSec(activePane.resolution);
-        if (toSec > fromSec) {
-          const snap = { bars: activePane.bars };
-          const patch = patchReplayHtfFormingBar(
-            activePane,
-            rawAnchorUtc,
-            snap,
-            state.ltBarsBeforeTfSwitch,
-            state.ltResolutionBeforeTfSwitch,
-            replayBarIndexForUtcTime,
-          );
-          if (patch.ok) {
-            activePane.bars = snap.bars;
-            invalidatePaneChartView(activePane);
-            ctx.refreshPaneCandleData?.(activePane);
-            bars = activePane.bars;
-            replayDebug("forming.patch.host", patch);
-          }
+        const snap = { bars: activePane.bars };
+        const patch = patchReplayHtfFormingBar(
+          activePane,
+          rawAnchorUtc,
+          snap,
+          state.ltBarsBeforeTfSwitch,
+          fromRes,
+          replayBarIndexForUtcTime,
+        );
+        if (patch.ok) {
+          activePane.bars = snap.bars;
+          invalidatePaneChartView(activePane);
+          ctx.refreshPaneCandleData?.(activePane);
+          bars = activePane.bars;
+          replayDebug("forming.patch.host", patch);
         }
       }
       deps.clearLtBarsStash();
@@ -95,27 +127,47 @@ export function createReplayResolutionChange(ctx, replay, state, deps) {
 
       const currentIdx = replayBarIndexForUtcTime(bars, cursorUtc) ?? bars.length - 1;
       cursorUtc = bars[currentIdx]?.time ?? cursorUtc;
-
-      const selectedUtc =
-        anchorUtc != null && Number.isFinite(anchorUtc)
-          ? cursorUtc
-          : (rs.selectedBarTime ?? cursorUtc);
-      const selectedIdx =
-        anchorUtc != null && Number.isFinite(anchorUtc)
-          ? currentIdx
-          : (replayBarIndexForUtcTime(bars, selectedUtc) ?? currentIdx);
-
       activePane.replayCursorEndIndex = currentIdx;
 
       replay.setReplayPosition({
-        selectedBarIndex: selectedIdx,
+        selectedBarIndex: currentIdx,
         currentBarIndex: currentIdx,
-        selectedBarTime: bars[selectedIdx]?.time ?? selectedUtc,
+        selectedBarTime: cursorUtc,
         currentBarTime: cursorUtc,
       });
-
       state.lastAppliedEndIndex = currentIdx;
       state.lastAppliedBarTime = cursorUtc;
+      state.replayBarsByResolution.set(activePane.resolution, {
+        bars: activePane.bars.slice(),
+        cursorUtc,
+      });
+      state.replayCursorAtEntry.set(activePane.resolution, cursorUtc);
+
+      const logicalRange = deps.resolveReplayViewportLogicalRange?.(
+        activePane,
+        currentIdx,
+        fromRes,
+      );
+      ctx.refreshPaneCandleData?.(activePane, {
+        logicalRange: logicalRange ?? undefined,
+        deferSessionBg: true,
+      });
+
+      // Defer stash until LWC settles after setData (immediate capture sees width ~10).
+      if (ctx.settingsStore && ctx.resolutions && logicalRange) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const captured = captureViewportBarLayout(
+              activePane,
+              ctx.settingsStore,
+              ctx.resolutions,
+            );
+            if (captured?.width >= 10) {
+              state.replayViewportByResolution.set(activePane.resolution, captured);
+            }
+          });
+        });
+      }
 
       replayDebug("resolutionChange.hostControlled", {
         cursorUtc,
@@ -123,11 +175,10 @@ export function createReplayResolutionChange(ctx, replay, state, deps) {
         last: bars.at(-1)?.time,
         close: bars.at(-1)?.close,
         resolution: activePane.resolution,
+        currentIdx,
+        fromResolution: fromRes,
       });
 
-      if (activePane.chart && activePane.series) {
-        ctx.applySettingsToChartLocal?.(activePane.chart, activePane.series, activePane);
-      }
       ctx.replayFutureDim?.refreshAll?.();
       activePane.sessionBg?.requestRefresh();
       return;

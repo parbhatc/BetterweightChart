@@ -2,6 +2,7 @@ import { buildTvPeriodParams } from "../../app/bar/periodParams.js";
 import { resolutionSec } from "../../chart/resolutions.js";
 import { captureViewportBarLayout } from "../../chart/pane/viewportBarLayout.js";
 import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
+import { isReplayHostControlled } from "../hostControl.js";
 import { patchReplayHtfFormingBar } from "../formingBar.js";
 import { barsCoverReplayAnchor, replayBarIndexForUtcTime, trimBarsToUtcTime } from "../persist.js";
 import { replayDebug } from "../debug.js";
@@ -94,10 +95,11 @@ export function createReplayLtBars(ctx, replay, state) {
   function restorePaneBarsForReplayResolution(activePane, cursorUtc) {
     const lt = state.replayLtBarsForForming;
     const paneSec = ctx.barSecForPaneLocal?.(activePane) ?? resolutionSec(activePane.resolution);
+    // Only reuse forming LTF stash when switching back to that exact resolution (never HTF → LTF).
     if (
       lt?.bars?.length &&
-      paneSec <= resolutionSec(lt.resolution) &&
-      barsCoverReplayAnchor(lt.bars, cursorUtc, resolutionSec(lt.resolution))
+      lt.resolution === activePane.resolution &&
+      barsCoverReplayAnchor(lt.bars, cursorUtc, paneSec)
     ) {
       activePane.bars = trimBarsToUtcTime(lt.bars, cursorUtc);
       invalidatePaneChartView(activePane);
@@ -200,48 +202,71 @@ export function createReplayLtBars(ctx, replay, state) {
     return patch;
   }
 
-  /** @param {object} pane */
-  function beforeResolutionChange(pane) {
+  /** @param {object} pane @returns {number | null} */
+  function resolveReplayCursorUtc(pane) {
     const rs = replay.getState();
-    if (!rs.active || rs.currentBarTime == null) {
+    if (rs.currentBarTime != null) return rs.currentBarTime;
+    if (!isReplayHostControlled(ctx)) return null;
+    const raw =
+      typeof ctx.opts?.getPlaybackAnchorRawSec === "function"
+        ? ctx.opts.getPlaybackAnchorRawSec()
+        : null;
+    if (raw != null && Number.isFinite(raw)) return raw;
+    const capped =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane?.resolution ?? "1")
+        : null;
+    return capped != null && Number.isFinite(capped) ? capped : null;
+  }
+
+  /**
+   * @param {object} pane
+   * @param {{ viewportLayout?: ReturnType<typeof captureViewportBarLayout> | null }} [opts]
+   */
+  function beforeResolutionChange(pane, opts = {}) {
+    const rs = replay.getState();
+    const cursorUtc = resolveReplayCursorUtc(pane);
+    if (!rs.active || cursorUtc == null) {
       clearLtBarsStash();
-      clearReplayBarsByResolution();
+      if (!isReplayHostControlled(ctx)) {
+        clearReplayBarsByResolution();
+      }
       return;
     }
     const snap = pane._replaySnapshot;
     const src =
-      snap?.bars?.length && (snap.bars.at(-1)?.time ?? 0) >= rs.currentBarTime
+      snap?.bars?.length && (snap.bars.at(-1)?.time ?? 0) >= cursorUtc
         ? snap.bars
         : pane.bars;
     if (!src?.length) {
       clearLtBarsStash();
       return;
     }
-    state.ltBarsBeforeTfSwitch = trimBarsToUtcTime(src.slice(), rs.currentBarTime);
+    const fullBars = src.slice();
+    state.ltBarsBeforeTfSwitch = trimBarsToUtcTime(fullBars, cursorUtc);
     state.ltResolutionBeforeTfSwitch = pane.resolution ?? null;
     if (state.ltResolutionBeforeTfSwitch) {
-      const viewportLayout = captureViewportBarLayout(
-        pane,
-        ctx.settingsStore,
-        ctx.resolutions,
-      );
+      const viewportLayout =
+        opts.viewportLayout ??
+        captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions);
       if (viewportLayout && viewportLayout.width >= 10) {
         state.replayViewportByResolution.set(state.ltResolutionBeforeTfSwitch, viewportLayout);
       }
       state.replayBarsByResolution.set(state.ltResolutionBeforeTfSwitch, {
-        bars: state.ltBarsBeforeTfSwitch.slice(),
-        cursorUtc: rs.currentBarTime,
+        bars: fullBars,
+        cursorUtc,
       });
       const ltSec = resolutionSec(state.ltResolutionBeforeTfSwitch);
       if (!state.replayLtBarsForForming || ltSec <= resolutionSec(state.replayLtBarsForForming.resolution)) {
-        seedReplayLtBarsForForming(state.ltResolutionBeforeTfSwitch, state.ltBarsBeforeTfSwitch, rs.currentBarTime);
+        seedReplayLtBarsForForming(state.ltResolutionBeforeTfSwitch, state.ltBarsBeforeTfSwitch, cursorUtc);
       }
     }
     replayDebug("tfSwitch.stash", {
       resolution: state.ltResolutionBeforeTfSwitch,
       bars: state.ltBarsBeforeTfSwitch.length,
-      cursor: rs.currentBarTime,
+      cursor: cursorUtc,
       close: state.ltBarsBeforeTfSwitch.at(-1)?.close,
+      viewportWidth: opts.viewportLayout?.width ?? null,
     });
   }
 

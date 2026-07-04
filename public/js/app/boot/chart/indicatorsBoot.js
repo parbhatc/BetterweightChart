@@ -9,6 +9,7 @@ import { attachIndicatorBandFillPrimitive } from "../../../indicators/primitives
 import { attachStudyPaneLegendOverlay } from "../../../indicators/ui/studyPaneLegendOverlay.js";
 import { attachStudyPaneScaleGuards } from "../../../chart/pane/studyScale.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { replayBarIndexForUtcTime } from "../../../replay/persist.js";
 import { precisionFromSettings } from "../../../chart/timezone/list.js";
 import { listIndicators, getIndicatorClass } from "../../../indicators/catalog.js";
 import { createIndicatorDataLoader } from "./indicatorDataLoader.js";
@@ -43,6 +44,36 @@ export function attachIndicatorsBoot(ctx) {
     deferHeavyWork: () => {},
   };
 
+  /** Host replay: cap indicator bar series at playback anchor (pane view may include future bars). */
+  function paneBarsForOverlay(pane, utcBars, chartBars) {
+    if (!ctx.opts?.replayHostControlled || !utcBars?.length) {
+      return { utcBars, chartBars };
+    }
+    const anchorSec =
+      typeof ctx.opts.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
+    const cap =
+      anchorSec != null && Number.isFinite(anchorSec)
+        ? anchorSec
+        : ctx.replay?.getState?.()?.currentBarTime ?? null;
+    if (cap == null || !Number.isFinite(cap)) {
+      return { utcBars, chartBars };
+    }
+    const last = utcBars.at(-1)?.time;
+    if (last == null || last <= cap) {
+      return { utcBars, chartBars };
+    }
+    const idx = replayBarIndexForUtcTime(utcBars, cap);
+    if (idx == null || idx >= utcBars.length - 1) {
+      return { utcBars, chartBars };
+    }
+    return {
+      utcBars: utcBars.slice(0, idx + 1),
+      chartBars: chartBars.slice(0, idx + 1),
+    };
+  }
+
   const controller = createIndicatorController({
     getAllChartPanes: ctx.getAllChartPanes,
     getPaneBars: (pane) => {
@@ -52,7 +83,7 @@ export function attachIndicatorsBoot(ctx) {
         pane.symbolInfo ?? ctx.symbolInfo,
         ctx.resolutions,
       );
-      return { utcBars: view.utcBars, chartBars: view.chartBars };
+      return paneBarsForOverlay(pane, view.utcBars, view.chartBars);
     },
     useStackedScaleLabels,
     onChange: () => onControllerChange(),
@@ -80,7 +111,21 @@ export function attachIndicatorsBoot(ctx) {
     },
   });
 
-  indicatorData = createIndicatorDataLoader({ ctx, controller, ...indicatorLoaderPerf });
+  indicatorData = createIndicatorDataLoader({
+    ctx,
+    controller,
+    ...indicatorLoaderPerf,
+    paneBarsForNeeds: (pane) => {
+      const view = getPaneChartView(
+        pane,
+        ctx.settingsStore,
+        pane.symbolInfo ?? ctx.symbolInfo,
+        ctx.resolutions,
+      );
+      if (!view?.utcBars?.length) return [];
+      return paneBarsForOverlay(pane, view.utcBars, view.chartBars ?? view.utcBars).utcBars;
+    },
+  });
   ctx.indicatorController = controller;
 
   const library = createIndicatorsLibraryDialog({
@@ -555,6 +600,16 @@ export function attachIndicatorsBoot(ctx) {
       return;
     }
     indicatorData.ensureNow();
+  };
+
+  ctx.ensureIndicatorDataThenOverlay = (pane) => {
+    if (chartIsPanning()) {
+      deferredEnsureData = true;
+      markDeferredRefresh(pane?.index, "overlay");
+      scheduleDeferredIndicatorFlush();
+      return Promise.resolve();
+    }
+    return indicatorData.ensurePaneDataThenOverlay(pane);
   };
 
   const origApplyChartSettings = ctx.applyChartSettings;

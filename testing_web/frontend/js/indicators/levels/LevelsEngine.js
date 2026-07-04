@@ -1,7 +1,8 @@
 import { normalizeResolutionId, resolutionDisplayTitle } from "/js/chart/resolutionFormat.js";
 import { resolutionSec } from "/js/chart/resolutions.js";
 import { mapUtcTimeToChartTime } from "/js/indicators/math/barTimeMap.js";
-import { getSecuritySeries, requestSecuritySeries } from "/js/indicators/security/htfAccess.js";
+import { getSecuritySeries } from "/js/indicators/security/htfAccess.js";
+import { htfBarCompleteAt } from "/js/indicators/security/htfPolicy.js";
 import {
   resolveSessionLevels,
   resolveTimeLevels,
@@ -12,6 +13,7 @@ import {
   debugLevelsEngineResult,
   debugLevelsOverlayStart,
   debugLevelsPriceSanity,
+  debugLevelsReplayStep,
   debugLevelsTimeMapping,
 } from "../math/levelsDebug.js";
 import { tickSizeFromSymbol } from "/js/indicators/symbol.js";
@@ -49,6 +51,11 @@ function createMatrix() {
   return { active: [], swept: [] };
 }
 
+/** @param {LiqLine} lvl */
+function takenLiquidityKey(lvl) {
+  return `${lvl.kind}|${lvl.startTime}|${Math.round(lvl.price * 100)}`;
+}
+
 /** @param {LiqLine} lvl @param {number} utc @param {number} [chartTime] @param {Set<string>} [takenLiquidity] */
 function markSwept(lvl, utc, chartTime, takenLiquidity) {
   lvl.swept = true;
@@ -58,7 +65,7 @@ function markSwept(lvl, utc, chartTime, takenLiquidity) {
     lvl.sweepChartTime = chartTime;
     lvl.endChartTime = chartTime;
   }
-  takenLiquidity?.add(`${lvl.kind}|${Math.round(lvl.price * 100)}`);
+  takenLiquidity?.add(takenLiquidityKey(lvl));
 }
 
 /** @param {LiqLine} level @param {number} proximity @param {Set<string>} [takenLiquidity] */
@@ -66,8 +73,9 @@ function isLiquidityPriceTaken(level, proximity, takenLiquidity) {
   if (!takenLiquidity?.size) return false;
   const priceKey = Math.round(level.price * 100);
   for (const key of takenLiquidity) {
-    const [kind, priceStr] = key.split("|");
+    const [kind, startStr, priceStr] = key.split("|");
     if (kind !== level.kind) continue;
+    if (Number(startStr) !== level.startTime) continue;
     if (Math.abs(priceKey - Number(priceStr)) <= Math.round(proximity * 100)) return true;
   }
   return false;
@@ -96,6 +104,7 @@ function hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity) {
       l.kind === level.kind &&
       l.swept &&
       l.sweepTime != null &&
+      l.startTime === level.startTime &&
       Math.abs(l.price - level.price) <= proximity,
   );
 }
@@ -111,7 +120,13 @@ function birthLevel(matrix, level, maxUnswept, proximity, takenLiquidity) {
   if (hasDuplicatePivot(matrix, level, proximity)) return null;
   if (hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity)) return null;
   const last = matrix.active[matrix.active.length - 1];
-  if (last && Math.abs(last.price - level.price) <= proximity) return null;
+  if (
+    last &&
+    last.startTime === level.startTime &&
+    Math.abs(last.price - level.price) <= proximity
+  ) {
+    return null;
+  }
   matrix.active.push({ ...level, swept: false });
   while (matrix.active.length > maxUnswept) matrix.active.shift();
   return matrix.active[matrix.active.length - 1];
@@ -202,11 +217,6 @@ function extendMatrix(matrix, utc, chartTime) {
     lvl.endTime = utc;
     lvl.endChartTime = chartTime;
   }
-}
-
-/** @param {number} bucketOpen @param {number} tfSec */
-function htfBucketCompleteAt(bucketOpen, tfSec) {
-  return bucketOpen + tfSec - 60;
 }
 
 /**
@@ -327,6 +337,8 @@ function onHtfBarClose(
 
 const SESSION_TAG_ORDER = ["Asia", "London", "New York AM", "New York Lunch", "New York PM"];
 const TF_TAG_ORDER = ["4H", "1H", "15m", "10m", "5m"];
+/** ponytail: 1-day ceiling — don't merge May 4H @ 30291 with Jun 15m @ 30291.50 */
+const CONFLO_START_GAP_SEC = 86400;
 
 /** @param {string} label */
 function parseLevelTags(label) {
@@ -371,7 +383,9 @@ function applyClusterConfluence(lines, proximity, confHi, confLo) {
     for (let j = i + 1; j < n; j++) {
       if (lines[j]._drop) continue;
       if (lines[i].kind !== lines[j].kind) continue;
-      if (Math.abs(lines[i].price - lines[j].price) <= proximity) unite(i, j);
+      if (Math.abs(lines[i].price - lines[j].price) > proximity) continue;
+      if (Math.abs(lines[i].startTime - lines[j].startTime) > CONFLO_START_GAP_SEC) continue;
+      unite(i, j);
     }
   }
 
@@ -393,9 +407,18 @@ function applyClusterConfluence(lines, proximity, confHi, confLo) {
     const side = group[0].kind === "high" ? "High" : "Low";
     const confColor = group[0].kind === "high" ? confHi : confLo;
     const sweptMembers = group.filter((l) => l.swept && l.sweepTime != null);
-    let survivor = group.find((l) => !l.swept) ?? group[0];
+    let survivor = group.reduce((best, l) => {
+      const bt = l.bornTime ?? l.startTime;
+      const bb = best.bornTime ?? best.startTime;
+      if (!l.swept && best.swept) return l;
+      if (l.swept && !best.swept) return best;
+      return bt >= bb ? l : best;
+    });
     for (const l of group) {
-      if (l.startTime < survivor.startTime) {
+      if (
+        l.startTime < survivor.startTime &&
+        Math.abs(l.startTime - survivor.startTime) <= CONFLO_START_GAP_SEC
+      ) {
         survivor.startTime = l.startTime;
         survivor.startChartTime = l.startChartTime;
       }
@@ -531,6 +554,26 @@ function parseHm(raw) {
 }
 
 /**
+ * Drop HTF buckets not yet confirmed at replay/chart anchor (avoids flash pivots on forming bars).
+ * @param {object[]} agg
+ * @param {(number | undefined)[]} chartTimes
+ * @param {number} tfSec
+ * @param {number | null | undefined} anchorUnix
+ */
+function filterAggConfirmedAt(agg, chartTimes, tfSec, anchorUnix) {
+  if (anchorUnix == null || !agg.length) return { agg, chartTimes };
+  const out = [];
+  const outTimes = [];
+  for (let i = 0; i < agg.length; i++) {
+    if (htfBarCompleteAt(agg[i].time, tfSec) <= anchorUnix) {
+      out.push(agg[i]);
+      outTimes.push(chartTimes[i]);
+    }
+  }
+  return { agg: out, chartTimes: outTimes };
+}
+
+/**
  * Resolve HTF OHLC series — native datafeed bars when available (same as FVG).
  * @param {object} cfg
  * @param {object[]} chartUtcBars 1m (or chart) UTC bars
@@ -542,6 +585,7 @@ function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
   const maxBack = Math.max(10, Number(opts.maxBarsBack) || 300);
   const pivotLeft = Math.max(1, Number(opts.pivotLeftBars) || 1);
   const pivotRight = Math.max(1, Number(opts.pivotRightBars) || 1);
+  const anchorUnix = opts.anchorUnix ?? chartUtcBars.at(-1)?.time ?? null;
   const visStart = chartUtcBars[0]?.time;
   /** @param {object[]} series @param {(number | undefined)[]} times */
   const trimToWindow = (series, times) => {
@@ -559,9 +603,13 @@ function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
     return { agg, chartTimes };
   };
 
-  if (cfg.tfSec <= chartSec) {
+  // ponytail: replay uses datafeed HTF so 1m/15m/1H labels match across TF switches
+  if (cfg.tfSec <= chartSec && !opts.preferDatafeedHtf) {
     const chartTimes = chartBars.map((b) => b.time);
-    const { agg, chartTimes: times } = trimToWindow(chartUtcBars, chartTimes);
+    let { agg, chartTimes: times } = trimToWindow(chartUtcBars, chartTimes);
+    if (anchorUnix != null) {
+      ({ agg, chartTimes: times } = filterAggConfirmedAt(agg, times, cfg.tfSec, anchorUnix));
+    }
     return { agg, chartTimes: times, source: "chart" };
   }
 
@@ -571,11 +619,11 @@ function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
     const sliceStart = htf.utcBars.length > maxBack ? offset : 0;
     const series = htf.utcBars.slice(sliceStart);
     const times = series.map((_, i) => htf.chartBars[sliceStart + i]?.time);
-    const { agg, chartTimes } = trimToWindow(series, times);
-    return { agg, chartTimes, source: "htf" };
+    let { agg, chartTimes } = trimToWindow(series, times);
+    ({ agg, chartTimes } = filterAggConfirmedAt(agg, chartTimes, cfg.tfSec, anchorUnix));
+    return { agg, chartTimes, source: htf.source ?? "htf" };
   }
 
-  requestSecuritySeries(opts, opts.symbol, cfg.tfId, opts.htfBarsNeeded ?? maxBack);
   return { agg: [], chartTimes: [], source: "pending" };
 }
 
@@ -651,7 +699,7 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
       cfg,
       bars,
       opts.chartBars ?? bars,
-      { ...opts, pivotLeftBars: pivotLeft, pivotRightBars: pivotRight },
+      { ...opts, pivotLeftBars: pivotLeft, pivotRightBars: pivotRight, anchorUnix },
     );
     htfState[cfg.slot] = { agg, chartTimes, ptr: 1, source };
   }
@@ -710,8 +758,8 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
           continue;
         }
         if (closeIdx >= agg.length) break;
-        if (bar.time < htfBucketCompleteAt(agg[closeIdx].time, tfSec)) break;
-        const confirmUtc = htfBucketCompleteAt(agg[closeIdx].time, tfSec);
+        if (bar.time < htfBarCompleteAt(agg[closeIdx].time, tfSec)) break;
+        const confirmUtc = htfBarCompleteAt(agg[closeIdx].time, tfSec);
         const confirmBarIdx = Math.min(
           Math.max(0, firstBarIndexAtOrAfter(bars, confirmUtc)),
           bars.length - 1,
@@ -921,16 +969,14 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
   }
 
   const sweptPriceKeys = new Set(
-    out
-      .filter((l) => l.swept)
-      .map((l) => `${l.kind}|${Math.round(l.price * 100)}`),
+    out.filter((l) => l.swept).map((l) => takenLiquidityKey(l)),
   );
   if (sweptPriceKeys.size) {
     out = out.filter(
       (l) =>
         l.swept ||
         l.sessionBorn != null ||
-        !sweptPriceKeys.has(`${l.kind}|${Math.round(l.price * 100)}`),
+        !sweptPriceKeys.has(takenLiquidityKey(l)),
     );
   }
 
@@ -1046,6 +1092,7 @@ export class LevelsEngine {
       requestBars: ctx.requestBars,
       requestHtfBars: ctx.requestHtfBars,
       showLabels: style.graphicLabels !== false,
+      preferDatafeedHtf: Boolean(ctx.isReplayLocked?.()),
       mergeConfluence: inputs.mergeConfluence !== false,
       confHiColor: inputColorStr(inputs.confHiColor, "#9400d3"),
       confLoColor: inputColorStr(inputs.confLoColor, "#ffaa00"),
@@ -1057,6 +1104,7 @@ export class LevelsEngine {
 
     const { lines, htfState } = this.run(utcBars, anchorUnix, engineOpts);
     debugLevelsEngineResult(utcBars, anchorUnix, engineOpts, lines, htfState);
+    debugLevelsReplayStep(anchorUnix, lines, htfState);
 
     const overlay = this.toOverlayLines(lines, utcBars, chartBars, style);
     debugLevelsTimeMapping(lines, overlay, utcBars, chartBars);

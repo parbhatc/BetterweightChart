@@ -1,10 +1,46 @@
 import { getSecuritySeries, requestSecuritySeries } from "./htfAccess.js";
-
+import { getHtfBars } from "../../app/bar/htfBarCache.js";
 import { resolutionSec } from "/js/chart/resolutions.js";
+
+/** Re-export for indicators; canonical copy lives in htfAccess. */
+export { htfBarCompleteAt } from "./htfAccess.js";
 
 /** @param {object} inputs @param {number} [fallback] */
 export function requiredHtfBars(inputs, fallback = 300) {
   return Math.max(10, Number(inputs.maxBarsBack) || fallback);
+}
+
+/**
+ * HTF bars needed to cover the visible chart window for one timeframe.
+ * @param {object} inputs
+ * @param {number} chartBarCount
+ * @param {string} chartResolution
+ * @param {number} tfSec
+ */
+export function requiredHtfBarsForLayer(inputs, chartBarCount, chartResolution, tfSec) {
+  const maxBack = requiredHtfBars(inputs);
+  const chartSec = Math.max(60, resolutionSec(chartResolution) || 60);
+  const pivotPad =
+    (Number(inputs.pivotLeftBars) || 1) + (Number(inputs.pivotRightBars) || 1);
+  const bars = Math.max(0, Number(chartBarCount) || 0);
+  if (!tfSec || tfSec <= chartSec) return Math.min(maxBack, 20);
+  if (!bars) return Math.min(maxBack, 80);
+  return Math.min(maxBack, Math.ceil((bars * chartSec) / tfSec) + pivotPad);
+}
+
+/**
+ * HTF bars needed to cover the visible chart window (max across enabled HTFs).
+ * @param {object} inputs
+ * @param {number} chartBarCount
+ * @param {string} chartResolution
+ * @param {{ tfId: string, tfSec: number }[]} [enabledHtfs]
+ */
+export function requiredHtfBarsForViewport(inputs, chartBarCount, chartResolution, enabledHtfs) {
+  let need = 20;
+  for (const { tfSec } of enabledHtfs ?? []) {
+    need = Math.max(need, requiredHtfBarsForLayer(inputs, chartBarCount, chartResolution, tfSec));
+  }
+  return need;
 }
 
 /** @param {{ tfId: string }[]} enabledHtfs @param {object} inputs @param {number} [fallback] */
@@ -33,14 +69,22 @@ export function requiredChartBarsForSessions(inputs, sessionsEnabled, chartResol
  * @param {object} ctx
  * @param {string} symbol
  * @param {string[]} tfIds
- * @param {number} barsNeeded
+ * @param {number} barsNeeded fallback when perTfWant omits a layer
+ * @param {{ strict?: boolean, perTfWant?: Record<string, number> }} [opts]
  */
-export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded) {
+export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
   if (!tfIds.length) return false;
-  const want = Math.max(10, Number(barsNeeded) || 300);
-  const minStart = Math.min(50, want);
+  const strict = opts.strict === true;
+  const perTf = opts.perTfWant;
   let pending = false;
   for (const tfId of tfIds) {
+    const want = Math.max(10, Number(perTf?.[tfId] ?? barsNeeded) || 300);
+    const minStart = strict ? want : Math.min(50, want);
+
+    const stored = getHtfBars(symbol, tfId);
+    if (stored?.historyExhausted && stored.utcBars?.length > 0) continue;
+    if (stored?.utcBars?.length >= want) continue;
+
     const hit =
       ctx.lookupSecurity?.(symbol, tfId, want) ??
       (() => {
@@ -48,8 +92,13 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded) {
         if (!series?.utcBars?.length) return null;
         return { ...series, sufficient: series.utcBars.length >= want };
       })();
-    if (hit?.utcBars?.length >= minStart) {
-      if (!hit.sufficient) requestSecuritySeries(ctx, symbol, tfId, want);
+    if (hit?.utcBars?.length >= want) continue;
+    if (!strict && hit?.utcBars?.length >= minStart) {
+      if (hit.utcBars.length < want) requestSecuritySeries(ctx, symbol, tfId, want);
+      continue;
+    }
+    if (!strict && stored?.utcBars?.length >= minStart) {
+      if (stored.utcBars.length < want) requestSecuritySeries(ctx, symbol, tfId, want);
       continue;
     }
     requestSecuritySeries(ctx, symbol, tfId, want);

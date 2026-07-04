@@ -4,7 +4,7 @@ import {
   instanceUsesCompareSymbols,
   paneDataNeedsEmpty,
 } from "../../../indicators/security/indicatorDataNeeds.js";
-import { ensureHtfBars, getHtfBars, prependHtfBars } from "../../bar/htfBarCache.js";
+import { ensureHtfBars, getHtfBars, prependHtfBars, clearHtfIfStaleForAnchor } from "../../bar/htfBarCache.js";
 import { ensureSymbolBars, lookupSymbolBars } from "../../bar/symbolBarCache.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { uniqueEtDaysFromBars } from "../../../core/etTime.js";
@@ -68,6 +68,8 @@ export function createIndicatorDataLoader({
   isChartPanning = () => false,
   requestOverlayRefresh = (paneIndex) => controller.refreshOverlaysSilent(paneIndex),
   deferHeavyWork = () => {},
+  /** @type {(pane: object) => object[] | undefined} */
+  paneBarsForNeeds = null,
 }) {
   /** @type {ReturnType<typeof setTimeout> | null} */
   let loadTimer = null;
@@ -81,6 +83,10 @@ export function createIndicatorDataLoader({
   /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack @param {object} [symbolInfo] */
   function htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo) {
     const info = symbolInfo ?? pane.symbolInfo ?? ctx.symbolInfo;
+    const playbackAnchorSec =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
     return {
       datafeed: ctx.datafeed,
       symbolInfo: info,
@@ -90,9 +96,27 @@ export function createIndicatorDataLoader({
       pane,
       settingsStore: ctx.settingsStore,
       symbolInfoExtra: info,
+      playbackAnchorSec,
       getAllChartPanes: ctx.getAllChartPanes,
       resolutions: ctx.resolutions,
     };
+  }
+
+  /** @param {import("../../../indicators/security/indicatorDataNeeds.js").PaneDataNeeds} needs @param {object} pane */
+  function clearStaleHtfForPlaybackAnchor(needs, pane) {
+    const anchorSec =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
+    if (anchorSec == null || !Number.isFinite(anchorSec)) return false;
+    let cleared = false;
+    for (const key of new Set([...needs.htf.keys(), ...needs.compareHtf.keys()])) {
+      const sep = key.indexOf("|");
+      if (clearHtfIfStaleForAnchor(key.slice(0, sep), key.slice(sep + 1), anchorSec)) {
+        cleared = true;
+      }
+    }
+    return cleared;
   }
 
   function symbolBarLookupOpts(pane, symbol) {
@@ -236,8 +260,8 @@ export function createIndicatorDataLoader({
     await fillNewsCalendar({ source: settings.source ?? "forexfactory", types: [], days });
   }
 
-  /** @param {object} pane */
-  async function ensurePaneData(pane) {
+  /** @param {object} pane @param {{ skipRefresh?: boolean }} [opts] */
+  async function ensurePaneData(pane, opts = {}) {
     if (!pane?.symbol) return;
     if (isChartPanning()) {
       deferHeavyWork();
@@ -245,18 +269,36 @@ export function createIndicatorDataLoader({
     }
     if (paneInFlight.has(pane.index)) return;
 
+    await ctx.ensureIndicatorChartHistory?.(pane);
+
     const view = getPaneChartView(
       pane,
       ctx.settingsStore,
       pane.symbolInfo ?? ctx.symbolInfo,
       ctx.resolutions,
     );
+    const bars =
+      (typeof paneBarsForNeeds === "function" ? paneBarsForNeeds(pane) : null) ??
+      view?.utcBars ??
+      [];
     const needs = collectPaneDataNeeds(
       controller.indicatorsForPane(pane.index),
-      { ...pane, bars: view.utcBars },
+      { ...pane, bars },
       getIndicatorClass,
     );
+    for (const key of needs.htf.keys()) {
+      const sep = key.indexOf("|");
+      const storedLen = htfStoreBarCount(key.slice(0, sep), key.slice(sep + 1));
+      if (storedLen > (needs.htf.get(key) ?? 0)) needs.htf.set(key, storedLen);
+    }
+    for (const key of needs.compareHtf.keys()) {
+      const sep = key.indexOf("|");
+      const storedLen = htfStoreBarCount(key.slice(0, sep), key.slice(sep + 1));
+      if (storedLen > (needs.compareHtf.get(key) ?? 0)) needs.compareHtf.set(key, storedLen);
+    }
     if (paneDataNeedsEmpty(needs)) return;
+
+    const staleHtfCleared = clearStaleHtfForPlaybackAnchor(needs, pane);
 
     const visibleIds = controller
       .indicatorsForPane(pane.index)
@@ -306,12 +348,12 @@ export function createIndicatorDataLoader({
         const resolution = key.slice(sep + 1);
         await fillHtfHistory(pane, symbol, resolution, countBack);
       }
-      if (!paneBarCountsChanged(needs, pane, barCountsBefore)) return;
+      if (!paneBarCountsChanged(needs, pane, barCountsBefore) && !staleHtfCleared) return;
       controller.invalidateOverlayCacheForPane(pane.index, {
         htfKeys: new Set([...needs.htf.keys(), ...needs.compareHtf.keys()]),
         compareSymbols: new Set(needs.compareChart.keys()),
       });
-      requestOverlayRefresh(pane.index);
+      if (!opts.skipRefresh) requestOverlayRefresh(pane.index);
       for (const sym of needs.compareChart.keys()) {
         refreshPanesUsingCompareSymbol(sym);
       }
@@ -424,9 +466,21 @@ export function createIndicatorDataLoader({
       .finally(() => htfFetchInFlight.delete(key));
   }
 
+  /** @param {object} pane — host replay: load HTF then paint overlay once (no short-series flash). */
+  async function ensurePaneDataThenOverlay(pane) {
+    if (!pane?.symbol) return;
+    if (isChartPanning()) {
+      deferHeavyWork();
+      return;
+    }
+    await ensurePaneData(pane, { skipRefresh: true });
+    requestOverlayRefresh(pane.index);
+  }
+
   return {
     scheduleLoad,
     ensureNow: () => scheduleLoad(0),
+    ensurePaneDataThenOverlay,
     scheduleCompareBarsFetch,
     scheduleHtfBarsFetch,
     newsContextForPane,

@@ -68,8 +68,23 @@ export function createReplayHostSync(ctx, replay, state) {
       );
     }
 
+    const stashLayout =
+      pane.chart && ctx.settingsStore && ctx.resolutions
+        ? captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions)
+        : layout;
+    if (
+      stashLayout?.width >= 10 &&
+      pane.resolution &&
+      !state.replayViewportByResolution.has(pane.resolution)
+    ) {
+      state.replayViewportByResolution.set(pane.resolution, stashLayout);
+    }
+
     ctx.replayFutureDim?.refreshAll?.();
     pane.sessionBg?.requestRefresh?.();
+
+    ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
+    void ctx.ensureIndicatorDataThenOverlay?.(pane);
 
     return { cursorUtc, currentIdx, bars };
   }

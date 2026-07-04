@@ -73,7 +73,12 @@ export function createReplayViewport(ctx, state) {
     const fromRes =
       fromResolution ?? (toSec != null ? inferViewportFromResolution(targetRes) : null);
     const fromSec = fromRes ? resolutionSec(fromRes) : null;
-    const fromLayout = fromRes ? state.replayViewportByResolution.get(fromRes) : null;
+    const stashedFrom = fromRes ? state.replayViewportByResolution.get(fromRes) : null;
+    const leavingLayout = pane._tfSwitchSavedLayout ?? null;
+    const fromLayout =
+      leavingLayout && fromRes && pane._tfSwitchFromResolution === fromRes
+        ? leavingLayout
+        : stashedFrom;
     const savedTarget = state.replayViewportByResolution.get(targetRes);
 
     /** @type {ReturnType<typeof captureViewportBarLayout> | null} */
@@ -83,13 +88,10 @@ export function createReplayViewport(ctx, state) {
 
     if (fromSec != null && toSec != null && toSec > fromSec && fromLayout) {
       layout = fromLayout;
-      reason = "lt-htf";
+      reason = leavingLayout ? "lt-htf-leaving-snap" : "lt-htf";
     } else if (fromSec != null && toSec != null && toSec < fromSec && savedTarget) {
       layout = savedTarget;
       reason = "htf-lt";
-    } else if (fromSec != null && toSec != null && toSec < fromSec && fromLayout) {
-      layout = fromLayout;
-      reason = "htf-lt-leaving";
     } else if (savedTarget) {
       layout = savedTarget;
       reason = "cached";
@@ -110,7 +112,39 @@ export function createReplayViewport(ctx, state) {
       }
     }
 
+    // LTF → HTF: keep bar-slot zoom (never UTC — that collapses 154×1m into ~10×15m).
+    if (fromSec != null && toSec != null && toSec > fromSec) {
+      const fallbackWidth = Math.max(
+        40,
+        leavingLayout?.width ?? fromLayout?.width ?? savedTarget?.width ?? 120,
+      );
+      const fallback = computeScrollToReplayCursorLogical(pane, endIndex, fallbackWidth);
+      replayDebug("viewport.compute.ltHtfDefault", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        fallbackWidth,
+        ...fallback,
+      });
+      return fallback;
+    }
+
+    // HTF → LTF without a cached LTF layout: default zoom (never reuse HTF bar-slot width).
+    if (fromSec != null && toSec != null && toSec < fromSec) {
+      const fallbackWidth = 120;
+      const fallback = computeScrollToReplayCursorLogical(pane, endIndex, fallbackWidth);
+      replayDebug("viewport.compute.htfLtDefault", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        fallbackWidth,
+        ...fallback,
+      });
+      return fallback;
+    }
+
     if (
+      fromSec != null &&
+      toSec != null &&
+      toSec < fromSec &&
       !replayViewportPrefersBarSlots(fromSec, toSec) &&
       fromLayout?.visibleFromUtc != null &&
       fromLayout?.visibleToUtc != null &&
@@ -184,7 +218,12 @@ export function createReplayViewport(ctx, state) {
     const fromRes =
       fromResolution ?? (toSec != null ? inferViewportFromResolution(targetRes) : null);
     const fromSec = fromRes ? resolutionSec(fromRes) : null;
-    const fromLayout = fromRes ? state.replayViewportByResolution.get(fromRes) : null;
+    const stashedFrom = fromRes ? state.replayViewportByResolution.get(fromRes) : null;
+    const leavingLayout = pane._tfSwitchSavedLayout ?? null;
+    const fromLayout =
+      leavingLayout && fromRes && pane._tfSwitchFromResolution === fromRes
+        ? leavingLayout
+        : stashedFrom;
     const savedTarget = state.replayViewportByResolution.get(targetRes);
 
     if (fromSec != null && toSec != null && toSec > fromSec && fromLayout) {
@@ -202,6 +241,22 @@ export function createReplayViewport(ctx, state) {
         toResolution: targetRes,
         width: fromLayout.width,
         toBeyondAnchor: fromLayout.toBeyondAnchor,
+      });
+      return;
+    }
+
+    if (fromSec != null && toSec != null && toSec > fromSec) {
+      scrollPaneToReplayCursor(
+        pane,
+        endIndex,
+        Math.max(
+          40,
+          leavingLayout?.width ?? fromLayout?.width ?? savedTarget?.width ?? 120,
+        ),
+      );
+      replayDebug("viewport.restore.ltHtfDefault", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
       });
       return;
     }
@@ -225,21 +280,11 @@ export function createReplayViewport(ctx, state) {
       return;
     }
 
-    if (fromSec != null && toSec != null && toSec < fromSec && fromLayout) {
-      restoreViewportBarLayout(
-        pane,
-        fromLayout,
-        ctx.settingsStore,
-        ctx.resolutions,
-        "replay-htf-lt-leaving",
-        ctx.activePriceScaleId,
-        viewportOpts,
-      );
-      replayDebug("viewport.restore.htfLtLeaving", {
+    if (fromSec != null && toSec != null && toSec < fromSec) {
+      scrollPaneToReplayCursor(pane, endIndex, 120);
+      replayDebug("viewport.restore.htfLtDefault", {
         fromResolution: fromRes,
         toResolution: targetRes,
-        width: fromLayout.width,
-        toBeyondAnchor: fromLayout.toBeyondAnchor,
       });
       return;
     }
@@ -263,6 +308,9 @@ export function createReplayViewport(ctx, state) {
     }
 
     if (
+      fromSec != null &&
+      toSec != null &&
+      toSec < fromSec &&
       !replayViewportPrefersBarSlots(fromSec, toSec) &&
       fromLayout?.visibleFromUtc != null &&
       fromLayout?.visibleToUtc != null

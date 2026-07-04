@@ -4,6 +4,7 @@
  */
 import { normalizeResolutionId } from "../../chart/resolutionFormat.js";
 import { chartDebug } from "../../debug/chart/index.js";
+import { mergeWithHtfStore } from "../../indicators/security/htfAccess.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
 import { ensureHtfBars, getHtfBars, seedHtfBars } from "./htfBarCache.js";
 
@@ -151,9 +152,10 @@ export function createSecurityContext(deps) {
 
   /** @param {string} [symbol] @param {string} resolution */
   const getSecurityBars = (symbol, resolution) => {
-    const hit = lookupSecurity(symbol, resolution);
-    if (!hit) return null;
-    return { utcBars: hit.utcBars, chartBars: hit.chartBars, source: hit.source };
+    const sym = symbol ?? pane.symbol;
+    const resId = normalizeResolutionId(resolution);
+    const hit = lookupSecurity(sym, resId);
+    return mergeWithHtfStore(sym, resId, hit);
   };
 
   /** Same symbol as chart pane — any resolution. */

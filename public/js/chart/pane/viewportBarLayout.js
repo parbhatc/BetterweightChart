@@ -1,5 +1,6 @@
 import { getPaneChartView } from "./viewCache.js";
 import { logicalToChartTime, timeToLogical } from "../coords/timeScale.js";
+import { stickVisibleLogicalRange } from "./viewport.js";
 import { measurePriceBarRatio } from "../price/barRatio.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import {
@@ -252,7 +253,7 @@ export function restoreViewportBarLayout(
   const anchorIndex = viewportAnchorIndex(pane, realCount);
 
   if (!opts.skipLogical) {
-    ts.setVisibleLogicalRange({ from, to });
+    stickVisibleLogicalRange(pane.chart, { from, to });
   }
 
   const priceResult =
@@ -326,7 +327,7 @@ export function restoreViewportBarLayoutFromUtc(
   if (from == null || to == null || !Number.isFinite(from) || !Number.isFinite(to)) return null;
 
   if (!opts.skipLogical) {
-    pane.chart.timeScale().setVisibleLogicalRange({ from, to });
+    stickVisibleLogicalRange(pane.chart, { from, to });
   }
 
   const priceResult =

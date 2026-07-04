@@ -1,17 +1,18 @@
 import { mountSymbolSearch } from "../../../ui/symbol/search.js";
 import { mountTimeframePicker } from "../../../ui/timeframe/picker.js";
 import { debugSymbolChange, debugTimeframeChange } from "../../../debug/chart/symbolTimeframe.js";
-import { captureVisibleViewport, restoreVisibleViewport } from "../../../chart/pane/viewport.js";
+import { captureVisibleViewport, restoreVisibleViewport, withPreservedViewport } from "../../../chart/pane/viewport.js";
 import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
-  restoreViewportBarLayoutFromUtc,
-  computeViewportBarLayoutLogical,
-  computeViewportLogicalFromUtc,
 } from "../../../chart/pane/viewportBarLayout.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { clearHtfCoarserThan, seedHtfBars } from "../../bar/htfBarCache.js";
 import { resolutionSec } from "../../../chart/resolutions.js";
-import { seedHtfBars } from "../../bar/htfBarCache.js";
+import {
+  paintPaneAfterTimeframeLoad,
+  syncHostReplayViewportAfterTfSwitch,
+} from "./timeframeSwitch.js";
 import {
   showChartPendingOverlay,
   hideChartPendingOverlay,
@@ -53,135 +54,6 @@ function restorePaneViewports(panes, saved) {
  */
 function capturePaneBarLayouts(ctx, panes) {
   return panes.map((p) => captureViewportBarLayout(p, ctx.settingsStore, ctx.resolutions));
-}
-
-/**
- * Live TF switch: finer→coarser keeps bar-slot width; coarser→finer keeps UTC span.
- * @param {object} pane
- * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
- * @param {import("./state.js").BootContext} ctx
- */
-function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
-  if (!layout || !pane?.bars?.length) return null;
-
-  const fromSec = layout.barSec ?? resolutionSec(layout.resolution);
-  const toSec = resolutionSec(pane.resolution);
-  const barLogical = computeViewportBarLayoutLogical(pane, layout);
-  const utcLogical = computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
-  const hasUtc = layout.visibleFromUtc != null && layout.visibleToUtc != null;
-
-  // Finer → coarser: reuse leaving TF bar width (same slot count, wider time on HTF).
-  if (fromSec != null && toSec != null && toSec > fromSec && barLogical) {
-    return barLogical;
-  }
-
-  // Coarser → finer: UTC span expands into more LT bars; bar-slot from HTF would over-zoom.
-  if (hasUtc && utcLogical) {
-    if (fromSec != null && toSec != null && toSec < fromSec) {
-      return utcLogical;
-    }
-    if (fromSec == null || toSec == null || fromSec === toSec) {
-      return utcLogical;
-    }
-  }
-
-  if (barLogical) return barLogical;
-  return utcLogical;
-}
-
-/** @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout @param {string | null | undefined} targetResolution */
-function timeframeSwitchPrefersUtcRestore(layout, targetResolution) {
-  if (!layout || layout.visibleFromUtc == null || layout.visibleToUtc == null) return false;
-  const fromSec = layout.barSec ?? resolutionSec(layout.resolution);
-  const toSec = resolutionSec(targetResolution);
-  if (fromSec != null && toSec != null && toSec > fromSec) return false;
-  return true;
-}
-
-/**
- * Keep viewport tail anchored to the host replay cursor (not HTF right-offset whitespace).
- * @param {object} pane
- * @param {{ from: number, to: number }} logicalRange
- * @param {number} anchorSec
- */
-function clampLogicalRangeToPlaybackAnchor(pane, logicalRange, anchorSec) {
-  if (!logicalRange || !pane?.bars?.length || !Number.isFinite(anchorSec)) return logicalRange;
-
-  let anchorIdx = pane.bars.length - 1;
-  for (let i = pane.bars.length - 1; i >= 0; i -= 1) {
-    if (pane.bars[i].time <= anchorSec) {
-      anchorIdx = i;
-      break;
-    }
-  }
-
-  const width = logicalRange.to - logicalRange.from;
-  const tail = logicalRange.to - anchorIdx;
-  let to = anchorIdx + Math.max(0, tail);
-  let from = to - width;
-  if (from < 0) {
-    to -= from;
-    from = 0;
-  }
-  return { from, to };
-}
-
-/**
- * setData + viewport in one paint; price margins restored without re-clamping bar slots.
- * @param {import("./state.js").BootContext} ctx
- * @param {object} pane
- * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} savedLayout
- */
-export function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
-  const useUtc = timeframeSwitchPrefersUtcRestore(savedLayout, pane.resolution);
-  let logicalRange = resolveTimeframeSwitchLogicalRange(pane, savedLayout, ctx);
-  if (logicalRange && ctx.opts?.replayHostControlled) {
-    const anchorSec = ctx.opts?.getPlaybackAnchorSec?.(pane.resolution);
-    if (anchorSec != null && Number.isFinite(anchorSec)) {
-      logicalRange = clampLogicalRangeToPlaybackAnchor(pane, logicalRange, anchorSec);
-      let anchorIdx = pane.bars.length - 1;
-      for (let i = pane.bars.length - 1; i >= 0; i -= 1) {
-        if (pane.bars[i].time <= anchorSec) {
-          anchorIdx = i;
-          break;
-        }
-      }
-      pane.replayCursorEndIndex = anchorIdx;
-    }
-  }
-  ctx.refreshPaneCandleData?.(pane, {
-    logicalRange: logicalRange ?? undefined,
-    avoidPreserveViewport: !logicalRange,
-    deferSessionBg: true,
-  });
-  ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
-  if (savedLayout) {
-    const restoreOpts = { skipLogical: Boolean(logicalRange) };
-    if (useUtc) {
-      restoreViewportBarLayoutFromUtc(
-        pane,
-        savedLayout,
-        ctx.settingsStore,
-        ctx.resolutions,
-        "timeframe",
-        ctx.activePriceScaleId,
-        restoreOpts,
-      );
-    } else {
-      restoreViewportBarLayout(
-        pane,
-        savedLayout,
-        ctx.settingsStore,
-        ctx.resolutions,
-        "timeframe",
-        ctx.activePriceScaleId,
-        restoreOpts,
-      );
-    }
-  }
-  if (pane.chart && pane.series) {
-    ctx.applySettingsToChartLocal?.(pane.chart, pane.series, pane);
-  }
 }
 
 /** @param {object | object[]} panes */
@@ -269,6 +141,24 @@ export function seedPaneResolutionAsHtf(ctx, pane) {
 }
 
 /**
+ * Seed leaving-TF bars into HTF cache when switching to same/coarser TF only.
+ * HTF→LTF: invalidate coarse cache — native 15m bars poison 1m-aggregated HTF levels.
+ * @param {import("./state.js").BootContext} ctx
+ * @param {object} pane
+ * @param {string} targetResolution
+ */
+export function prepareHtfBeforeTimeframeSwitch(ctx, pane, targetResolution) {
+  if (!pane?.symbol) return;
+  const fromSec = resolutionSec(pane.resolution);
+  const toSec = resolutionSec(targetResolution);
+  if (fromSec != null && toSec != null && toSec < fromSec) {
+    clearHtfCoarserThan(pane.symbol, targetResolution);
+    return;
+  }
+  seedPaneResolutionAsHtf(ctx, pane);
+}
+
+/**
  * @param {import("./state.js").BootContext} ctx
  * @param {object[]} panes
  */
@@ -277,18 +167,47 @@ export async function finishSeriesReload(ctx, panes) {
     ctx.indicatorController?.syncOverlayTimeCtxForPane?.(pane.index);
   }
   for (const pane of panes) {
-    await ctx.ensureIndicatorChartHistory?.(pane);
+    delete pane._suppressHistoryPrefetch;
+    pane._indicatorHistoryBulkLoad = true;
   }
-  ctx.ensureIndicatorData?.();
-  ctx.refreshIndicatorsImmediate?.();
+  try {
+    for (const pane of panes) {
+      await ctx.ensureIndicatorChartHistory?.(pane);
+    }
+    for (const pane of panes) {
+      await ctx.ensureIndicatorDataThenOverlay?.(pane);
+    }
+    for (const pane of panes) {
+      if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
+        ctx.refreshIndicatorsImmediate?.(pane.index);
+      }
+    }
+  } finally {
+    for (const pane of panes) {
+      delete pane._indicatorHistoryBulkLoad;
+    }
+  }
+  if (ctx.opts?.replayHostControlled) {
+    for (const pane of panes) {
+      syncHostReplayViewportAfterTfSwitch(ctx, pane, pane._tfSwitchFromResolution ?? null);
+      delete pane._tfSwitchFromResolution;
+      delete pane._tfSwitchSavedLayout;
+    }
+  }
   for (const pane of panes) {
     pane.priceLineLabel?.requestRefresh();
     if (pane.chart && pane.series) {
-      ctx.applySettingsToChartLocal?.(pane.chart, pane.series, pane);
+      withPreservedViewport(
+        pane.chart,
+        () => ctx.applySettingsToChartLocal?.(pane.chart, pane.series, pane),
+        { followUpFrames: 1 },
+      );
     }
   }
   ctx.refreshIndicatorLegends?.();
 }
+
+export { paintPaneAfterTimeframeLoad } from "./timeframeSwitch.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -448,11 +367,16 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             sync: true,
             paneCount: panes.length,
           });
-          preparePanesForSeriesReload(ctx, panes);
           const savedLayouts = capturePaneBarLayouts(ctx, panes);
-          for (const pane of panes) {
-            seedPaneResolutionAsHtf(ctx, pane);
-            ctx.replayEngine?.beforeResolutionChange?.(pane);
+          preparePanesForSeriesReload(ctx, panes);
+          for (let i = 0; i < panes.length; i += 1) {
+            const pane = panes[i];
+            pane._tfSwitchFromResolution = pane.resolution;
+            pane._tfSwitchSavedLayout = savedLayouts[i] ?? null;
+            prepareHtfBeforeTimeframeSwitch(ctx, pane, res);
+            ctx.replayEngine?.beforeResolutionChange?.(pane, {
+              viewportLayout: savedLayouts[i] ?? null,
+            });
             ctx.stashPaneResolutionCache(pane, pane.resolution);
             pane.resolution = res;
           }
@@ -465,6 +389,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             console.error("[BWC] onIntervalChange failed:", err);
           }
           const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
+          const hostReplay = Boolean(ctx.opts?.replayHostControlled);
           suppressPaneHistoryPrefetch(panes);
           await showChartPendingOverlay(ctx, panes);
           try {
@@ -474,16 +399,17 @@ export async function wireSymbolAndTimeframePickers(ctx) {
               skipPriceScaleMargins: true,
             });
             if (gen !== tfChangeGen) return;
-            if (replayLocked) {
+            if (replayLocked || hostReplay) {
               await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
-              await finishSeriesReload(ctx, panes);
             } else {
               for (let i = 0; i < panes.length; i += 1) {
                 paintPaneAfterTimeframeLoad(ctx, panes[i], savedLayouts[i]);
               }
               await finishSeriesReload(ctx, panes);
               await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
+              return;
             }
+            await finishSeriesReload(ctx, panes);
           } finally {
             if (gen === tfChangeGen) {
               releasePaneHistoryPrefetch(panes);
@@ -501,10 +427,12 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           paneIndex: pane.index,
           sync: false,
         });
-        preparePanesForSeriesReload(ctx, [pane]);
         const savedLayout = captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions);
-        seedPaneResolutionAsHtf(ctx, pane);
-        ctx.replayEngine?.beforeResolutionChange?.(pane);
+        preparePanesForSeriesReload(ctx, [pane]);
+        pane._tfSwitchFromResolution = pane.resolution;
+        pane._tfSwitchSavedLayout = savedLayout;
+        prepareHtfBeforeTimeframeSwitch(ctx, pane, res);
+        ctx.replayEngine?.beforeResolutionChange?.(pane, { viewportLayout: savedLayout });
         ctx.stashPaneResolutionCache(pane, pane.resolution);
         pane.resolution = res;
         if (pane.index === 0) ctx.chartPanes.get(0).resolution = res;
@@ -518,6 +446,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           console.error("[BWC] onIntervalChange failed:", err);
         }
         const replayLocked = ctx.replayEngine?.isReplayLocked?.() ?? false;
+        const hostReplay = Boolean(ctx.opts?.replayHostControlled);
         suppressPaneHistoryPrefetch(pane);
         await showChartPendingOverlay(ctx, pane);
         try {
@@ -527,14 +456,15 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             skipPriceScaleMargins: true,
           });
           if (gen !== tfChangeGen) return;
-          if (replayLocked) {
+          if (replayLocked || hostReplay) {
             await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
-            await finishSeriesReload(ctx, [pane]);
           } else {
             paintPaneAfterTimeframeLoad(ctx, pane, savedLayout);
             await finishSeriesReload(ctx, [pane]);
             await afterTimeframeChangeThenRestoreViewport(ctx, () => {});
+            return;
           }
+          await finishSeriesReload(ctx, [pane]);
         } finally {
           if (gen === tfChangeGen) {
             releasePaneHistoryPrefetch(pane);

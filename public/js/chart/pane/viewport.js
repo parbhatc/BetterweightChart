@@ -129,3 +129,31 @@ export function withPreservedViewport(chart, fn, opts = {}) {
 export function withPreservedLogicalRange(chart, fn, opts = {}) {
   withPreservedViewport(chart, fn, opts);
 }
+
+/**
+ * LWC often resets visible range on the frame after series.setData — re-apply target range.
+ * @param {import("lightweight-charts").IChartApi} chart
+ * @param {{ from: number, to: number }} range
+ * @param {number} [followUpFrames]
+ */
+export function stickVisibleLogicalRange(chart, range, followUpFrames = 2) {
+  if (!chart || !isValidRange(range)) return;
+  const ts = chart.timeScale();
+  const target = { from: range.from, to: range.to };
+  const apply = () => {
+    try {
+      ts.setVisibleLogicalRange(target);
+    } catch {
+      /* chart torn down */
+    }
+  };
+  apply();
+  if (followUpFrames <= 0) return;
+  let left = followUpFrames;
+  const tick = () => {
+    apply();
+    left -= 1;
+    if (left > 0) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}

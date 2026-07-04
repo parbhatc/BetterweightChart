@@ -5,7 +5,7 @@ import {
   chartDebugForming,
   chartDebugTime,
 } from "../../debug/chart/index.js";
-import { withPreservedViewport } from "./viewport.js";
+import { withPreservedViewport, stickVisibleLogicalRange } from "./viewport.js";
 import {
   getPaneChartView,
   invalidatePaneChartView,
@@ -156,11 +156,9 @@ export function applyLiveBarToPaneSeries(pane, settingsStore, symbolInfo, resolu
     };
 
     if (logicalRange && Number.isFinite(logicalRange.from) && Number.isFinite(logicalRange.to)) {
+      const target = { from: logicalRange.from, to: logicalRange.to };
       setData();
-      pane.chart.timeScale().setVisibleLogicalRange({
-        from: logicalRange.from,
-        to: logicalRange.to,
-      });
+      stickVisibleLogicalRange(pane.chart, target);
     } else if (opts.avoidPreserveViewport) {
       setData();
     } else {
