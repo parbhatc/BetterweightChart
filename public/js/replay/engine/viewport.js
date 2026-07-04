@@ -128,6 +128,21 @@ export function createReplayViewport(ctx, state) {
       return fallback;
     }
 
+    // HTF → LTF: reuse coarser TF bar-slot layout when no cached finer layout yet.
+    if (fromSec != null && toSec != null && toSec < fromSec && fromLayout) {
+      const barLogical = computeViewportBarLayoutLogical(pane, fromLayout);
+      if (barLogical) {
+        replayDebug("viewport.compute.ltFromCoarser", {
+          fromResolution: fromRes,
+          toResolution: targetRes,
+          width: fromLayout.width,
+          toBeyondAnchor: fromLayout.toBeyondAnchor,
+          ...barLogical,
+        });
+        return barLogical;
+      }
+    }
+
     // HTF → LTF without a cached LTF layout: default zoom (never reuse HTF bar-slot width).
     if (fromSec != null && toSec != null && toSec < fromSec) {
       const fallbackWidth = 120;
@@ -280,6 +295,25 @@ export function createReplayViewport(ctx, state) {
       return;
     }
 
+    if (fromSec != null && toSec != null && toSec < fromSec && fromLayout) {
+      restoreViewportBarLayout(
+        pane,
+        fromLayout,
+        ctx.settingsStore,
+        ctx.resolutions,
+        "replay-lt-from-coarser",
+        ctx.activePriceScaleId,
+        viewportOpts,
+      );
+      replayDebug("viewport.restore.ltFromCoarser", {
+        fromResolution: fromRes,
+        toResolution: targetRes,
+        width: fromLayout.width,
+        toBeyondAnchor: fromLayout.toBeyondAnchor,
+      });
+      return;
+    }
+
     if (fromSec != null && toSec != null && toSec < fromSec) {
       scrollPaneToReplayCursor(pane, endIndex, 120);
       replayDebug("viewport.restore.htfLtDefault", {
@@ -355,11 +389,18 @@ export function createReplayViewport(ctx, state) {
     scrollPaneToReplayCursor(pane, endIndex, fromLayout?.width ?? 80);
   }
 
+  /** @param {string} resolution @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout */
+  function stashReplayViewportLayout(resolution, layout) {
+    if (!resolution || !layout?.width || layout.width < 10) return;
+    state.replayViewportByResolution.set(resolution, layout);
+  }
+
   return {
     computeScrollToReplayCursorLogical,
     resolveReplayViewportLogicalRange,
     restoreReplayViewportAfterTfSwitch,
     scrollPaneToReplayCursor,
     inferViewportFromResolution,
+    stashReplayViewportLayout,
   };
 }

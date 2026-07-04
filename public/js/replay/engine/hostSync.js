@@ -83,8 +83,12 @@ export function createReplayHostSync(ctx, replay, state) {
     ctx.replayFutureDim?.refreshAll?.();
     pane.sessionBg?.requestRefresh?.();
 
-    ctx.indicatorController?.invalidateOverlayCacheForPane?.(pane.index);
-    void ctx.ensureIndicatorDataThenOverlay?.(pane);
+    if (ctx.indicatorController?.paneHasOverlayIndicators?.(pane.index)) {
+      ctx.refreshOverlaysImmediate?.(pane.index);
+    }
+    void ctx.extendIndicatorHtfForReplay?.(pane).then((extended) => {
+      if (extended) ctx.refreshOverlaysImmediate?.(pane.index);
+    });
 
     return { cursorUtc, currentIdx, bars };
   }

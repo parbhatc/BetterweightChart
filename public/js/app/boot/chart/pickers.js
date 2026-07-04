@@ -7,6 +7,7 @@ import {
   restoreViewportBarLayout,
 } from "../../../chart/pane/viewportBarLayout.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { replayBarIndexForUtcTime } from "../../../replay/persist.js";
 import { clearHtfCoarserThan, seedHtfBars } from "../../bar/htfBarCache.js";
 import { resolutionSec } from "../../../chart/resolutions.js";
 import {
@@ -118,7 +119,7 @@ export function preparePanesForSeriesReload(ctx, panes) {
 
 /**
  * Seed current pane bars into HTF cache for its current resolution.
- * Helps indicators (Levels/FVG) avoid waiting after timeframe switches.
+ * Helps overlay indicators avoid waiting after timeframe switches.
  * @param {import("./state.js").BootContext} ctx
  * @param {object} pane
  */
@@ -131,11 +132,26 @@ export function seedPaneResolutionAsHtf(ctx, pane) {
     ctx.resolutions,
   );
   if (!view?.utcBars?.length) return;
+  let utcBars = view.utcBars;
+  let chartBars = view.chartBars ?? view.utcBars;
+  if (ctx.opts?.replayHostControlled) {
+    const anchorSec = ctx.opts.getPlaybackAnchorSec?.(pane.resolution);
+    if (anchorSec != null && Number.isFinite(anchorSec)) {
+      const last = utcBars.at(-1)?.time;
+      if (last != null && last > anchorSec) {
+        const idx = replayBarIndexForUtcTime(utcBars, anchorSec);
+        if (idx != null && idx < utcBars.length - 1) {
+          utcBars = utcBars.slice(0, idx + 1);
+          chartBars = chartBars.slice(0, idx + 1);
+        }
+      }
+    }
+  }
   seedHtfBars(
     pane.symbol,
     pane.resolution,
-    view.utcBars,
-    view.chartBars,
+    utcBars,
+    chartBars,
     "timeframe-switch",
   );
 }
@@ -152,7 +168,11 @@ export function prepareHtfBeforeTimeframeSwitch(ctx, pane, targetResolution) {
   const fromSec = resolutionSec(pane.resolution);
   const toSec = resolutionSec(targetResolution);
   if (fromSec != null && toSec != null && toSec < fromSec) {
-    clearHtfCoarserThan(pane.symbol, targetResolution);
+    if (!ctx.opts?.replayHostControlled) {
+      clearHtfCoarserThan(pane.symbol, targetResolution);
+    } else {
+      seedPaneResolutionAsHtf(ctx, pane);
+    }
     return;
   }
   seedPaneResolutionAsHtf(ctx, pane);

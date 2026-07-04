@@ -24,7 +24,7 @@ export function overlayGeometryEqual(a, b) {
 }
 
 /**
- * Cache key for skipping FVG/overlay recompute.
+ * Cache key for skipping overlay recompute.
  * Includes head + length so history prepend invalidates stale box lists (maxBarsBack window shifts).
  * @param {object} instance
  * @param {object[]} chartBars
@@ -49,7 +49,7 @@ export function clearOverlayInstanceCache(instance, opts = {}) {
   instance._overlayAppliedTimeCtxKey = undefined;
   instance._pendingOverlayApply = undefined;
   if (!opts.soft) {
-    delete instance._fvgRuntime;
-    delete instance._fvgSnapshot;
+    delete instance._overlayRuntime;
+    delete instance._overlaySnapshot;
   }
 }

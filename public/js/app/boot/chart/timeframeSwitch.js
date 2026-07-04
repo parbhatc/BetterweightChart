@@ -132,6 +132,9 @@ export function syncHostReplayViewportAfterTfSwitch(ctx, pane, fromResolution = 
  */
 export function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
   if (ctx.opts?.replayHostControlled) {
+    if (savedLayout?.width >= 10 && pane.resolution) {
+      ctx.replayEngine?.stashReplayViewportLayout?.(pane.resolution, savedLayout);
+    }
     syncHostReplayViewportAfterTfSwitch(
       ctx,
       pane,

@@ -1,5 +1,5 @@
 import { getSecuritySeries, requestSecuritySeries } from "./htfAccess.js";
-import { getHtfBars } from "../../app/bar/htfBarCache.js";
+import { getHtfBars, htfCacheStaleForAnchor } from "../../app/bar/htfBarCache.js";
 import { resolutionSec } from "/js/chart/resolutions.js";
 
 /** Re-export for indicators; canonical copy lives in htfAccess. */
@@ -76,12 +76,27 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
   if (!tfIds.length) return false;
   const strict = opts.strict === true;
   const perTf = opts.perTfWant;
+  const replayAnchor =
+    typeof ctx.getPlaybackAnchorSec === "function"
+      ? ctx.getPlaybackAnchorSec(ctx.chartResolution ?? "")
+      : ctx.replayAnchorSec ?? null;
+  const replayHost =
+    ctx.replayHostControlled === true ||
+    (typeof ctx.isReplayLocked === "function" && ctx.isReplayLocked());
   let pending = false;
   for (const tfId of tfIds) {
     const want = Math.max(10, Number(perTf?.[tfId] ?? barsNeeded) || 300);
     const minStart = strict ? want : Math.min(50, want);
 
     const stored = getHtfBars(symbol, tfId);
+    if (
+      replayHost &&
+      replayAnchor != null &&
+      stored?.utcBars?.length &&
+      !htfCacheStaleForAnchor(symbol, tfId, replayAnchor)
+    ) {
+      continue;
+    }
     if (stored?.historyExhausted && stored.utcBars?.length > 0) continue;
     if (stored?.utcBars?.length >= want) continue;
 

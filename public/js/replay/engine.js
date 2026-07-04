@@ -279,6 +279,7 @@ export function attachReplayEngine(ctx, replay) {
     restoreSession: session.restoreSession,
     onChartResolutionChange: resolutionChange.onChartResolutionChange,
     beforeResolutionChange: ltBars.beforeResolutionChange,
+    stashReplayViewportLayout: viewport.stashReplayViewportLayout,
     syncHostReplayAllPanes: hostSync.syncHostReplayAllPanes,
     stepForward: async () => {
       const rs = replay.getState();

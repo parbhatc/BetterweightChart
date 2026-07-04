@@ -52,3 +52,12 @@ export {
   createIndicatorInstance,
 } from "./catalog.js";
 export { createIndicatorController } from "./controller.js";
+export { firstBarIndexAtOrAfter, lastBarIndexAtOrBefore } from "./script/barIndex.js";
+export {
+  createMatrix,
+  birthLevel,
+  sweepMatrix,
+  extendMatrix,
+  takenLiquidityKey,
+} from "./script/liquidityMatrix.js";
+export { bindOverlayEngine } from "./script/overlayEngine.js";

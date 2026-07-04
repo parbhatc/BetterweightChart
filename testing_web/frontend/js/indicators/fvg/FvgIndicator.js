@@ -4,9 +4,11 @@ import { resolveFvgTimeframeRows } from "../ui/fvgTimeframesPanel.js";
 import { compareSymbol } from "/js/indicators/security/compareSymbol.js";
 import { compareBarsRecomputeKey } from "/js/indicators/security/compareBars.js";
 import { overlayRecomputeKey } from "/js/indicators/overlayCache.js";
-import { createBarScriptContext } from "/js/indicators/pineRuntime.js";
+import { bindOverlayEngine } from "/js/indicators/script/overlayEngine.js";
 import { getSecuritySeries } from "/js/indicators/security/htfAccess.js";
 import { FvgEngine, fvgAtBar } from "./FvgEngine.js";
+
+const fvgOverlay = bindOverlayEngine(FvgEngine);
 import { fvgHtf } from "./htf.js";
 import { buildInputs } from "./inputs.js";
 
@@ -180,9 +182,9 @@ class FvgIndicator extends BarScriptIndicator {
     const liveKey = formingLiveKey(instance, ctx);
     const meta = barMeta(chartBars);
 
-    let rt = instance._fvgRuntime;
+    let rt = instance._overlayRuntime;
     if (isPrependHistory(chartBars, rt)) {
-      delete instance._fvgRuntime;
+      delete instance._overlayRuntime;
       rt = null;
     }
 
@@ -197,7 +199,7 @@ class FvgIndicator extends BarScriptIndicator {
     ) {
       const patched = FvgIndicator.patchHtfOverlay(utcBars, chartBars, instance, ctx, rt.snapshot, rt.boxes);
       if (patched) {
-        instance._fvgRuntime = {
+        instance._overlayRuntime = {
           fullKey,
           chartKey,
           htfKey,
@@ -216,7 +218,7 @@ class FvgIndicator extends BarScriptIndicator {
     ) {
       const patched = FvgIndicator.patchAppendOverlay(utcBars, chartBars, instance, ctx, rt.snapshot, rt.boxes);
       if (patched) {
-        instance._fvgRuntime = {
+        instance._overlayRuntime = {
           fullKey,
           chartKey,
           htfKey,
@@ -236,7 +238,7 @@ class FvgIndicator extends BarScriptIndicator {
     ) {
       const patched = FvgIndicator.patchLiveOverlay(utcBars, chartBars, instance, ctx, rt.snapshot, rt.boxes);
       if (patched) {
-        instance._fvgRuntime = {
+        instance._overlayRuntime = {
           fullKey,
           chartKey,
           htfKey,
@@ -250,9 +252,9 @@ class FvgIndicator extends BarScriptIndicator {
     }
 
     const boxes = super.computeOverlay(utcBars, chartBars, instance, ctx);
-    const snapshot = instance._fvgSnapshot ?? null;
-    delete instance._fvgSnapshot;
-    instance._fvgRuntime = { fullKey, chartKey, htfKey, liveKey, snapshot, boxes, ...meta };
+    const snapshot = instance._overlaySnapshot ?? null;
+    delete instance._overlaySnapshot;
+    instance._overlayRuntime = { fullKey, chartKey, htfKey, liveKey, snapshot, boxes, ...meta };
     return boxes;
   }
 
@@ -265,54 +267,21 @@ class FvgIndicator extends BarScriptIndicator {
    * @param {object[]} [previousBoxes]
    */
   static patchLiveOverlay(utcBars, chartBars, instance, ctx, snapshot, previousBoxes = []) {
-    const { ctx: script } = createBarScriptContext({
-      utcBars,
-      chartBars,
-      inputs: instance.inputs,
-      style: instance.style,
-      plotIds: ["fvg"],
-      symbolInfo: ctx.symbolInfo ?? null,
-      overlayCtx: ctx,
-      instance,
-    });
-    const engine = new FvgEngine(script);
-    return engine.runLiveTick(snapshot, previousBoxes);
+    return fvgOverlay.runPatch(utcBars, chartBars, instance, ctx, snapshot, previousBoxes, "runLiveTick");
   }
 
   static patchAppendOverlay(utcBars, chartBars, instance, ctx, snapshot, previousBoxes = []) {
-    const { ctx: script } = createBarScriptContext({
-      utcBars,
-      chartBars,
-      inputs: instance.inputs,
-      style: instance.style,
-      plotIds: ["fvg"],
-      symbolInfo: ctx.symbolInfo ?? null,
-      overlayCtx: ctx,
-      instance,
-    });
-    const engine = new FvgEngine(script);
-    return engine.runAppendBar(snapshot, previousBoxes);
+    return fvgOverlay.runPatch(utcBars, chartBars, instance, ctx, snapshot, previousBoxes, "runAppendBar");
   }
 
   static patchHtfOverlay(utcBars, chartBars, instance, ctx, snapshot, previousBoxes = []) {
-    const { ctx: script } = createBarScriptContext({
-      utcBars,
-      chartBars,
-      inputs: instance.inputs,
-      style: instance.style,
-      plotIds: ["fvg"],
-      symbolInfo: ctx.symbolInfo ?? null,
-      overlayCtx: ctx,
-      instance,
-    });
-    const engine = new FvgEngine(script);
-    return engine.runHtfRefresh(snapshot, previousBoxes);
+    return fvgOverlay.runPatch(utcBars, chartBars, instance, ctx, snapshot, previousBoxes, "runHtfRefresh");
   }
 
   /** @param {import("../../types.js").IndicatorInstance} instance @param {object} ctx */
   static shouldRefreshOverlayOnCacheHit(instance, ctx) {
     const liveKey = formingLiveKey(instance, ctx);
-    const rt = instance._fvgRuntime;
+    const rt = instance._overlayRuntime;
     if (!rt?.snapshot) return Boolean(ctx.formingBar);
     return rt.liveKey !== liveKey;
   }

@@ -1,6 +1,6 @@
 import { chartDebug } from "../../debug/chart/index.js";
 import { resolutionSec } from "../../chart/resolutions.js";
-import { buildInitialPeriodParams, buildPrependPeriodParams, alignBarTime } from "./periodParams.js";
+import { buildInitialPeriodParams, buildPrependPeriodParams, buildTvPeriodParams, alignBarTime } from "./periodParams.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
 
 /** @typedef {{ utcBars: object[], chartBars: object[], historyExhausted: boolean, updatedAt: number, source?: string }} HtfBarEntry */
@@ -40,12 +40,85 @@ export function htfCacheStaleForAnchor(symbol, resolution, anchorSec) {
   return lastOpen < anchorOpen - tfSec;
 }
 
-/** @param {string} symbol @param {string} resolution @param {number} anchorSec */
-export function clearHtfIfStaleForAnchor(symbol, resolution, anchorSec) {
-  if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec)) return false;
-  store.delete(htfCacheKey(symbol, resolution));
-  chartDebug("data", "htf cache stale for anchor", { symbol, resolution, anchorSec });
-  return true;
+/**
+ * Append only missing HTF tail bars for replay anchor (few bars, not countBack=1000).
+ * @param {object} opts
+ * @param {import("../../datafeed/types.js").Datafeed} opts.datafeed
+ * @param {object} opts.symbolInfo
+ * @param {string} opts.symbol
+ * @param {string} opts.resolution
+ * @param {number} opts.anchorSec
+ */
+export async function extendHtfCacheForAnchor(opts) {
+  const { datafeed, symbolInfo, symbol, resolution, anchorSec } = opts;
+  const tfSec = resolutionSec(resolution);
+  if (!datafeed || !symbolInfo || !symbol || !resolution || anchorSec == null || !tfSec) {
+    return getHtfBars(symbol, resolution);
+  }
+  if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+    return getHtfBars(symbol, resolution);
+  }
+
+  const key = htfCacheKey(symbol, resolution);
+  const flightKey = `${key}|extend`;
+  const pending = inFlight.get(flightKey);
+  if (pending) return pending;
+
+  const task = (async () => {
+    const entry = getHtfBars(symbol, resolution);
+    const lastOpen = entry?.utcBars?.at(-1)?.time ?? null;
+    const anchorOpen = alignBarTime(anchorSec, tfSec);
+    const gapBars =
+      lastOpen == null ? 4 : Math.max(2, Math.ceil((anchorOpen - lastOpen) / tfSec) + 2);
+    const countBack = Math.min(16, gapBars);
+
+    const params = buildTvPeriodParams({
+      barSec: tfSec,
+      countBack,
+      to: anchorSec,
+      firstDataRequest: false,
+    });
+    chartDebug("data", "htf cache extend anchor", {
+      symbol,
+      resolution,
+      anchorSec,
+      countBack,
+      lastOpen,
+    });
+
+    const result = await datafeed.getBars(symbolInfo, resolution, params);
+    if (!result.bars?.length) return entry ?? null;
+
+    const base = entry?.utcBars ?? [];
+    const byTime = new Map(base.map((b) => [b.time, b]));
+    for (const bar of result.bars) {
+      if (lastOpen != null && bar.time < lastOpen) continue;
+      byTime.set(bar.time, bar);
+    }
+    const merged = [...byTime.values()].sort((a, b) => a.time - b.time);
+    if (!merged.length) return entry ?? null;
+    if (entry && merged.length === base.length) return entry;
+
+    const next = {
+      utcBars: merged,
+      chartBars: merged,
+      historyExhausted: entry?.historyExhausted ?? false,
+      updatedAt: Date.now(),
+      source: entry?.source ?? "datafeed",
+    };
+    store.set(key, next);
+    chartDebug("data", "htf cache extended", {
+      symbol,
+      resolution,
+      bars: merged.length,
+      added: merged.length - base.length,
+      last: merged.at(-1)?.time,
+    });
+    return next;
+  })().finally(() => inFlight.delete(flightKey));
+
+  inFlight.set(flightKey, task);
+  return task;
 }
 
 /**
@@ -60,6 +133,44 @@ export function seedHtfBars(symbol, resolution, utcBars, chartBars, source = "se
   if (!symbol || !resolution || !utcBars?.length) return null;
   const key = htfCacheKey(symbol, resolution);
   const existing = store.get(key);
+
+  if (source === "timeframe-switch" && existing?.utcBars?.length) {
+    const byTime = new Map(
+      existing.utcBars.map((b, i) => [
+        b.time,
+        { utc: b, chart: existing.chartBars?.[i] ?? b },
+      ]),
+    );
+    for (let i = 0; i < utcBars.length; i++) {
+      byTime.set(utcBars[i].time, {
+        utc: utcBars[i],
+        chart: chartBars?.[i] ?? utcBars[i],
+      });
+    }
+    const mergedUtc = [...byTime.values()]
+      .sort((a, b) => a.utc.time - b.utc.time)
+      .map((e) => e.utc);
+    const mergedChart = [...byTime.values()]
+      .sort((a, b) => a.utc.time - b.utc.time)
+      .map((e) => e.chart);
+    const entry = {
+      utcBars: mergedUtc,
+      chartBars: mergedChart,
+      historyExhausted: existing.historyExhausted ?? false,
+      updatedAt: Date.now(),
+      source,
+    };
+    store.set(key, entry);
+    chartDebug("data", "htf cache seed merge", {
+      symbol,
+      resolution,
+      source,
+      bars: entry.utcBars.length,
+      mergedFrom: utcBars.length,
+    });
+    return entry;
+  }
+
   if (existing && existing.utcBars.length >= utcBars.length) return existing;
 
   const entry = {
@@ -107,8 +218,11 @@ export async function ensureHtfBars(opts) {
   const want = Math.max(50, Math.min(2000, Number(countBack) || 300));
   const anchorSec = opts.playbackAnchorSec;
 
-  if (anchorSec != null) {
-    clearHtfIfStaleForAnchor(symbol, resolution, anchorSec);
+  if (anchorSec != null && htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+    const symInfo = symbolInfo ?? pane?.symbolInfo ?? symbolInfoExtra;
+    if (symInfo) {
+      await extendHtfCacheForAnchor({ ...opts, anchorSec, symbolInfo: symInfo });
+    }
   }
 
   const cached = lookupBarsForEnsure(opts, want);
@@ -117,6 +231,14 @@ export async function ensureHtfBars(opts) {
   }
 
   let existing = store.get(key);
+  // ponytail: replay anchor caps HTF depth — never chase countBack=1000 on every step
+  if (
+    anchorSec != null &&
+    existing?.utcBars?.length &&
+    !htfCacheStaleForAnchor(symbol, resolution, anchorSec)
+  ) {
+    return existing;
+  }
   if (
     existing &&
     existing.utcBars.length >= want &&
@@ -240,7 +362,8 @@ async function fetchHtfBars(opts) {
   const entry = {
     utcBars,
     chartBars,
-    historyExhausted: utcBars.length < want,
+    historyExhausted:
+      opts.playbackAnchorSec != null ? true : utcBars.length < want,
     updatedAt: Date.now(),
     source: utcBars.length >= want ? cacheSource : "datafeed",
   };
@@ -250,7 +373,7 @@ async function fetchHtfBars(opts) {
 }
 
 /**
- * Prepend older HTF bars when FVG lookback needs more history.
+ * Prepend older HTF bars when an overlay study needs more HTF history.
  * @param {object} opts
  */
 export async function prependHtfBars(opts) {

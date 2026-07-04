@@ -71,11 +71,11 @@
  */
 
 /**
- * Two fields side by side (e.g. Bullish | Bearish colors, FVG | iFVG labels).
+ * Two fields side by side (e.g. Bullish | Bearish colors).
  * @typedef {object} InputInlinePairDef
  * @property {"inlinePair"} type
  * @property {string} [section]
- * @property {string} [header] — title row above left/right cells (e.g. "FVG Box Color")
+ * @property {string} [header] — title row above left/right cells (e.g. "Box color")
  * @property {InputFieldDef} left
  * @property {InputFieldDef} right
  */

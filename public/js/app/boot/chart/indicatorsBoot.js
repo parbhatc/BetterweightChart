@@ -107,6 +107,11 @@ export function attachIndicatorsBoot(ctx) {
         isNewsEnabled: newsCtx.isNewsEnabled,
         getNewsRows: newsCtx.getNewsRows,
         isReplayLocked: () => ctx.replayEngine?.isReplayLocked?.() ?? false,
+        replayHostControlled: Boolean(ctx.opts?.replayHostControlled),
+        getPlaybackAnchorSec: (resolution) =>
+          typeof ctx.opts?.getPlaybackAnchorSec === "function"
+            ? ctx.opts.getPlaybackAnchorSec(resolution ?? pane.resolution)
+            : null,
       };
     },
   });
@@ -610,6 +615,12 @@ export function attachIndicatorsBoot(ctx) {
       return Promise.resolve();
     }
     return indicatorData.ensurePaneDataThenOverlay(pane);
+  };
+
+  /** Host replay Next: extend HTF tail only when anchor outran cache (no full refetch). */
+  ctx.extendIndicatorHtfForReplay = async (pane) => {
+    if (chartIsPanning() || !pane?.symbol) return false;
+    return indicatorData.extendHtfTailForReplay(pane);
   };
 
   const origApplyChartSettings = ctx.applyChartSettings;

@@ -113,15 +113,16 @@ Or use `overlay(utcBars, chartBars, ...)` for batch labels. Legacy `defineIndica
 ## Folder layout
 
 ```
-definitions/
+definitions/                    # shipped built-ins (public/js/indicators/definitions/)
   ema/EMAIndicator.js + rings.js
   rsi/RsiIndicator.js
-  volume/VolumeIndicator.js
-  macd/MacdIndicator.js + constants.js
-  pivot/PivotPointsHlIndicator.js + labels.js
-  smt/SmtIndicator.js + compareSymbol.js + styleHelpers.js
-  levels/LevelsIndicator.js + htf.js + helpers.js
-  fvg/FvgIndicator.js + engine.js + init.js + inputs.js + htf.js
+  ...
+
+testing_web/frontend/js/indicators/   # app overlay studies (register in testing_web/frontend/js/main.js)
+  myStudy/MyStudyIndicator.js + MyStudyEngine.js + init.js + …
+
+public/js/indicators/script/          # shared Pine-style helpers (any overlay study)
+  barIndex.js + liquidityMatrix.js + overlayEngine.js
 ```
 
 Input helper: `createInput("int", "length", "Length", 9)` — type is `int`, `float`, `bool`, `source`, `select`, `timeframe`, etc.
@@ -156,27 +157,19 @@ static inputs = [
 Graphic studies (`graphicObjects`) — Style tab shows **Graphic objects** + **Input values** only (no line color rows). Put box/label colors in Inputs via `type: "color"`.
 
 ```javascript
-// FVG-style Inputs (Style tab = Graphic objects + Input values only)
+// Box/label overlay (Style tab = Graphic objects + Input values only)
 inputs: [
-  {
-    type: "row",
-    section: "Timeframes",
-    fields: [
-      { id: "tf1On", type: "bool", title: "", defval: true },
-      { id: "tf1", type: "timeframe", title: "Timeframe 1", defval: "chart" },
-    ],
-  },
-  { id: "showFvg", type: "bool", title: "Show FVG", defval: true, section: "FVG settings" },
+  { id: "showBoxes", type: "bool", title: "Show boxes", defval: true, section: "Display" },
   {
     type: "inlinePair",
-    section: "Box Settings",
-    left: { id: "bullBox", type: "color", title: "FVG Box Color: Bullish", defval: { color: "#00e676", opacity: 10 } },
-    right: { id: "bearBox", type: "color", title: "| Bearish", defval: { color: "#f23645", opacity: 10 } },
+    section: "Box colors",
+    left: { id: "bullBox", type: "color", title: "Bullish", defval: { color: "#00e676", opacity: 10 } },
+    right: { id: "bearBox", type: "color", title: "Bearish", defval: { color: "#f23645", opacity: 10 } },
   },
 ],
 graphicObjects: [
-  { styleKey: "boxes", label: "Boxes" },
-  { styleKey: "tables", label: "Tables" },
+  { styleKey: "graphicBoxes", label: "Boxes", overlay: "boxes" },
+  { styleKey: "graphicLabels", label: "Labels" },
 ],
 ```
 

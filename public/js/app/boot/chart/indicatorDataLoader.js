@@ -4,7 +4,7 @@ import {
   instanceUsesCompareSymbols,
   paneDataNeedsEmpty,
 } from "../../../indicators/security/indicatorDataNeeds.js";
-import { ensureHtfBars, getHtfBars, prependHtfBars, clearHtfIfStaleForAnchor } from "../../bar/htfBarCache.js";
+import { ensureHtfBars, extendHtfCacheForAnchor, getHtfBars, htfCacheStaleForAnchor, prependHtfBars } from "../../bar/htfBarCache.js";
 import { ensureSymbolBars, lookupSymbolBars } from "../../bar/symbolBarCache.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { uniqueEtDaysFromBars } from "../../../core/etTime.js";
@@ -102,21 +102,50 @@ export function createIndicatorDataLoader({
     };
   }
 
-  /** @param {import("../../../indicators/security/indicatorDataNeeds.js").PaneDataNeeds} needs @param {object} pane */
-  function clearStaleHtfForPlaybackAnchor(needs, pane) {
+  /** @param {object} pane @returns {Promise<boolean>} true when any HTF tail was extended */
+  async function extendHtfTailForReplay(pane) {
+    if (!pane?.symbol || !ctx.datafeed) return false;
     const anchorSec =
       typeof ctx.opts?.getPlaybackAnchorSec === "function"
         ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
         : null;
     if (anchorSec == null || !Number.isFinite(anchorSec)) return false;
-    let cleared = false;
-    for (const key of new Set([...needs.htf.keys(), ...needs.compareHtf.keys()])) {
+
+    const view = getPaneChartView(
+      pane,
+      ctx.settingsStore,
+      pane.symbolInfo ?? ctx.symbolInfo,
+      ctx.resolutions,
+    );
+    const bars =
+      (typeof paneBarsForNeeds === "function" ? paneBarsForNeeds(pane) : null) ??
+      view?.utcBars ??
+      [];
+    const needs = collectPaneDataNeeds(
+      controller.indicatorsForPane(pane.index),
+      { ...pane, bars },
+      getIndicatorClass,
+    );
+    let extended = false;
+    for (const key of needs.htf.keys()) {
       const sep = key.indexOf("|");
-      if (clearHtfIfStaleForAnchor(key.slice(0, sep), key.slice(sep + 1), anchorSec)) {
-        cleared = true;
-      }
+      const symbol = key.slice(0, sep);
+      const resolution = key.slice(sep + 1);
+      if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec)) continue;
+      const symbolInfo =
+        symbol === pane.symbol
+          ? pane.symbolInfo ?? ctx.symbolInfo
+          : await ctx.datafeed.resolveSymbol(symbol);
+      if (!symbolInfo) continue;
+      await extendHtfCacheForAnchor({
+        ...htfEnsureOpts(pane, symbol, resolution, 16, symbolInfo),
+        anchorSec,
+        symbolInfo,
+      });
+      extended = true;
+      controller.invalidateOverlayCacheForPane(pane.index, { htfKeys: new Set([key]) });
     }
-    return cleared;
+    return extended;
   }
 
   function symbolBarLookupOpts(pane, symbol) {
@@ -141,7 +170,33 @@ export function createIndicatorDataLoader({
       symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
       if (!symbolInfo) return;
     }
-    let entry = await ensureHtfBars(htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo));
+    const ensureOpts = htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo);
+    const anchorSec = ensureOpts.playbackAnchorSec;
+    if (anchorSec != null && ctx.opts?.replayHostControlled) {
+      const stored = getHtfBars(symbol, resolution);
+      if (stored?.utcBars?.length && !htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+        return;
+      }
+      if (stored?.utcBars?.length && htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+        await extendHtfCacheForAnchor({
+          ...ensureOpts,
+          anchorSec,
+          symbolInfo,
+        });
+        return;
+      }
+      // ponytail: empty store still needs one initial fetch; tail-only path is for Next steps
+      await ensureHtfBars(ensureOpts);
+      return;
+    }
+    if (anchorSec != null && htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+      await extendHtfCacheForAnchor({
+        ...ensureOpts,
+        anchorSec,
+        symbolInfo,
+      });
+    }
+    let entry = await ensureHtfBars(ensureOpts);
     let guard = 0;
     while (entry && entry.utcBars.length < countBack && !entry.historyExhausted && guard < PREPEND_GUARD) {
       entry = await prependHtfBars({
@@ -298,8 +353,6 @@ export function createIndicatorDataLoader({
     }
     if (paneDataNeedsEmpty(needs)) return;
 
-    const staleHtfCleared = clearStaleHtfForPlaybackAnchor(needs, pane);
-
     const visibleIds = controller
       .indicatorsForPane(pane.index)
       .filter((inst) => !inst.hidden)
@@ -348,7 +401,7 @@ export function createIndicatorDataLoader({
         const resolution = key.slice(sep + 1);
         await fillHtfHistory(pane, symbol, resolution, countBack);
       }
-      if (!paneBarCountsChanged(needs, pane, barCountsBefore) && !staleHtfCleared) return;
+      if (!paneBarCountsChanged(needs, pane, barCountsBefore)) return;
       controller.invalidateOverlayCacheForPane(pane.index, {
         htfKeys: new Set([...needs.htf.keys(), ...needs.compareHtf.keys()]),
         compareSymbols: new Set(needs.compareChart.keys()),
@@ -450,6 +503,44 @@ export function createIndicatorDataLoader({
       deferHeavyWork();
       return;
     }
+    const anchorSec =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
+    if (ctx.opts?.replayHostControlled && anchorSec != null) {
+      const stored = getHtfBars(sym, resId);
+      if (stored?.utcBars?.length && !htfCacheStaleForAnchor(sym, resId, anchorSec)) {
+        return;
+      }
+      const key = `${sym}|${resId}`;
+      if (htfFetchInFlight.has(key)) return;
+      htfFetchInFlight.add(key);
+      const beforeLen = htfStoreBarCount(sym, resId);
+      const symbolInfo = sym === pane.symbol ? pane.symbolInfo ?? ctx.symbolInfo : null;
+      void Promise.resolve(symbolInfo ?? ctx.datafeed.resolveSymbol(sym))
+        .then((info) => {
+          if (!info) return null;
+          const ensureOpts = htfEnsureOpts(pane, sym, resId, countBack, info);
+          if (stored?.utcBars?.length && htfCacheStaleForAnchor(sym, resId, anchorSec)) {
+            return extendHtfCacheForAnchor({
+              ...ensureOpts,
+              anchorSec,
+              symbolInfo: info,
+            });
+          }
+          return ensureHtfBars(ensureOpts);
+        })
+        .then((entry) => {
+          const afterLen = entry?.utcBars?.length ?? htfStoreBarCount(sym, resId);
+          if (afterLen <= beforeLen) return;
+          controller.invalidateOverlayCacheForPane(pane.index, {
+            htfKeys: new Set([key]),
+          });
+          requestOverlayRefresh(pane.index);
+        })
+        .finally(() => htfFetchInFlight.delete(key));
+      return;
+    }
     const key = `${sym}|${resId}`;
     if (htfFetchInFlight.has(key)) return;
     htfFetchInFlight.add(key);
@@ -481,6 +572,7 @@ export function createIndicatorDataLoader({
     scheduleLoad,
     ensureNow: () => scheduleLoad(0),
     ensurePaneDataThenOverlay,
+    extendHtfTailForReplay,
     scheduleCompareBarsFetch,
     scheduleHtfBarsFetch,
     newsContextForPane,
