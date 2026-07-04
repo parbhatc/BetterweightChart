@@ -1,5 +1,7 @@
 import { chartDebug, destroyDebugHud } from "../../debug/chart/index.js";
+import { logIndicatorDebugSnapshot } from "../../debug/chart/indicators.js";
 import { getChartViewportStats } from "../../debug/chart/viewportStats.js";
+import { logReplayDebugSnapshot } from "../../replay/debug.js";
 import {
   captureViewportBarLayout,
   restoreViewportBarLayout,
@@ -556,6 +558,24 @@ export function createChartWidgetApi(ctx) {
         },
         opts,
       );
+    },
+
+    /**
+     * Replay engine state dump (cursor, snapshots, caches).
+     * @example window.__BWC_WIDGET__.replaySnapshot()
+     */
+    replaySnapshot(opts) {
+      const snap = replayEngine?.getDebugSnapshot?.();
+      if (!snap) return { ok: false, error: "replay engine not mounted" };
+      return logReplayDebugSnapshot(snap, opts);
+    },
+
+    /**
+     * Indicator instances + pane alignment (useful during replay).
+     * @example window.__BWC_WIDGET__.indicatorSnapshot()
+     */
+    indicatorSnapshot(opts) {
+      return logIndicatorDebugSnapshot(ctx, indicatorController, opts);
     },
 
     /** Bar replay controls for host UI (see replayToolbar: "external" boot option). */

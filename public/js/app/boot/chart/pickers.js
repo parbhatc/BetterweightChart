@@ -10,6 +10,7 @@ import {
   computeViewportLogicalFromUtc,
 } from "../../../chart/pane/viewportBarLayout.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
+import { resolutionSec } from "../../../chart/resolutions.js";
 import { seedHtfBars } from "../../bar/htfBarCache.js";
 import {
   showChartPendingOverlay,
@@ -55,19 +56,46 @@ function capturePaneBarLayouts(ctx, panes) {
 }
 
 /**
+ * Live TF switch: finer→coarser keeps bar-slot width; coarser→finer keeps UTC span.
  * @param {object} pane
  * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout
  * @param {import("./state.js").BootContext} ctx
  */
 function resolveTimeframeSwitchLogicalRange(pane, layout, ctx) {
   if (!layout || !pane?.bars?.length) return null;
-  const utcLogical = computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
-  if (utcLogical && layout.visibleFromUtc != null && layout.visibleToUtc != null) {
-    return utcLogical;
-  }
+
+  const fromSec = layout.barSec ?? resolutionSec(layout.resolution);
+  const toSec = resolutionSec(pane.resolution);
   const barLogical = computeViewportBarLayoutLogical(pane, layout);
+  const utcLogical = computeViewportLogicalFromUtc(pane, layout, ctx.settingsStore, ctx.resolutions);
+  const hasUtc = layout.visibleFromUtc != null && layout.visibleToUtc != null;
+
+  // Finer → coarser: reuse leaving TF bar width (same slot count, wider time on HTF).
+  if (fromSec != null && toSec != null && toSec > fromSec && barLogical) {
+    return barLogical;
+  }
+
+  // Coarser → finer: UTC span expands into more LT bars; bar-slot from HTF would over-zoom.
+  if (hasUtc && utcLogical) {
+    if (fromSec != null && toSec != null && toSec < fromSec) {
+      return utcLogical;
+    }
+    if (fromSec == null || toSec == null || fromSec === toSec) {
+      return utcLogical;
+    }
+  }
+
   if (barLogical) return barLogical;
   return utcLogical;
+}
+
+/** @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} layout @param {string | null | undefined} targetResolution */
+function timeframeSwitchPrefersUtcRestore(layout, targetResolution) {
+  if (!layout || layout.visibleFromUtc == null || layout.visibleToUtc == null) return false;
+  const fromSec = layout.barSec ?? resolutionSec(layout.resolution);
+  const toSec = resolutionSec(targetResolution);
+  if (fromSec != null && toSec != null && toSec > fromSec) return false;
+  return true;
 }
 
 /**
@@ -105,8 +133,7 @@ function clampLogicalRangeToPlaybackAnchor(pane, logicalRange, anchorSec) {
  * @param {ReturnType<typeof captureViewportBarLayout> | null | undefined} savedLayout
  */
 export function paintPaneAfterTimeframeLoad(ctx, pane, savedLayout) {
-  const useUtc =
-    savedLayout?.visibleFromUtc != null && savedLayout?.visibleToUtc != null;
+  const useUtc = timeframeSwitchPrefersUtcRestore(savedLayout, pane.resolution);
   let logicalRange = resolveTimeframeSwitchLogicalRange(pane, savedLayout, ctx);
   if (logicalRange && ctx.opts?.replayHostControlled) {
     const anchorSec = ctx.opts?.getPlaybackAnchorSec?.(pane.resolution);

@@ -2,7 +2,7 @@
  * Opt-in chart debug logging for perf issues (lag, setData, pan, etc.)
  *
  * Enable:
- *   ?debug=1  or  ?debug=perf,pan,zoom,viewport,data
+ *   ?debug=1  or  ?debug=perf,pan,zoom,viewport,data,replay,indicator
  *   localStorage.setItem("bwc-debug", "1")
  *   window.__BWC_DEBUG__.enable()
  *
@@ -186,7 +186,7 @@ export function chartDebugForming(message, detail) {
 }
 
 /**
- * @param {string} category perf | pan | zoom | viewport | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt | replay | prepend
+ * @param {string} category perf | pan | zoom | viewport | data | tick | crosshair | session | whitespace | boot | drawings | context | layout | fvg | levels | smt | replay | indicator | prepend
  * @param {string} message
  * @param {unknown} [detail]
  */
@@ -447,6 +447,11 @@ export function disableChartDebug() {
 
 export { destroyDebugHud, ensureDebugHud, mountDebugHud } from "./hud.js";
 export {
+  buildIndicatorDebugSnapshot,
+  indicatorDebug,
+  logIndicatorDebugSnapshot,
+} from "./indicators.js";
+export {
   getLiveControlStatus,
   installLiveControlGlobal,
   isFormingUpdatesPaused,
@@ -486,5 +491,11 @@ export function installChartDebugGlobal() {
     liveStatus: getLiveControlStatus,
     log: chartDebug,
     isEnabled: isChartDebugEnabled,
+    replaySnapshot() {
+      return typeof window !== "undefined" ? window.__BWC_WIDGET__?.replaySnapshot?.() : null;
+    },
+    indicatorSnapshot() {
+      return typeof window !== "undefined" ? window.__BWC_WIDGET__?.indicatorSnapshot?.() : null;
+    },
   };
 }

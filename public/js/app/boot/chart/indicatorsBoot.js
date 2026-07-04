@@ -14,6 +14,7 @@ import { listIndicators, getIndicatorClass } from "../../../indicators/catalog.j
 import { createIndicatorDataLoader } from "./indicatorDataLoader.js";
 import { createSecurityContext } from "../../bar/requestSecurity.js";
 import { symbolLabelAnchorsForPane } from "../../../chart/scale/symbolLabelAnchors.js";
+import { indicatorDebug, indicatorDebugRefresh } from "../../../debug/chart/indicators.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
@@ -292,12 +293,20 @@ export function attachIndicatorsBoot(ctx) {
     deferredRefreshByPane.set(paneIndex, prev === "full" || kind === "full" ? "full" : "overlay");
   }
 
-  function runIndicatorsImmediate(paneIndex) {
+  function runIndicatorsImmediate(paneIndex, source = "immediate") {
+    indicatorDebugRefresh("full", paneIndex, {
+      source,
+      replay: ctx.replay?.getState?.()?.active ?? false,
+    });
     controller.refreshPaneData(paneIndex);
     refreshIndicatorUi(paneIndex);
   }
 
-  function runOverlaysImmediate(paneIndex) {
+  function runOverlaysImmediate(paneIndex, source = "immediate") {
+    indicatorDebugRefresh("overlay", paneIndex, {
+      source,
+      replay: ctx.replay?.getState?.()?.active ?? false,
+    });
     controller.refreshOverlaysImmediate(paneIndex);
     if (paneIndex != null) {
       ensureLegend(ctx.getAllChartPanes().find((p) => p.index === paneIndex))?.render();
@@ -333,6 +342,13 @@ export function attachIndicatorsBoot(ctx) {
     deferredEnsureData = false;
     if (!refreshAll && !pending.size && !needData) return;
 
+    indicatorDebug("deferred.flush", {
+      refreshAll,
+      panes: [...pending.entries()].map(([idx, kind]) => ({ pane: idx, kind })),
+      needData,
+      replay: ctx.replay?.getState?.()?.active ?? false,
+    });
+
     if (needData) indicatorData.ensureNow();
 
     if (refreshAll) {
@@ -346,22 +362,38 @@ export function attachIndicatorsBoot(ctx) {
     }
   }
 
-  /** @param {number | undefined} paneIndex @param {"full" | "overlay"} kind @param {() => void} run */
-  function refreshNowOrDeferAfterPan(paneIndex, kind, run) {
+  /** @param {number | undefined} paneIndex @param {"full" | "overlay"} kind @param {() => void} run @param {string} [source] */
+  function refreshNowOrDeferAfterPan(paneIndex, kind, run, source = "unknown") {
     if (!chartIsPanning()) {
       run();
       return;
     }
     markDeferredRefresh(paneIndex, kind);
     scheduleDeferredIndicatorFlush();
+    indicatorDebug("deferred.queue", {
+      pane: paneIndex ?? "all",
+      kind,
+      source,
+      replay: ctx.replay?.getState?.()?.active ?? false,
+    });
   }
 
   ctx.refreshIndicatorsImmediate = (paneIndex) => {
-    refreshNowOrDeferAfterPan(paneIndex, "full", () => runIndicatorsImmediate(paneIndex));
+    refreshNowOrDeferAfterPan(
+      paneIndex,
+      "full",
+      () => runIndicatorsImmediate(paneIndex, "ctx.refreshIndicatorsImmediate"),
+      "refreshIndicatorsImmediate",
+    );
   };
 
   ctx.refreshOverlaysImmediate = (paneIndex) => {
-    refreshNowOrDeferAfterPan(paneIndex, "overlay", () => runOverlaysImmediate(paneIndex));
+    refreshNowOrDeferAfterPan(
+      paneIndex,
+      "overlay",
+      () => runOverlaysImmediate(paneIndex, "ctx.refreshOverlaysImmediate"),
+      "refreshOverlaysImmediate",
+    );
   };
 
   ctx.flushDeferredIndicatorRefresh = flushDeferredIndicatorRefresh;

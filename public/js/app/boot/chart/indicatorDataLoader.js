@@ -15,6 +15,7 @@ import {
 } from "../../news/newsCache.js";
 import { getNewsSettingsStore } from "../../../news/settings.js";
 import { enabledNewsTypeIds } from "../../../news/events.js";
+import { indicatorDebug } from "../../../debug/chart/indicators.js";
 
 const HTF_FETCH_IDLE_MS = 200;
 const PREPEND_GUARD = 8;
@@ -256,6 +257,18 @@ export function createIndicatorDataLoader({
       getIndicatorClass,
     );
     if (paneDataNeedsEmpty(needs)) return;
+
+    const visibleIds = controller
+      .indicatorsForPane(pane.index)
+      .filter((inst) => !inst.hidden)
+      .map((inst) => inst.defId);
+    indicatorDebug("data.ensure", {
+      pane: pane.index,
+      visibleInstances: visibleIds,
+      htf: Object.fromEntries(needs.htf),
+      compareChart: Object.fromEntries(needs.compareChart),
+      compareHtf: Object.fromEntries(needs.compareHtf),
+    });
 
     paneInFlight.add(pane.index);
     try {

@@ -68,6 +68,7 @@ export function mergeDataNeeds(target, partial) {
 export function collectPaneDataNeeds(instances, pane, getIndicatorClass) {
   const needs = emptyPaneDataNeeds();
   for (const inst of instances) {
+    if (inst.hidden) continue;
     const Indicator = getIndicatorClass(inst.defId);
     if (!Indicator) continue;
     mergeDataNeeds(needs, Indicator.collectDataNeeds(inst, pane));
@@ -90,6 +91,7 @@ export function collectPaneRequiredChartBars(instances, pane, getIndicatorClass)
   let max = 0;
   const resolution = pane.resolution ?? "1";
   for (const inst of instances) {
+    if (inst.hidden) continue;
     const Indicator = getIndicatorClass(inst.defId);
     if (!Indicator || typeof Indicator.requiredChartBars !== "function") continue;
     const want = Number(Indicator.requiredChartBars(inst.inputs, resolution)) || 0;
@@ -106,7 +108,7 @@ export function collectPaneRequiredChartBars(instances, pane, getIndicatorClass)
  * @param {Set<string>} htfKeys — `symbol|resolution`
  */
 export function instanceUsesHtfKeys(instance, pane, getIndicatorClass, htfKeys) {
-  if (!htfKeys?.size) return false;
+  if (!htfKeys?.size || instance.hidden) return false;
   const Indicator = getIndicatorClass(instance.defId);
   if (typeof Indicator?.collectDataNeeds !== "function") return true;
   const needs = Indicator.collectDataNeeds(instance, pane);
@@ -133,7 +135,7 @@ export function instanceUsesHtfKeys(instance, pane, getIndicatorClass, htfKeys) 
  * @param {Set<string>} compareSymbols
  */
 export function instanceUsesCompareSymbols(instance, pane, getIndicatorClass, compareSymbols) {
-  if (!compareSymbols?.size) return false;
+  if (!compareSymbols?.size || instance.hidden) return false;
   const Indicator = getIndicatorClass(instance.defId);
   if (typeof Indicator?.collectDataNeeds !== "function") return true;
   const needs = Indicator.collectDataNeeds(instance, pane);

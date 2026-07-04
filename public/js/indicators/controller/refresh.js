@@ -2,6 +2,7 @@ import { getIndicatorClass } from "../catalog.js";
 import { isIndicatorVisibleOnResolution } from "../visibility.js";
 import { rafThrottle } from "../../chart/pan/perf.js";
 import { assignStudyLwcPanes, syncAllStudyPanes } from "../studyPane.js";
+import { indicatorDebug } from "../../debug/chart/indicators.js";
 
 /**
  * @param {object} deps
@@ -118,6 +119,16 @@ export function createRefresh(deps) {
   function refreshPaneNow(paneIndex) {
     const paneIndexes =
       paneIndex == null ? getAllChartPanes().map((p) => p.index) : [paneIndex];
+
+    let touched = 0;
+    for (const instance of getInstances().values()) {
+      if (paneIndex == null || instance.paneIndex === paneIndex) touched += 1;
+    }
+    indicatorDebug("paneNow", {
+      pane: paneIndex ?? "all",
+      paneIndexes,
+      instances: touched,
+    });
 
     for (const idx of paneIndexes) {
       assignStudyLwcPanes(indicatorsForPane, idx);

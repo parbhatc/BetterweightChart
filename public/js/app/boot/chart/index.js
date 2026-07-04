@@ -254,7 +254,7 @@ export async function bootChart(overrides = {}) {
         chartDebug("boot", "widget API", {
           getBars: typeof widget.getBars === "function",
           fetchBars: typeof widget.fetchBars === "function",
-          hint: "window.__BWC_WIDGET__.visibleBars() or .getBars()",
+          hint: "window.__BWC_WIDGET__.visibleBars(), .replaySnapshot(), .indicatorSnapshot()",
         });
       }
     }
