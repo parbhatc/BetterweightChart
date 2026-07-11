@@ -2,7 +2,9 @@ import { safePriceToY } from "../../chart/coords/timeScale.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import { drawLabelCallout } from "./labelCallout.js";
 import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
-import { createOverlayTimeToX } from "./overlayMapBars.js";
+import { resolveOverlayTimeMapping, createOverlayTimeToXFromMapping } from "./overlayMapBars.js";
+
+const LABEL_FONT = "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
 
 /** @param {number} x1 @param {number} x2 @param {number} paneW */
 function lineIntersectsViewport(x1, x2, paneW) {
@@ -19,10 +21,8 @@ function labelXOnVisibleSegment(x1, x2, paneW) {
   return (lo + hi) / 2;
 }
 
-/** @param {CanvasRenderingContext2D} ctx @param {object} line @param {(t: number) => number | null} timeToX @param {(p: number) => number | null} priceToY @param {number} paneW */
-function drawLine(ctx, line, timeToX, priceToY, paneW) {
-  const x1 = timeToX(line.timeStart);
-  const x2 = timeToX(line.timeEnd);
+/** @param {CanvasRenderingContext2D} ctx @param {object} line @param {number} x1 @param {number} x2 @param {(p: number) => number | null} priceToY @param {number} paneW */
+function drawLine(ctx, line, x1, x2, priceToY, paneW) {
   const y1 = priceToY(line.priceStart);
   const y2 = priceToY(line.priceEnd);
   if (x1 == null || x2 == null || y1 == null || y2 == null) return;
@@ -50,7 +50,7 @@ function drawLine(ctx, line, timeToX, priceToY, paneW) {
     const ly = y1;
     if (!Number.isFinite(rightX) || !Number.isFinite(ly)) return;
     ctx.save();
-    ctx.font = "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    ctx.font = LABEL_FONT;
     ctx.fillStyle = line.labelTextColor ?? line.color ?? "#e2e8f0";
     ctx.textBaseline = "middle";
     ctx.textAlign = "left";
@@ -125,7 +125,7 @@ class LinesPaneRenderer {
           const hi = Math.max(x1, x2);
           if (hi < -pad || lo > paneW + pad) continue;
         }
-        drawLine(ctx, line, timeToX, priceToY, paneW);
+        drawLine(ctx, line, x1, x2, priceToY, paneW);
       }
     });
   }
@@ -178,6 +178,8 @@ class LinesPrimitive {
     this._lines = [];
     /** @type {{ mapBars: object[], barSec: number, lastRealChartTime?: number, timeAdapter?: object } | null} */
     this._timeCtx = null;
+    /** Cached series.data()-derived time mapping; rebuilt only on data change, not per pan frame. */
+    this._timeMapping = null;
     /** @type {import("lightweight-charts").IChartApi | null} */
     this._chart = null;
     /** @type {import("lightweight-charts").ISeriesApi | null} */
@@ -215,6 +217,10 @@ class LinesPrimitive {
       }
     }
 
+    // Bar data / time context changed → drop the cached mapping so the next
+    // draw rebuilds it (one series.data() copy). Pure pans never set dirty.
+    if (dirty) this._timeMapping = null;
+
     if (dirty && !skipRedraw) this._requestUpdate?.();
   }
 
@@ -227,6 +233,7 @@ class LinesPrimitive {
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
+    this._timeMapping = null;
     this._unsub = subscribePrimitiveViewportRefresh(
       this._chart.timeScale(),
       () => this._requestUpdate?.(),
@@ -239,6 +246,7 @@ class LinesPrimitive {
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
+    this._timeMapping = null;
   }
 
   updateAllViews() {}
@@ -253,9 +261,13 @@ class LinesPrimitive {
     if (!chart || !series) {
       return { lines: [], timeToX: () => null, priceToY: () => null, paneW: 0 };
     }
-    const ctx = this._timeCtx;
     const paneW = chart.paneSize?.()?.width ?? 0;
-    const timeToX = createOverlayTimeToX(chart, series, ctx);
+    // Reuse the cached bar mapping across pan frames; rebuild (one series.data()
+    // copy) only after a data change invalidated it.
+    if (!this._timeMapping) {
+      this._timeMapping = resolveOverlayTimeMapping(series, this._timeCtx);
+    }
+    const timeToX = createOverlayTimeToXFromMapping(chart, this._timeMapping);
 
     return {
       lines: this._lines,

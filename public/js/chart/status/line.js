@@ -1,6 +1,7 @@
 import { getMarketStatusDetails, renderMarketStatusIcons } from "../market/status.js";
 import { barPriceClass, candleValueColor, isBarUp, barChangeFromPrevClose } from "../bar/style.js";
 import { precisionFromSettings } from "../timezone/list.js";
+import { resolutionShortLabel } from "../resolutionFormat.js";
 
 /** @deprecated use getMarketStatusDetails */
 export function getMarketStatus(symbolInfo, nowMs = Date.now()) {
@@ -139,7 +140,7 @@ export function renderStatusLine(el, opts) {
       head += `<span class="status-line__ticker">${ticker}</span>`;
     }
     if (resolution) {
-      head += `<span class="status-line__dot" aria-hidden="true">·</span><span class="status-line__res">${resolution}</span>`;
+      head += `<span class="status-line__dot" aria-hidden="true">·</span><span class="status-line__res">${resolutionShortLabel(resolution)}</span>`;
     }
     if (symbolInfo?.exchange) {
       head += `<span class="status-line__dot" aria-hidden="true">·</span><span class="status-line__exch">${symbolInfo.exchange}</span>`;

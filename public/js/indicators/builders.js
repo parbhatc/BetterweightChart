@@ -1,3 +1,5 @@
+import { sourceLabel } from "./math/source.js";
+
 /** @typedef {import("./types.js").InputDef} InputDef */
 /** @typedef {import("./types.js").PlotDef} PlotDef */
 /** @typedef {import("./types.js").FillDef} FillDef */
@@ -102,6 +104,17 @@ export function inlinePair(section, left, right, extra = {}) {
 /** @param {string} type @param {string} id @param {InputDef["defval"]} defval @param {Partial<InputDef>} [extra] */
 export function createField(type, id, defval, extra = {}) {
   return { type, id, defval, ...extra };
+}
+
+/**
+ * Standard `[length, source]` status-line params shared by length+source studies.
+ * @param {Record<string, unknown>} inputs @param {number} [defLen]
+ */
+export function lengthSourceLegend(inputs, defLen = 14) {
+  return [
+    String(inputs.length ?? defLen),
+    sourceLabel(String(inputs.source ?? "close")).toLowerCase(),
+  ];
 }
 
 /** @param {InputDef[]} [more] */

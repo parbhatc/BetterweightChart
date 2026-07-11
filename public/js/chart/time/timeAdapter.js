@@ -40,7 +40,7 @@ export function createTimeAdapter({ utcBars, chartBars, mapBars, barSec }) {
   chartBars.forEach((b, i) => chartTimeToIdx.set(b.time, i));
 
   const lastChart = chartBars.length ? chartBars[chartBars.length - 1].time : null;
-  const realLastChartTime = lastChart;
+  let realLastChartTime = lastChart;
 
   /** UTC ↔ chart-time only — always via shared logical index for exact round-trip. */
   const time = {
@@ -195,5 +195,19 @@ export function createTimeAdapter({ utcBars, chartBars, mapBars, barSec }) {
     },
   };
 
-  return { time, index, coord };
+  /**
+   * O(1) map extension after the caller pushed one bar onto the live
+   * utcBars/chartBars/mapBars arrays this adapter closes over.
+   * @param {{ time: number }} utcBar @param {{ time: number }} [chartBar]
+   */
+  function appendBar(utcBar, chartBar = utcBar) {
+    const idx = utcBars.length - 1;
+    utcToChartMap.set(utcBar.time, chartBar.time);
+    chartToUtcMap.set(chartBar.time, utcBar.time);
+    utcTimeToIdx.set(utcBar.time, idx);
+    chartTimeToIdx.set(chartBar.time, idx);
+    realLastChartTime = chartBar.time;
+  }
+
+  return { time, index, coord, appendBar };
 }

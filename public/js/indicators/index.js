@@ -1,7 +1,7 @@
 export { BaseIndicator } from "./BaseIndicator.js";
 export { BarScriptIndicator } from "./BarScriptIndicator.js";
 export { ComputeIndicator } from "./ComputeIndicator.js";
-export { defineIndicator, IndicatorDefinition } from "./defineIndicator.js";
+export { defineIndicator } from "./defineIndicator.js";
 export {
   plot,
   fill,
@@ -18,14 +18,11 @@ export {
   createField,
   inlinePair,
   calcInputs,
+  lengthSourceLegend,
 } from "./builders.js";
 export { plotStyleKeys, fillStyleKeys, buildBandFillSegments } from "./schema.js";
-export { default as EmaIndicator } from "./definitions/ema/EMAIndicator.js";
-export { default as VolumeIndicator } from "./definitions/volume/VolumeIndicator.js";
-export { default as RsiIndicator } from "./definitions/rsi/RsiIndicator.js";
-export { default as MacdIndicator } from "./definitions/macd/MacdIndicator.js";
-export { default as PivotPointsHlIndicator } from "./definitions/pivot/PivotPointsHlIndicator.js";
-export { default as SmtIndicator } from "./definitions/smt/SmtIndicator.js";
+// Indicator classes + ALL_INDICATORS come from the single manifest.
+export * from "./definitions/index.js";
 export { compareSymbol } from "./security/compareSymbol.js";
 export {
   compareSymbolInputs,

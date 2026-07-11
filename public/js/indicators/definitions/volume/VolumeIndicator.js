@@ -1,6 +1,6 @@
 import { BaseIndicator } from "../../BaseIndicator.js";
 import { ComputeIndicator } from "../../ComputeIndicator.js";
-import { createBool, createInt } from "../../builders.js";
+import { createBool, createInt, plot } from "../../builders.js";
 import { smoothSeries } from "../../math/smooth.js";
 import { applyColorOpacity } from "../../../ui/color/picker.js";
 import { plotStyleKeys } from "../../schema.js";
@@ -18,23 +18,16 @@ class VolumeIndicator extends ComputeIndicator {
     this.setPrimaryPlot("vol");
     this.setVolumeScaleId("volume-overlay");
     this.setPlots([
-      {
-        id: "vol",
+      plot("vol", "Volume", COLORS.growing, {
         type: "histogram",
-        title: "Volume",
         overlay: true,
-        priceLine: false,
         when: (_inputs, style) => style.volVisible !== false,
-      },
-      {
-        id: "ma",
+      }),
+      plot("ma", "Volume MA", COLORS.ma, {
         type: "line",
-        title: "Volume MA",
-        color: COLORS.ma,
         overlay: true,
-        priceLine: false,
         when: (_inputs, style) => style.maVisible === true,
-      },
+      }),
     ]);
     this.setInputs([
       createInt("maLength", "MA Length", 20),

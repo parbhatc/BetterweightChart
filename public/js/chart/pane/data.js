@@ -221,7 +221,20 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
 
     try {
       withPreservedViewport(pane.chart, () => {
-        if (batch.prevCandle) pane.series.update(batch.prevCandle, true);
+        // Finalizing the prev candle is cosmetic (forming updates already wrote
+        // its OHLC); never let its failure force a full setData of the series.
+        if (batch.prevCandle) {
+          try {
+            pane.series.update(batch.prevCandle, true);
+          } catch (prevErr) {
+            chartDebugCount("data", "prevFinalizeSkip");
+            chartDebug("data", "prev candle finalize skipped", {
+              pane: pane.index,
+              time: batch.prevCandle.time,
+              err: String(prevErr),
+            });
+          }
+        }
         pane.series.update(batch.newCandle);
       }, { followUpFrames: 2 });
       pane.timeAdapter = pane._chartView?.timeAdapter ?? pane.timeAdapter;
@@ -258,6 +271,21 @@ export function appendNewBarOnPaneSeries(pane, utcBar, settingsStore, symbolInfo
       }
     }
   });
+}
+
+/**
+ * Append a replay bar via series.update, retrying once after a view rebuild.
+ * `bar` must already be pushed onto `pane.bars` by the caller.
+ * @returns {boolean}
+ */
+export function tryAppendReplayBar(pane, bar, settingsStore, symbolInfo, resolutions) {
+  if (appendNewBarOnPaneSeries(pane, bar, settingsStore, symbolInfo, resolutions)) return true;
+
+  pane.bars.pop();
+  invalidatePaneChartView(pane);
+  getPaneChartView(pane, settingsStore, symbolInfo, resolutions);
+  pane.bars.push(bar);
+  return appendNewBarOnPaneSeries(pane, bar, settingsStore, symbolInfo, resolutions);
 }
 
 /**

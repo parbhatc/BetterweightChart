@@ -11,12 +11,6 @@ import { inputStatusLineParams } from "./schema.js";
 /** @typedef {import("./pineRuntime.js").BarScriptContext} BarScriptContext */
 
 /**
- * Optional base marker for indicator definition classes.
- * @abstract
- */
-export class IndicatorDefinition {}
-
-/**
  * Pine-style indicator config — plain object or class with static metadata + methods.
  *
  * @typedef {object} IndicatorConfig

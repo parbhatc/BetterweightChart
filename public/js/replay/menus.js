@@ -22,6 +22,9 @@ export const REPLAY_SPEED_OPTIONS = [
 export const REPLAY_STEP_BASE_OPTIONS = [
   { id: "tick", label: "1 tick", sec: 0 },
   { id: "1S", label: "1 second", sec: 1 },
+  { id: "5S", label: "5 seconds", sec: 5 },
+  { id: "15S", label: "15 seconds", sec: 15 },
+  { id: "30S", label: "30 seconds", sec: 30 },
 ];
 
 /** @type {ReadonlyArray<ReplayStepOption>} */

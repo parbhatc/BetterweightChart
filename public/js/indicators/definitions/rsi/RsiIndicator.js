@@ -1,11 +1,9 @@
-import { BaseIndicator } from "../../BaseIndicator.js";
 import { ComputeIndicator } from "../../ComputeIndicator.js";
-import { calcInputs, createBool, createInt, createSelect, createSource, fill, plot } from "../../builders.js";
+import { calcInputs, createInt, createSelect, createSource, fill, lengthSourceLegend, plot } from "../../builders.js";
 import { SMOOTHING_TYPE, SMOOTHING_TYPES } from "../../math/ema.js";
 import { barSourceValue } from "../../math/source.js";
 import { smoothSeries } from "../../math/smooth.js";
-import { sourceLabel } from "../../math/source.js";
-import { plotStyleKeys, fillStyleKeys, buildBandFillSegments } from "../../schema.js";
+import { fillStyleKeys, buildBandFillSegments } from "../../schema.js";
 import { applyColorOpacity } from "../../../ui/color/picker.js";
 
 /** @param {number} avgGain @param {number} avgLoss */
@@ -75,12 +73,12 @@ class RsiIndicator extends ComputeIndicator {
       plot("smoothed", "RSI-based MA", COLORS.smoothed, {
         when: (inputs) => inputs.smoothingType !== SMOOTHING_TYPE.NONE,
       }),
-      plot("upper", "RSI Upper Band", COLORS.band, { band: true }),
-      plot("middle", "RSI Middle Band", COLORS.band, { band: true }),
-      plot("lower", "RSI Lower Band", COLORS.band, { band: true }),
+      plot("upper", "RSI Upper Band", COLORS.band, { band: true, lineStyle: 2, level: 70 }),
+      plot("middle", "RSI Middle Band", COLORS.band, { band: true, lineStyle: 2, level: 50 }),
+      plot("lower", "RSI Lower Band", COLORS.band, { band: true, lineStyle: 2, level: 30 }),
     ]);
     this.setFills([
-      fill("rsiBgFill", "upper", "lower", "RSI Background Fill", COLORS.rsi, { opacity: 10 }),
+      fill("rsiBgFill", "upper", "lower", "RSI Background Fill", COLORS.rsi, { opacity: 15 }),
     ]);
     this.setInputs([
       createInt("length", "RSI Length", 14, { section: "RSI Settings" }),
@@ -95,48 +93,6 @@ class RsiIndicator extends ComputeIndicator {
       }),
       ...calcInputs(),
     ]);
-  }
-
-  defaultStyle() {
-    return {
-      ...BaseIndicator.defaultStyle(),
-      rsiVisible: true,
-      rsiColor: COLORS.rsi,
-      rsiWidth: 1,
-      rsiStyle: 0,
-      rsiPriceLine: false,
-      rsiPlotType: "line",
-      smoothedVisible: true,
-      smoothedColor: COLORS.smoothed,
-      smoothedWidth: 1,
-      smoothedStyle: 0,
-      smoothedPriceLine: false,
-      smoothedPlotType: "line",
-      upperVisible: true,
-      upperColor: COLORS.band,
-      upperWidth: 1,
-      upperStyle: 2,
-      upperPriceLine: false,
-      upperPlotType: "line",
-      upperLevel: 70,
-      middleVisible: true,
-      middleColor: COLORS.band,
-      middleWidth: 1,
-      middleStyle: 2,
-      middlePriceLine: false,
-      middlePlotType: "line",
-      middleLevel: 50,
-      lowerVisible: true,
-      lowerColor: COLORS.band,
-      lowerWidth: 1,
-      lowerStyle: 2,
-      lowerPriceLine: false,
-      lowerPlotType: "line",
-      lowerLevel: 30,
-      rsiBgFillVisible: true,
-      rsiBgFillColor: COLORS.rsi,
-      rsiBgFillOpacity: 15,
-    };
   }
 
   computeSeries(bars, inputs, style) {
@@ -173,10 +129,7 @@ class RsiIndicator extends ComputeIndicator {
   }
 
   legendParams(instance) {
-    return [
-      String(instance.inputs.length ?? 14),
-      sourceLabel(instance.inputs.source ?? "close").toLowerCase(),
-    ];
+    return lengthSourceLegend(instance.inputs, 14);
   }
 
   valueLabels(instance) {
@@ -186,27 +139,6 @@ class RsiIndicator extends ComputeIndicator {
       labels.push({ key: "smoothed", title: "RSI-based MA" });
     }
     return labels;
-  }
-
-  stylePlotRows(inputValues, _style) {
-    const rsiKeys = plotStyleKeys("rsi");
-    const smoothKeys = plotStyleKeys("smoothed");
-    const upperKeys = plotStyleKeys("upper");
-    const middleKeys = plotStyleKeys("middle");
-    const lowerKeys = plotStyleKeys("lower");
-    const fillKeys = fillStyleKeys("rsiBgFill");
-    /** @type {object[]} */
-    const rows = [{ type: "line", plotKey: "rsi", label: "RSI", ...rsiKeys }];
-    if (inputValues.smoothingType !== SMOOTHING_TYPE.NONE) {
-      rows.push({ type: "line", plotKey: "smoothed", label: "RSI-based MA", ...smoothKeys });
-    }
-    rows.push(
-      { type: "band", plotKey: "upper", label: "RSI Upper Band", levelKey: "upperLevel", ...upperKeys },
-      { type: "band", plotKey: "middle", label: "RSI Middle Band", levelKey: "middleLevel", ...middleKeys },
-      { type: "band", plotKey: "lower", label: "RSI Lower Band", levelKey: "lowerLevel", ...lowerKeys },
-      { type: "fill", label: "RSI Background Fill", ...fillKeys },
-    );
-    return rows;
   }
 
   getBandFills(instance, chartBars) {

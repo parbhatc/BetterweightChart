@@ -564,12 +564,22 @@ export class BaseIndicator {
     const rows = [];
     for (const plot of this.activePlots(inputValues, style)) {
       const keys = plotStyleKeys(plot.id);
-      rows.push({
-        type: "line",
-        plotKey: plot.id,
-        label: plot.title,
-        ...keys,
-      });
+      if (plot.band === true) {
+        rows.push({
+          type: "band",
+          plotKey: plot.id,
+          label: plot.title,
+          levelKey: `${plot.id}Level`,
+          ...keys,
+        });
+      } else {
+        rows.push({
+          type: "line",
+          plotKey: plot.id,
+          label: plot.title,
+          ...keys,
+        });
+      }
     }
     for (const fill of this.activeFills(inputValues)) {
       const keys = fillStyleKeys(fill.id);

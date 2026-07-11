@@ -1,10 +1,22 @@
 import {
-  appendNewBarOnPaneSeries,
+  tryAppendReplayBar,
   updateFormingBarOnPaneSeries,
 } from "../../chart/pane/data.js";
-import { getPaneChartView, invalidatePaneChartView } from "../../chart/pane/viewCache.js";
 import { trimBarsToUtcTime } from "../persist.js";
 import { replayDebug } from "../debug.js";
+
+/** @param {object | undefined} a @param {object | undefined} b */
+export function barsFormingEqual(a, b) {
+  if (!a || !b) return a === b;
+  return (
+    a.time === b.time &&
+    a.open === b.open &&
+    a.high === b.high &&
+    a.low === b.low &&
+    a.close === b.close &&
+    a.volume === b.volume
+  );
+}
 
 /**
  * @param {import("../../app/boot/chart/state.js").BootContext} ctx
@@ -92,33 +104,6 @@ export function createReplayPaneSync(ctx, replay, state, deps) {
     }
   }
 
-  /** @param {object | undefined} a @param {object | undefined} b */
-  function barsFormingEqual(a, b) {
-    if (!a || !b) return a === b;
-    return (
-      a.time === b.time &&
-      a.open === b.open &&
-      a.high === b.high &&
-      a.low === b.low &&
-      a.close === b.close &&
-      a.volume === b.volume
-    );
-  }
-
-  /** @param {object} pane @param {object} bar */
-  function tryAppendReplayBar(pane, bar) {
-    const settings = ctx.settingsStore;
-    const sym = ctx.symbolInfo ?? pane.symbolInfo;
-    const res = ctx.resolutions;
-    if (appendNewBarOnPaneSeries(pane, bar, settings, sym, res)) return true;
-
-    pane.bars.pop();
-    invalidatePaneChartView(pane);
-    getPaneChartView(pane, settings, sym, res);
-    pane.bars.push(bar);
-    return appendNewBarOnPaneSeries(pane, bar, settings, sym, res);
-  }
-
   /**
    * Sync pane bars to replay cursor using series.update when possible.
    * @param {object} pane
@@ -169,7 +154,7 @@ export function createReplayPaneSync(ctx, replay, state, deps) {
     for (let i = cur.length; i < target.length; i += 1) {
       const bar = target[i];
       pane.bars.push(bar);
-      if (!tryAppendReplayBar(pane, bar)) {
+      if (!tryAppendReplayBar(pane, bar, settings, sym, res)) {
         pane.bars = target;
         ctx.refreshPaneCandleData?.(pane);
         return "full";

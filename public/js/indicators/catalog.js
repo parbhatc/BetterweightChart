@@ -30,7 +30,3 @@ export function createIndicatorInstance(defId, paneIndex) {
   return Indicator?.createInstance(paneIndex) ?? null;
 }
 
-/** @deprecated use getIndicatorClass */
-export function getIndicatorDefinition(id) {
-  return getIndicatorClass(id);
-}

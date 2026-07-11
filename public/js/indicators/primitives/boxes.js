@@ -1,7 +1,7 @@
 import { safePriceToY } from "../../chart/coords/timeScale.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
 import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
-import { createOverlayTimeToX } from "./overlayMapBars.js";
+import { resolveOverlayTimeMapping, createOverlayTimeToXFromMapping } from "./overlayMapBars.js";
 
 const LABEL_FONT =
   `11px -apple-system, BlinkMacSystemFont, 'Trebuchet MS', Roboto, Ubuntu, sans-serif`;
@@ -169,6 +169,8 @@ class BoxesPrimitive {
     this._boxes = [];
     /** @type {{ mapBars: object[], barSec: number, lastRealChartTime?: number, timeAdapter?: ReturnType<import("../../chart/time/timeAdapter.js").createTimeAdapter> } | null} */
     this._timeCtx = null;
+    /** Cached series.data()-derived time mapping; rebuilt only on data change, not per pan frame. */
+    this._timeMapping = null;
     /** @type {import("lightweight-charts").IChartApi | null} */
     this._chart = null;
     /** @type {import("lightweight-charts").ISeriesApi | null} */
@@ -206,6 +208,9 @@ class BoxesPrimitive {
       }
     }
 
+    // Bar data / time context changed → drop cached mapping; pure pans never set dirty.
+    if (dirty) this._timeMapping = null;
+
     if (dirty && !skipRedraw) this._requestUpdate?.();
   }
 
@@ -218,6 +223,7 @@ class BoxesPrimitive {
     this._chart = param.chart;
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
+    this._timeMapping = null;
     this._unsub = subscribePrimitiveViewportRefresh(
       this._chart.timeScale(),
       () => this._requestUpdate?.(),
@@ -230,6 +236,7 @@ class BoxesPrimitive {
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;
+    this._timeMapping = null;
   }
 
   updateAllViews() {}
@@ -244,8 +251,12 @@ class BoxesPrimitive {
     if (!chart || !series) {
       return { boxes: [], timeToX: () => null, priceToY: () => null };
     }
-    const ctx = this._timeCtx;
-    const timeToX = createOverlayTimeToX(chart, series, ctx);
+    // Reuse cached bar mapping across pan frames; rebuild (one series.data() copy)
+    // only after a data change invalidated it.
+    if (!this._timeMapping) {
+      this._timeMapping = resolveOverlayTimeMapping(series, this._timeCtx);
+    }
+    const timeToX = createOverlayTimeToXFromMapping(chart, this._timeMapping);
 
     return {
       boxes: this._boxes,

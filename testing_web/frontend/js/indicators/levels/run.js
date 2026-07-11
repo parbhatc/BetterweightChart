@@ -26,6 +26,48 @@ import {
 /** @typedef {import("/js/indicators/script/liquidityMatrix.js").LiqLine} LiqLine */
 
 /**
+ * Cap each matrix's swept levels to the `maxSwept` most recent (by sweepTime),
+ * but ALSO retain any swept level that is a same-price/same-kind twin of a level
+ * still displayed on another timeframe (active, or within another matrix's kept
+ * swept set). Without this, a "1H & 15m" swept confluence loses its 15m tag once
+ * ~maxSwept unrelated 15m levels sweep later and evict the 15m twin, while the
+ * 1H twin survives — the label repaints from "1H & 15m" to "1H".
+ * @param {Record<string, { active: LiqLine[]; swept: LiqLine[] }>} matrices
+ * @param {number} maxSwept @param {number} proximity
+ */
+function capSweptConfluenceAware(matrices, maxSwept, proximity) {
+  if (!(maxSwept > 0)) return;
+  const mats = Object.values(matrices);
+
+  /** @type {Map<object, Set<LiqLine>>} */
+  const keep = new Map();
+  /** @type {LiqLine[]} anchors whose price protects same-price twins */
+  const anchors = [];
+  for (const m of mats) {
+    const recent = [...m.swept]
+      .sort((a, b) => (b.sweepTime ?? 0) - (a.sweepTime ?? 0))
+      .slice(0, maxSwept);
+    keep.set(m, new Set(recent));
+    anchors.push(...m.active, ...recent);
+  }
+
+  for (const m of mats) {
+    const kept = keep.get(m);
+    for (const lvl of m.swept) {
+      if (kept.has(lvl)) continue;
+      if (
+        anchors.some(
+          (a) => a !== lvl && a.kind === lvl.kind && Math.abs(a.price - lvl.price) <= proximity,
+        )
+      ) {
+        kept.add(lvl);
+      }
+    }
+    m.swept = m.swept.filter((lvl) => kept.has(lvl));
+  }
+}
+
+/**
  * @param {object[]} bars — UTC OHLC bars (chart resolution, usually 1m)
  * @param {number} anchorUnix
  * @param {object} opts
@@ -206,6 +248,8 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
   for (const rl of releaseLines) {
     retroactiveSweepLine(rl, bars, chartBars, endIdx, takenLiquidity);
   }
+
+  capSweptConfluenceAware(matrices, maxSwept, proximity);
 
   let out = [];
   for (const m of Object.values(matrices)) {

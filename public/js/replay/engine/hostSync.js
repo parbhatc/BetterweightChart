@@ -3,6 +3,7 @@ import {
   computeViewportBarLayoutLogical,
   restoreViewportBarLayout,
 } from "../../chart/pane/viewportBarLayout.js";
+import { tryAppendReplayBar } from "../../chart/pane/data.js";
 import { invalidatePaneChartView } from "../../chart/pane/viewCache.js";
 import { isReplayHostControlled } from "../hostControl.js";
 import { replayBarIndexForUtcTime } from "../persist.js";
@@ -14,6 +15,78 @@ import { replayDebug } from "../debug.js";
  * @param {import("./types.js").ReplayEngineState} state
  */
 export function createReplayHostSync(ctx, replay, state) {
+  /**
+   * Forward-bar stash: bars trimmed off past the replay cursor, kept so later
+   * forward steps can append them incrementally instead of a full setData.
+   * @param {object} pane
+   * @returns {{ symbol: string, resolution: string, bars: { time: number }[] } | null}
+   */
+  function validForwardStash(pane) {
+    const stash = pane._hostReplayForwardBars;
+    if (!stash) return null;
+    if (stash.symbol !== pane.symbol || stash.resolution !== pane.resolution) {
+      delete pane._hostReplayForwardBars;
+      return null;
+    }
+    return stash;
+  }
+
+  /** @param {object} pane */
+  function clearForwardStash(pane) {
+    delete pane._hostReplayForwardBars;
+  }
+
+  /** @param {object} pane @param {{ time: number }[]} tail bars trimmed off past the cursor */
+  function storeForwardBars(pane, tail) {
+    if (!tail.length) return;
+    const prev = validForwardStash(pane);
+    let merged = tail;
+    if (prev?.bars?.length) {
+      const lastTailTime = tail.at(-1).time;
+      merged = tail.concat(prev.bars.filter((b) => b.time > lastTailTime));
+    }
+    pane._hostReplayForwardBars = {
+      symbol: pane.symbol,
+      resolution: pane.resolution,
+      bars: merged,
+    };
+  }
+
+  /**
+   * Append stashed forward bars up to the cursor via series.update (no setData).
+   * Mirrors paneSync's append semantics; falls back to a full refresh on failure.
+   * @param {object} pane @param {number} cursorUtc
+   */
+  function consumeForwardStash(pane, cursorUtc) {
+    const stash = validForwardStash(pane);
+    if (!stash?.bars?.length) return;
+
+    const settings = ctx.settingsStore;
+    const sym = ctx.symbolInfo ?? pane.symbolInfo;
+    const res = ctx.resolutions;
+    let failed = false;
+
+    while (stash.bars.length) {
+      const bar = stash.bars[0];
+      if (bar.time > cursorUtc) break;
+      stash.bars.shift();
+      const last = pane.bars.at(-1);
+      if (last != null && bar.time <= last.time) {
+        // Live feed already delivered this bar (forming updates come through
+        // the feed's upsert path) — the feed copy is authoritative.
+        continue;
+      }
+      pane.bars.push(bar);
+      if (!tryAppendReplayBar(pane, bar, settings, sym, res)) {
+        failed = true;
+        break;
+      }
+    }
+
+    if (!stash.bars.length || failed) clearForwardStash(pane);
+    if (failed) ctx.refreshPaneCandleData?.(pane);
+  }
+
   /** @param {object} pane */
   function applyHostReplayCursorToPane(pane) {
     if (!pane?.bars?.length) return null;
@@ -24,70 +97,109 @@ export function createReplayHostSync(ctx, replay, state) {
         : null;
     if (anchorUtc == null || !Number.isFinite(anchorUtc)) return null;
 
-    const layout =
-      pane.chart && ctx.settingsStore && ctx.resolutions
-        ? captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions)
-        : null;
-
     let bars = pane.bars;
     let cursorUtc = anchorUtc;
     const lastBarTime = bars.at(-1)?.time;
-    let didRefresh = false;
-    if (lastBarTime != null && lastBarTime > cursorUtc) {
-      const trimIdx = replayBarIndexForUtcTime(bars, cursorUtc);
-      if (trimIdx != null && trimIdx < bars.length - 1) {
-        pane.bars = bars.slice(0, trimIdx + 1);
-        invalidatePaneChartView(pane);
-        const logicalRange = layout
-          ? computeViewportBarLayoutLogical(pane, layout)
+    const trimIdx =
+      lastBarTime != null && lastBarTime > cursorUtc
+        ? replayBarIndexForUtcTime(bars, cursorUtc)
+        : null;
+    const needsTrim = trimIdx != null && trimIdx < bars.length - 1;
+
+    if (needsTrim) {
+      // Full path: jumps, rewinds, overshoots. Trim + setData with viewport
+      // capture/restore, exactly as before — but stash the trimmed-off future
+      // bars so subsequent forward steps can append them incrementally.
+      const layout =
+        pane.chart && ctx.settingsStore && ctx.resolutions
+          ? captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions)
           : null;
-        ctx.refreshPaneCandleData?.(pane, {
-          logicalRange: logicalRange ?? undefined,
-          avoidPreserveViewport: !logicalRange,
-          deferSessionBg: true,
-        });
-        didRefresh = true;
-        bars = pane.bars;
+
+      storeForwardBars(pane, bars.slice(trimIdx + 1));
+      pane.bars = bars.slice(0, trimIdx + 1);
+      invalidatePaneChartView(pane);
+      const logicalRange = layout
+        ? computeViewportBarLayoutLogical(pane, layout)
+        : null;
+      ctx.refreshPaneCandleData?.(pane, {
+        logicalRange: logicalRange ?? undefined,
+        avoidPreserveViewport: !logicalRange,
+        deferSessionBg: true,
+      });
+      bars = pane.bars;
+
+      const currentIdx = replayBarIndexForUtcTime(bars, cursorUtc) ?? bars.length - 1;
+      cursorUtc = bars[currentIdx]?.time ?? cursorUtc;
+      pane.replayCursorEndIndex = currentIdx;
+
+      if (layout && pane.chart) {
+        restoreViewportBarLayout(
+          pane,
+          layout,
+          ctx.settingsStore,
+          ctx.resolutions,
+          "host-replay-step",
+          ctx.activePriceScaleId,
+          { skipPrice: true },
+        );
       }
+
+      const stashLayout =
+        pane.chart && ctx.settingsStore && ctx.resolutions
+          ? captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions)
+          : layout;
+      if (
+        stashLayout?.width >= 10 &&
+        pane.resolution &&
+        !state.replayViewportByResolution.has(pane.resolution)
+      ) {
+        state.replayViewportByResolution.set(pane.resolution, stashLayout);
+      }
+
+      pane.sessionBg?.requestRefresh?.();
+
+      if (ctx.indicatorController?.paneHasOverlayIndicators?.(pane.index)) {
+        ctx.refreshOverlaysImmediate?.(pane.index);
+      }
+      void ctx.extendIndicatorHtfForReplay?.(pane).then((extended) => {
+        if (extended) ctx.refreshOverlaysImmediate?.(pane.index);
+      });
+
+      return { cursorUtc, currentIdx, bars };
     }
 
-    const prevEndIndex = pane.replayCursorEndIndex;
+    // Incremental path: cursor at or ahead of the pane's last bar (single-step
+    // advance / forming update / no-op). Append any stashed forward bars via
+    // series.update, skip viewport capture/restore, and coalesce indicator
+    // refreshes to once per animation frame.
+    consumeForwardStash(pane, cursorUtc);
+    bars = pane.bars;
+
     const currentIdx = replayBarIndexForUtcTime(bars, cursorUtc) ?? bars.length - 1;
     cursorUtc = bars[currentIdx]?.time ?? cursorUtc;
     pane.replayCursorEndIndex = currentIdx;
 
-    if (layout && pane.chart && (prevEndIndex !== currentIdx || didRefresh)) {
-      restoreViewportBarLayout(
-        pane,
-        layout,
-        ctx.settingsStore,
-        ctx.resolutions,
-        "host-replay-step",
-        ctx.activePriceScaleId,
-        { skipPrice: true },
-      );
-    }
-
-    const stashLayout =
-      pane.chart && ctx.settingsStore && ctx.resolutions
-        ? captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions)
-        : layout;
     if (
-      stashLayout?.width >= 10 &&
+      pane.chart &&
+      ctx.settingsStore &&
+      ctx.resolutions &&
       pane.resolution &&
       !state.replayViewportByResolution.has(pane.resolution)
     ) {
-      state.replayViewportByResolution.set(pane.resolution, stashLayout);
+      const stashLayout = captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions);
+      if (stashLayout?.width >= 10) {
+        state.replayViewportByResolution.set(pane.resolution, stashLayout);
+      }
     }
 
-    ctx.replayFutureDim?.refreshAll?.();
     pane.sessionBg?.requestRefresh?.();
 
-    if (ctx.indicatorController?.paneHasOverlayIndicators?.(pane.index)) {
-      ctx.refreshOverlaysImmediate?.(pane.index);
+    const ic = ctx.indicatorController;
+    if (ic?.paneHasOverlayIndicators?.(pane.index)) {
+      ic.refreshOverlaysForPane?.(pane.index);
     }
     void ctx.extendIndicatorHtfForReplay?.(pane).then((extended) => {
-      if (extended) ctx.refreshOverlaysImmediate?.(pane.index);
+      if (extended) ic?.refreshOverlaysForPane?.(pane.index);
     });
 
     return { cursorUtc, currentIdx, bars };
@@ -105,6 +217,8 @@ export function createReplayHostSync(ctx, replay, state) {
       const result = applyHostReplayCursorToPane(pane);
       if (pane === activePane) activeResult = result;
     }
+
+    ctx.replayFutureDim?.refreshAll?.();
 
     if (activeResult) {
       const { cursorUtc, currentIdx, bars } = activeResult;

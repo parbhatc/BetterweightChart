@@ -70,6 +70,7 @@ export function retroactiveSweep(matrix, lvl, bars, chartBars, toBarIndex, maxSw
   if (idx >= 0) {
     const moved = matrix.active.splice(idx, 1)[0];
     matrix.swept.push(moved);
-    while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
+    // Capped later, confluence-aware (see capSweptConfluenceAware in run.js) so
+    // same-price twins on different timeframes aren't evicted independently.
   }
 }

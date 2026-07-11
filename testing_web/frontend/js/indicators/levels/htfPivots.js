@@ -1,5 +1,28 @@
-import { birthLevel } from "/js/indicators/script/liquidityMatrix.js";
+import { barSweepsLevel, birthLevel } from "/js/indicators/script/liquidityMatrix.js";
+import { firstBarIndexAtOrAfter } from "/js/indicators/script/barIndex.js";
 import { retroactiveSweep } from "./sweep.js";
+
+/**
+ * True when the level's liquidity was already taken between the END of the
+ * pivot's HTF bucket and the pivot's confirmation time. An HTF pivot only
+ * confirms `pivotRight` HTF bars after the pivot bar; if price traded through
+ * the level in that gap, the liquidity was consumed before the level ever
+ * became actionable — birthing it then retro-joins an already-swept cluster
+ * and repaints the swept label (e.g. "1H & 15m" gaining a "4H" tag 30 minutes
+ * after the sweep). Scanned on chart (LTF) bars, which also compensates for
+ * lagging HTF series data.
+ * @param {object[]} bars @param {number} pivotEndUtc @param {number} confirmUtc
+ * @param {"high"|"low"} kind @param {number} price
+ */
+function liquidityTakenBeforeConfirm(bars, pivotEndUtc, confirmUtc, kind, price) {
+  const from = Math.max(0, firstBarIndexAtOrAfter(bars, pivotEndUtc));
+  for (let j = from; j < bars.length; j++) {
+    const b = bars[j];
+    if (!b || b.time >= confirmUtc) break;
+    if (barSweepsLevel(b, kind, price)) return true;
+  }
+  return false;
+}
 
 /**
  * @param {object[]} agg
@@ -68,7 +91,9 @@ export function onHtfBarClose(
     if (hist.l[j] <= hist.l[p]) isLow = false;
   }
 
-  if (isHigh) {
+  const pivotEndUtc = hist.t[p] + (Number(cfg.tfSec) || 0);
+
+  if (isHigh && !liquidityTakenBeforeConfirm(bars, pivotEndUtc, endTime, "high", hist.h[p])) {
     const born = birthLevel(
       matrixH,
       {
@@ -91,7 +116,7 @@ export function onHtfBarClose(
     );
     retroactiveSweep(matrixH, born, bars, chartBars, scanToBarIdx, maxSwept, takenLiquidity);
   }
-  if (isLow) {
+  if (isLow && !liquidityTakenBeforeConfirm(bars, pivotEndUtc, endTime, "low", hist.l[p])) {
     const born = birthLevel(
       matrixL,
       {

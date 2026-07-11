@@ -1,7 +1,6 @@
 import { BarScriptIndicator } from "../../BarScriptIndicator.js";
-import { createFloat, createInt, createSelect, createSource, calcInputs, fill, plot } from "../../builders.js";
+import { createFloat, createInt, createSelect, createSource, calcInputs, fill, lengthSourceLegend, plot } from "../../builders.js";
 import { SMOOTHING_TYPE, SMOOTHING_TYPES, EmaRings } from "../../math/ema.js";
-import { sourceLabel } from "../../math/source.js";
 const COLORS = {
   ema: "#2962ff",
   smoothed: "#fdd835",
@@ -91,10 +90,7 @@ class EmaIndicator extends BarScriptIndicator {
   }
 
   legendParams(instance) {
-    return [
-      String(instance.inputs.length ?? 9),
-      sourceLabel(instance.inputs.source ?? "close").toLowerCase(),
-    ];
+    return lengthSourceLegend(instance.inputs, 9);
   }
 
   mergeStyleDefaults(style, inputs = {}) {

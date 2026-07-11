@@ -32,19 +32,6 @@ export function markSwept(lvl, utc, chartTime, takenLiquidity) {
   takenLiquidity?.add(takenLiquidityKey(lvl));
 }
 
-/** @param {LiqLine} level @param {number} proximity @param {Set<string>} [takenLiquidity] */
-function isLiquidityPriceTaken(level, proximity, takenLiquidity) {
-  if (!takenLiquidity?.size) return false;
-  const priceKey = Math.round(level.price * 100);
-  for (const key of takenLiquidity) {
-    const [kind, startStr, priceStr] = key.split("|");
-    if (kind !== level.kind) continue;
-    if (Number(startStr) !== level.startTime) continue;
-    if (Math.abs(priceKey - Number(priceStr)) <= Math.round(proximity * 100)) return true;
-  }
-  return false;
-}
-
 /** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {LiqLine} level @param {number} proximity */
 function hasDuplicatePivot(matrix, level, proximity) {
   const pool = [...matrix.active, ...matrix.swept];
@@ -56,9 +43,17 @@ function hasDuplicatePivot(matrix, level, proximity) {
   );
 }
 
-/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {LiqLine} level @param {number} proximity @param {Set<string>} [takenLiquidity] */
-function hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity) {
-  if (isLiquidityPriceTaken(level, proximity, takenLiquidity)) return true;
+/**
+ * Own-matrix guard only. Deliberately NOT keyed on the global takenLiquidity
+ * set: the same pivot bar produces twin levels on several timeframes (same
+ * startTime & price in different matrices). When one twin's sweep falls inside
+ * the walk window it is swept at birth, and a global check would then reject
+ * the other timeframes' births outright — the swept cluster would lose its
+ * "4H & 1H & …" members and higher-TF levels would silently vanish instead of
+ * being born and immediately retro-swept (which is what draws the dotted line).
+ * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {LiqLine} level @param {number} proximity
+ */
+function hasSweptLiquidityAtPrice(matrix, level, proximity) {
   return matrix.swept.some(
     (l) =>
       l.kind === level.kind &&
@@ -78,7 +73,7 @@ function hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity) {
  */
 export function birthLevel(matrix, level, maxUnswept, proximity, takenLiquidity) {
   if (hasDuplicatePivot(matrix, level, proximity)) return null;
-  if (hasSweptLiquidityAtPrice(matrix, level, proximity, takenLiquidity)) return null;
+  if (hasSweptLiquidityAtPrice(matrix, level, proximity)) return null;
   const last = matrix.active[matrix.active.length - 1];
   if (
     last &&
@@ -92,8 +87,26 @@ export function birthLevel(matrix, level, maxUnswept, proximity, takenLiquidity)
   return matrix.active[matrix.active.length - 1];
 }
 
-/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {object} bar @param {number} chartTime @param {"high"|"low"} kind @param {number} maxSwept @param {Set<string>} [takenLiquidity] */
-export function sweepMatrix(matrix, bar, chartTime, kind, maxSwept, takenLiquidity) {
+/**
+ * Cap `matrix.swept` to the `maxSwept` most RECENT sweeps by sweepTime.
+ * NOTE: not applied during the walk anymore — the engine keeps the full swept
+ * set until the end and caps once with cross-timeframe confluence awareness
+ * (see run.js), so a "1H & 15m" swept confluence keeps its 15m tag even when
+ * unrelated 15m levels sweep later. Retained as a utility.
+ * @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {number} maxSwept
+ */
+export function capSweptByRecency(matrix, maxSwept) {
+  while (maxSwept > 0 && matrix.swept.length > maxSwept) {
+    let oldest = 0;
+    for (let i = 1; i < matrix.swept.length; i++) {
+      if ((matrix.swept[i].sweepTime ?? 0) < (matrix.swept[oldest].sweepTime ?? 0)) oldest = i;
+    }
+    matrix.swept.splice(oldest, 1);
+  }
+}
+
+/** @param {{ active: LiqLine[]; swept: LiqLine[] }} matrix @param {object} bar @param {number} chartTime @param {"high"|"low"} kind @param {number} _maxSwept @param {Set<string>} [takenLiquidity] */
+export function sweepMatrix(matrix, bar, chartTime, kind, _maxSwept, takenLiquidity) {
   for (let i = matrix.active.length - 1; i >= 0; i--) {
     const lvl = matrix.active[i];
     if (lvl.kind !== kind) continue;
@@ -102,7 +115,7 @@ export function sweepMatrix(matrix, bar, chartTime, kind, maxSwept, takenLiquidi
     markSwept(lvl, bar.time, chartTime, takenLiquidity);
     const moved = matrix.active.splice(i, 1)[0];
     matrix.swept.push(moved);
-    while (maxSwept > 0 && matrix.swept.length > maxSwept) matrix.swept.shift();
+    // Capped later, confluence-aware — see capSweptConfluenceAware in run.js.
   }
 }
 

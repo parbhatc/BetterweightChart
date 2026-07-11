@@ -64,6 +64,7 @@ export function defaultStyleFromSchema(plots, fills) {
     style[keys.styleKey] = plot.lineStyle ?? 0;
     style[keys.priceLineKey] = plot.priceLine === true;
     style[keys.plotTypeKey] = "line";
+    if (typeof plot.level === "number") style[`${plot.id}Level`] = plot.level;
   }
   for (const fill of fills) {
     const keys = fillStyleKeys(fill.id);

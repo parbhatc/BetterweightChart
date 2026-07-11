@@ -4,6 +4,14 @@ Detailed per-indicator function inventory lives in `docs/indicators-reference.md
 
 Add a custom indicator by extending **`BarScriptIndicator`** (per-bar / Pine-style) or **`ComputeIndicator`** (batch math). Use **`builders.js`** for plots, fills, and inputs.
 
+## Adding an indicator (one command)
+
+```bash
+npm run new:indicator myStudy
+```
+
+This creates `public/js/indicators/definitions/mystudy/MyStudyIndicator.js` from a working `ComputeIndicator` template and registers it in `definitions/index.js` — the **single** manifest (the top-level `indicators/index.js` re-exports from it). Implement `computeSeries()`; the library listing, settings dialog, defaults, serialization, and rendering are derived automatically from the plot/input schema. Band plots can declare `{ band: true, level: 70, lineStyle: 2 }` and get dashed level rows in settings for free.
+
 ---
 
 ## Pine-style: `BarScriptIndicator` (recommended)

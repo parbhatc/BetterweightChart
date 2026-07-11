@@ -190,12 +190,17 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
 
   view.utcBars.push(utcBar);
   const chartBar = utcBar;
-  view.chartBars.push(chartBar);
+  // chartBars aliases utcBars (rebuildPaneChartView) — pushing both would
+  // append the bar twice and corrupt the tail of the view.
+  if (view.chartBars !== view.utcBars) view.chartBars.push(chartBar);
 
-  const candles = buildCandleSeriesData(view.utcBars, sym);
-  const newCandle = candles[candles.length - 1];
-  const prevCandle = candles.length >= 2 ? candles[candles.length - 2] : null;
+  // O(1): only the tail two candles can change on an append.
+  const len = view.utcBars.length;
+  const prevPrevUtc = len >= 3 ? view.utcBars[len - 3] : undefined;
+  const prevCandle = buildCandleBarEntry(view.utcBars[len - 2], prevPrevUtc, sym);
+  const newCandle = buildCandleBarEntry(chartBar, prevUtc, sym);
 
+  if (prevCandle && view.seriesData[len - 2] != null) view.seriesData[len - 2] = prevCandle;
   view.seriesData.push(newCandle);
   view.mapBars.push({ time: chartBar.time });
 
@@ -203,12 +208,16 @@ export function appendNewBarInView(pane, utcBar, settingsStore, symbolInfo, reso
   pane.mapBars = view.mapBars;
   pane.shiftedBars = view.chartBars;
   pane._shiftedKey = view.utcKey;
-  view.timeAdapter = createTimeAdapter({
-    utcBars: view.utcBars,
-    chartBars: view.chartBars,
-    mapBars: view.mapBars,
-    barSec: view.barSec,
-  });
+  if (typeof view.timeAdapter?.appendBar === "function") {
+    view.timeAdapter.appendBar(utcBar, chartBar);
+  } else {
+    view.timeAdapter = createTimeAdapter({
+      utcBars: view.utcBars,
+      chartBars: view.chartBars,
+      mapBars: view.mapBars,
+      barSec: view.barSec,
+    });
+  }
 
   return { newCandle, prevCandle };
 }

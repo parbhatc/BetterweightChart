@@ -68,22 +68,37 @@ export function resolveOverlayMapBars(seriesData, ctxMapBars) {
 }
 
 /**
- * @param {import("lightweight-charts").IChartApi} chart
+ * Resolve the overlay time→pixel mapping. Performs the ONE series.data() copy +
+ * resolveOverlayMapBars. The result only changes when bar DATA changes (not during a pan),
+ * so callers should cache it and rebuild only on data-change.
  * @param {import("lightweight-charts").ISeriesApi} series
  * @param {{ mapBars?: object[], barSec?: number, lastRealChartTime?: number, timeAdapter?: object } | null} timeCtx
+ * @returns {{ mapBars: object[], useAdapter: boolean, logicalOffset: number, barSec: number, lastReal: number|undefined, timeAdapter: object|null }}
  */
-export function createOverlayTimeToX(chart, series, timeCtx) {
-  const ts = chart.timeScale();
+export function resolveOverlayTimeMapping(series, timeCtx) {
   const seriesData = series.data?.() ?? [];
   const ctxMapBars = timeCtx?.mapBars ?? [];
   const { mapBars, useAdapter, logicalOffset } = resolveOverlayMapBars(seriesData, ctxMapBars);
   const timeAdapter = useAdapter ? (timeCtx?.timeAdapter ?? null) : null;
   const barSec = timeCtx?.barSec ?? 60;
   const lastReal = timeCtx?.lastRealChartTime ?? mapBars.at(-1)?.time;
+  return { mapBars, useAdapter, logicalOffset, barSec, lastReal, timeAdapter };
+}
+
+/**
+ * Build the per-frame time→pixel closure from a resolved mapping. Does NOT call series.data().
+ * Uses the live chart.timeScale() each call so panning is reflected natively.
+ * @param {import("lightweight-charts").IChartApi} chart
+ * @param {ReturnType<typeof resolveOverlayTimeMapping>} mapping
+ * @returns {(t: number) => number | null}
+ */
+export function createOverlayTimeToXFromMapping(chart, mapping) {
+  const { mapBars, logicalOffset, barSec, lastReal, timeAdapter } = mapping;
 
   return (t) => {
     if (t == null || !Number.isFinite(Number(t))) return null;
     const time = Number(t);
+    const ts = chart.timeScale();
     if (typeof ts.timeToCoordinate === "function") {
       const direct = ts.timeToCoordinate(time);
       if (direct != null && Number.isFinite(direct) && direct > 0) return direct;
@@ -105,4 +120,15 @@ export function createOverlayTimeToX(chart, series, timeCtx) {
     }
     return safeTimeToX(ts, time);
   };
+}
+
+/**
+ * Backward-compatible wrapper: resolves the mapping and builds the closure in one call.
+ * Per-frame callers should instead cache resolveOverlayTimeMapping and reuse it across pans.
+ * @param {import("lightweight-charts").IChartApi} chart
+ * @param {import("lightweight-charts").ISeriesApi} series
+ * @param {{ mapBars?: object[], barSec?: number, lastRealChartTime?: number, timeAdapter?: object } | null} timeCtx
+ */
+export function createOverlayTimeToX(chart, series, timeCtx) {
+  return createOverlayTimeToXFromMapping(chart, resolveOverlayTimeMapping(series, timeCtx));
 }
