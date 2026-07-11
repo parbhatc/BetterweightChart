@@ -92,7 +92,7 @@ export function runLevelsEngine(bars, anchorUnix, opts) {
     opts.releasePlan instanceof Map
       ? opts.releasePlan
       : buildReleasePlan(opts.newsByDay ?? {}, opts.newsRows ?? []);
-  const chartSec = Math.max(60, Number(opts.chartSec) || 60);
+  const chartSec = Math.max(1, Number(opts.chartSec) || 60);
   const sessionLookback = sessions.length
     ? Math.max(maxBarsBack, Math.ceil((30 * 3600) / chartSec))
     : maxBarsBack;

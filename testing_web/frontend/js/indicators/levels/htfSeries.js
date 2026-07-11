@@ -29,24 +29,13 @@ export function filterAggConfirmedAt(agg, chartTimes, tfSec, anchorUnix) {
  * @param {object} opts
  */
 export function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
-  const chartSec = Math.max(60, Number(opts.chartSec) || 60);
+  const chartSec = Math.max(1, Number(opts.chartSec) || 60);
   const maxBack = Math.max(10, Number(opts.maxBarsBack) || 300);
-  const pivotLeft = Math.max(1, Number(opts.pivotLeftBars) || 1);
-  const pivotRight = Math.max(1, Number(opts.pivotRightBars) || 1);
   const anchorUnix = opts.anchorUnix ?? chartUtcBars.at(-1)?.time ?? null;
-  const visStart = chartUtcBars[0]?.time;
   /** @param {object[]} series @param {(number | undefined)[]} times */
   const trimToWindow = (series, times) => {
-    let agg = series.length > maxBack ? series.slice(-maxBack) : series;
-    let chartTimes = times.length > maxBack ? times.slice(-maxBack) : times;
-    if (visStart != null) {
-      const buf = (pivotLeft + pivotRight) * cfg.tfSec;
-      const cut = agg.findIndex((b) => b.time + cfg.tfSec >= visStart - buf);
-      if (cut > 0) {
-        agg = agg.slice(cut);
-        chartTimes = chartTimes.slice(cut);
-      }
-    }
+    const agg = series.length > maxBack ? series.slice(-maxBack) : series;
+    const chartTimes = times.length > maxBack ? times.slice(-maxBack) : times;
     return { agg, chartTimes };
   };
 

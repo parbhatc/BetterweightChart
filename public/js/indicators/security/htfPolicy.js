@@ -19,13 +19,11 @@ export function requiredHtfBars(inputs, fallback = 300) {
  */
 export function requiredHtfBarsForLayer(inputs, chartBarCount, chartResolution, tfSec) {
   const maxBack = requiredHtfBars(inputs);
-  const chartSec = Math.max(60, resolutionSec(chartResolution) || 60);
-  const pivotPad =
-    (Number(inputs.pivotLeftBars) || 1) + (Number(inputs.pivotRightBars) || 1);
-  const bars = Math.max(0, Number(chartBarCount) || 0);
+  const chartSec = Math.max(1, resolutionSec(chartResolution) || 60);
   if (!tfSec || tfSec <= chartSec) return Math.min(maxBack, 20);
-  if (!bars) return Math.min(maxBack, 80);
-  return Math.min(maxBack, Math.ceil((bars * chartSec) / tfSec) + pivotPad);
+  // Request the full lookback so pivots match what the same TF's native chart would detect,
+  // not just enough bars to cover the current viewport.
+  return maxBack;
 }
 
 /**
@@ -60,7 +58,7 @@ export function requiredChartBarsWhenNoHtf(enabledHtfs, inputs, fallback = 300) 
 export function requiredChartBarsForSessions(inputs, sessionsEnabled, chartResolution = "1", fallback = 300) {
   if (!sessionsEnabled) return 0;
   const base = requiredHtfBars(inputs, fallback);
-  const chartSec = Math.max(60, resolutionSec(chartResolution) || 60);
+  const chartSec = Math.max(1, resolutionSec(chartResolution) || 60);
   const sessionDayBars = Math.ceil((30 * 3600) / chartSec);
   return Math.max(base, sessionDayBars);
 }
