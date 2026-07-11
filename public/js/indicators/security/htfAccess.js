@@ -1,3 +1,6 @@
+// HTF access layer: indicators READ HTF series here (lookup + merge with the
+// shared store + sufficiency check) and REQUEST more bars when short.
+// Fetching/storing/replay-anchor handling lives in app/bar/htfBarCache.js.
 import { normalizeResolutionId } from "/js/chart/resolutionFormat.js";
 import { getHtfBars } from "../../app/bar/htfBarCache.js";
 
@@ -61,6 +64,31 @@ export function requestSecuritySeries(ctx, symbol, resolution, countBack) {
   ctx.requestSecurityBars?.(symbol, resolution, countBack);
   ctx.requestBars?.(resolution, countBack);
   ctx.requestHtfBars?.(resolution, countBack);
+}
+
+/**
+ * Single entry point for indicator HTF reads: lookup + merge with the shared
+ * store + sufficiency check, firing a fetch request when short and not exhausted.
+ * @param {object} ctx
+ * @param {string} [symbol]
+ * @param {string} tfId
+ * @param {number} want bars needed
+ * @param {{ request?: boolean }} [opts] request=false suppresses the fetch request (pure read)
+ * @returns {{ utcBars: object[], chartBars: object[], source: string, pending: boolean, exhausted: boolean }}
+ */
+export function resolveHtfSeries(ctx, symbol, tfId, want, opts = {}) {
+  const need = Math.max(10, Number(want) || 300);
+  const sym = symbol ?? ctx.primarySymbol ?? ctx.symbol;
+  const stored = sym ? getHtfBars(sym, normalizeResolutionId(tfId) ?? tfId) : null;
+  const exhausted = Boolean(stored?.historyExhausted && stored.utcBars?.length > 0);
+  const raw = ctx.lookupSecurity?.(sym, tfId, need) ?? getSecuritySeries(ctx, sym, tfId);
+  // Pane lookups can be shorter than the shared store — always take the longer.
+  const hit = sym ? mergeWithHtfStore(sym, normalizeResolutionId(tfId) ?? tfId, raw) : raw;
+  const utcBars = hit?.utcBars ?? [];
+  const chartBars = hit?.chartBars ?? [];
+  const pending = utcBars.length < need && !exhausted;
+  if (pending && opts.request !== false) requestSecuritySeries(ctx, sym, tfId, need);
+  return { utcBars, chartBars, source: hit?.source ?? "", pending, exhausted };
 }
 
 /** @param {{ utcBars: object[], chartBars?: object[] }} htf */

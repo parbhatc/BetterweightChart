@@ -1,3 +1,6 @@
+// HTF bar cache: FETCHES and STORES higher-timeframe series and handles
+// replay-anchor extension. Indicators read/merge/request through
+// indicators/security/htfAccess.js (resolveHtfSeries) — not this module directly.
 import { chartDebug } from "../../debug/chart/index.js";
 import { resolutionSec } from "../../chart/resolutions.js";
 import { buildInitialPeriodParams, buildPrependPeriodParams, buildTvPeriodParams, alignBarTime } from "./periodParams.js";
@@ -362,8 +365,10 @@ async function fetchHtfBars(opts) {
   const entry = {
     utcBars,
     chartBars,
-    historyExhausted:
-      opts.playbackAnchorSec != null ? true : utcBars.length < want,
+    // A short fetch is NOT exhaustion — wall-clock `from` over gaps/weekends can
+    // return fewer bars than wanted. Only a replay anchor caps history here;
+    // prependHtfBars is the sole authority for true exhaustion (noData / no older bars).
+    historyExhausted: opts.playbackAnchorSec != null,
     updatedAt: Date.now(),
     source: utcBars.length >= want ? cacheSource : "datafeed",
   };

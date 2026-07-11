@@ -1,4 +1,4 @@
-import { getSecuritySeries, requestSecuritySeries } from "./htfAccess.js";
+import { resolveHtfSeries } from "./htfAccess.js";
 import { getHtfBars, htfCacheStaleForAnchor } from "../../app/bar/htfBarCache.js";
 import { resolutionSec } from "/js/chart/resolutions.js";
 
@@ -86,6 +86,7 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
     const want = Math.max(10, Number(perTf?.[tfId] ?? barsNeeded) || 300);
     const minStart = strict ? want : Math.min(50, want);
 
+    // ponytail: replay host with a fresh cache never re-fetches mid-playback
     const stored = getHtfBars(symbol, tfId);
     if (
       replayHost &&
@@ -95,26 +96,16 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
     ) {
       continue;
     }
-    if (stored?.historyExhausted && stored.utcBars?.length > 0) continue;
-    if (stored?.utcBars?.length >= want) continue;
 
-    const hit =
-      ctx.lookupSecurity?.(symbol, tfId, want) ??
-      (() => {
-        const series = getSecuritySeries(ctx, symbol, tfId);
-        if (!series?.utcBars?.length) return null;
-        return { ...series, sufficient: series.utcBars.length >= want };
-      })();
-    if (hit?.utcBars?.length >= want) continue;
-    if (!strict && hit?.utcBars?.length >= minStart) {
-      if (hit.utcBars.length < want) requestSecuritySeries(ctx, symbol, tfId, want);
+    // resolveHtfSeries fires the fetch request when short and not exhausted.
+    const series = resolveHtfSeries(ctx, symbol, tfId, want);
+    if (!series.pending) continue;
+    if (
+      !strict &&
+      (series.utcBars.length >= minStart || (stored?.utcBars?.length ?? 0) >= minStart)
+    ) {
       continue;
     }
-    if (!strict && stored?.utcBars?.length >= minStart) {
-      if (stored.utcBars.length < want) requestSecuritySeries(ctx, symbol, tfId, want);
-      continue;
-    }
-    requestSecuritySeries(ctx, symbol, tfId, want);
     pending = true;
   }
   return pending;
@@ -124,8 +115,8 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
 export function htfSeriesRecomputeKey(ctx, symbol, tfIds) {
   return tfIds
     .map((tfId) => {
-      const hit = getSecuritySeries(ctx, symbol, tfId);
-      return `${tfId}:${hit?.utcBars?.length ?? 0}:${hit?.source ?? ""}`;
+      const hit = resolveHtfSeries(ctx, symbol, tfId, 0, { request: false });
+      return `${tfId}:${hit.utcBars.length}:${hit.source}`;
     })
     .join(",");
 }

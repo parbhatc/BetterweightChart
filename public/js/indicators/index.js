@@ -38,7 +38,7 @@ export {
   emptyPaneDataNeeds,
   paneDataNeedsEmpty,
 } from "./security/indicatorDataNeeds.js";
-export { getSecuritySeries, requestSecuritySeries, mapHtfBarsToSeries, mergeWithHtfStore, htfBarCompleteAt } from "./security/htfAccess.js";
+export { getSecuritySeries, requestSecuritySeries, resolveHtfSeries, mapHtfBarsToSeries, mergeWithHtfStore, htfBarCompleteAt } from "./security/htfAccess.js";
 export {
   requiredHtfBars,
   requiredChartBarsWhenNoHtf,
