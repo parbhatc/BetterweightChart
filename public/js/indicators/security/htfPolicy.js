@@ -116,7 +116,11 @@ export function htfSeriesRecomputeKey(ctx, symbol, tfIds) {
   return tfIds
     .map((tfId) => {
       const hit = resolveHtfSeries(ctx, symbol, tfId, 0, { request: false });
-      return `${tfId}:${hit.utcBars.length}:${hit.source}`;
+      const first = hit.utcBars[0];
+      const last = hit.utcBars.at(-1);
+      // Head/tail times + last OHLC: length alone misses rewinds that keep the
+      // count and tail refetches that finalize the forming bucket's values.
+      return `${tfId}:${hit.utcBars.length}:${hit.source}:${first?.time ?? ""}:${last?.time ?? ""}:${last?.high ?? ""},${last?.low ?? ""},${last?.close ?? ""}`;
     })
     .join(",");
 }

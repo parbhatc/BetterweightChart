@@ -33,6 +33,7 @@ class SmtIndicator extends BarScriptIndicator {
       createInt("leftLen", "Pivot left", 1, { section: "Pivots", inline: true }),
       createInt("rightLen", "Pivot right", 1, { section: "Pivots", inline: true }),
       createBool("waitClose", "Wait for candle close", true, { section: "Detection" }),
+      createInt("pivotSync", "Pivot sync tolerance (bars)", 1, { section: "Detection" }),
       createBool("showHigh", "Pivot high SMT", true, { section: "Detection" }),
       createBool("showLow", "Pivot low SMT", true, { section: "Detection" }),
       inlinePair(
@@ -156,6 +157,7 @@ class SmtIndicator extends BarScriptIndicator {
     this.state.left = left;
     this.state.right = right;
     this.state.waitClose = this.getBool("waitClose", true);
+    this.state.pivotSync = Math.max(0, Number(this.inputs.pivotSync ?? 1) || 0);
     this.state.showHigh = this.getBool("showHigh", true);
     this.state.showLow = this.getBool("showLow", true);
     this.state.highColor = styleColor(style, "highColor", "#ff1100");
@@ -203,8 +205,24 @@ class SmtIndicator extends BarScriptIndicator {
     const lastIdx = this.bars.length - 1;
     if (waitClose && this.index === lastIdx) return;
 
+    // Correlated symbols often print the "same" swing one bar apart (the classic
+    // SMT setup). Exact same-index matching drops those pairs entirely, so allow
+    // the compare pivot within ±pivotSync bars (0 = strict same-index).
+    const maxDetectIdx = waitClose ? lastIdx - 1 : lastIdx;
+    const sync = this.state.pivotSync ?? 0;
+    const symPivotNear = (finder) => {
+      for (let k = 0; k <= sync; k++) {
+        for (const j of k === 0 ? [this.index] : [this.index - k, this.index + k]) {
+          if (j < 0 || j > maxDetectIdx) continue;
+          const v = finder(compareUtc, j, left, right);
+          if (v != null) return v;
+        }
+      }
+      return null;
+    };
+
     const ph = this.math.pivotHigh(left, right);
-    const symPh = pivotHighAtSparse(compareUtc, this.index, left, right);
+    const symPh = ph != null ? symPivotNear(pivotHighAtSparse) : null;
 
     if (ph != null && symPh != null) {
       if (
@@ -247,7 +265,7 @@ class SmtIndicator extends BarScriptIndicator {
     }
 
     const pl = this.math.pivotLow(left, right);
-    const symPl = pivotLowAtSparse(compareUtc, this.index, left, right);
+    const symPl = pl != null ? symPivotNear(pivotLowAtSparse) : null;
 
     if (pl != null && symPl != null) {
       if (

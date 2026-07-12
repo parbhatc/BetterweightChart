@@ -19,7 +19,12 @@ function htfRecomputeKey(instance, ctx) {
   for (const { tfId } of fvgHtf.enabledResolutions(instance.inputs, ctx.chartResolution ?? "1")) {
     const htf = getSecuritySeries(ctx, undefined, tfId);
     const bars = htf?.utcBars ?? [];
-    parts.push(`${tfId}:${bars[0]?.time ?? ""}|${bars.at(-1)?.time ?? ""}|${bars.length}`);
+    const last = bars.at(-1);
+    // Include last-bar OHLC: a tail refetch can finalize the forming bucket's
+    // values without changing head/tail time or length.
+    parts.push(
+      `${tfId}:${bars[0]?.time ?? ""}|${last?.time ?? ""}|${bars.length}|${last?.high ?? ""},${last?.low ?? ""},${last?.close ?? ""}`,
+    );
   }
   return parts.join(";");
 }

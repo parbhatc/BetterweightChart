@@ -101,6 +101,10 @@ export function attachIndicatorsBoot(ctx) {
             indicatorData.scheduleHtfBarsFetch(pane, symbol, resId, countBack),
           scheduleCompareFetch: (symbol, resolution, countBack) =>
             indicatorData.scheduleCompareBarsFetch(pane, symbol, resolution, countBack),
+          getAnchorSec: () =>
+            typeof ctx.opts?.getPlaybackAnchorSec === "function"
+              ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+              : null,
         }),
         getNewsByDay: newsCtx.getNewsByDay,
         newsPending: newsCtx.newsPending,

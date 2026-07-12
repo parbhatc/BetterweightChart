@@ -44,6 +44,21 @@ export function ensureCompareAligned(ctx, inputs, chartBars, barCount, minCovere
     ctx.requestCompareBars?.(compare, barCount);
     return { ready: false, compare, aligned, covered };
   }
+  // Coverage must include the tail: a long-but-stale compare cache aligns
+  // plenty of OLD bars while the newest bars (where pivots are detected during
+  // replay stepping) are all null — that froze pivots at the last covered bar.
+  const TAIL_WINDOW = 5;
+  let tailCovered = false;
+  for (let i = aligned.length - 1; i >= Math.max(0, aligned.length - TAIL_WINDOW); i--) {
+    if (aligned[i]) {
+      tailCovered = true;
+      break;
+    }
+  }
+  if (!tailCovered && aligned.length > TAIL_WINDOW) {
+    ctx.requestCompareBars?.(compare, barCount);
+    return { ready: false, compare, aligned, covered };
+  }
   return { ready: true, compare, aligned, covered };
 }
 

@@ -172,8 +172,13 @@ export function createOverlaySync(deps) {
       typeof Indicator.shouldRefreshOverlayOnCacheHit === "function" &&
       Indicator.shouldRefreshOverlayOnCacheHit(instance, overlayCtx);
     if (hookPending === true) {
+      // Serve the cached overlay only while it still matches the current data.
+      // After a data replacement (replay day jump) the pre-jump boxes are wrong-
+      // day levels — show nothing until the pending fetch lands and recomputes.
       overlayData =
-        Array.isArray(instance._overlayBoxCache) && instance._overlayBoxCache.length
+        instance._overlayRecomputeKey === recomputeKey &&
+        Array.isArray(instance._overlayBoxCache) &&
+        instance._overlayBoxCache.length
           ? instance._overlayBoxCache
           : [];
     } else if (cacheHit && !refreshLiveOnCacheHit) {

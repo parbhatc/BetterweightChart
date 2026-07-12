@@ -6,6 +6,7 @@ import {
   PPI_COLOR,
   CPI_COLOR,
   FOMC_COLOR,
+  NFP_COLOR,
 } from "../../news/events.js";
 
 const MOBILE_NEWS_MQ = "(max-width: 768px)";
@@ -198,12 +199,14 @@ export function createNewsPanel(opts) {
       { id: "ppi", label: "PPI", color: PPI_COLOR },
       { id: "cpi", label: "CPI", color: CPI_COLOR },
       { id: "fomc", label: "FOMC", color: FOMC_COLOR },
+      { id: "nfp", label: "NFP", color: NFP_COLOR },
     ];
 
     const buckets = new Map([
       ["ppi", []],
       ["cpi", []],
       ["fomc", []],
+      ["nfp", []],
       ["other", []],
     ]);
 

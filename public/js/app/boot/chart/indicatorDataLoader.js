@@ -145,6 +145,24 @@ export function createIndicatorDataLoader({
       extended = true;
       controller.invalidateOverlayCacheForPane(pane.index, { htfKeys: new Set([key]) });
     }
+    // Compare-chart series (e.g. SMT's ES at chart resolution) need the same
+    // anchor-based tail extension, or they go stale as soon as replay steps
+    // past their cached tail (count-based sufficiency never notices).
+    for (const symbol of needs.compareChart.keys()) {
+      if (!symbol || symbol === pane.symbol) continue;
+      if (!htfCacheStaleForAnchor(symbol, pane.resolution, anchorSec)) continue;
+      const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
+      if (!symbolInfo) continue;
+      await extendHtfCacheForAnchor({
+        ...htfEnsureOpts(pane, symbol, pane.resolution, 16, symbolInfo),
+        anchorSec,
+        symbolInfo,
+      });
+      extended = true;
+      controller.invalidateOverlayCacheForPane(pane.index, {
+        htfKeys: new Set([`${symbol}|${pane.resolution}`]),
+      });
+    }
     return extended;
   }
 
@@ -215,21 +233,36 @@ export function createIndicatorDataLoader({
 
   /** @param {object} pane @param {string} symbol @param {number} countBack */
   async function fillCompareChart(pane, symbol, countBack) {
+    const anchorSec =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
     let hit = lookupSymbolBars({ ...symbolBarLookupOpts(pane, symbol), resolution: pane.resolution });
-    if (!hit || hit.utcBars.length < countBack) {
+    const tailStale =
+      anchorSec != null && htfCacheStaleForAnchor(symbol, pane.resolution, anchorSec);
+    if (!hit || hit.utcBars.length < countBack || tailStale) {
       const symbolInfo = await ctx.datafeed.resolveSymbol(symbol);
-      hit = await ensureSymbolBars({
-        datafeed: ctx.datafeed,
-        symbolInfo,
-        symbol,
-        resolution: pane.resolution,
-        countBack,
-        pane,
-        settingsStore: ctx.settingsStore,
-        symbolInfoExtra: symbolInfo,
-        getAllChartPanes: ctx.getAllChartPanes,
-        resolutions: ctx.resolutions,
-      });
+      if (tailStale && htfStoreBarCount(symbol, pane.resolution) > 0) {
+        await extendHtfCacheForAnchor({
+          ...htfEnsureOpts(pane, symbol, pane.resolution, 16, symbolInfo),
+          anchorSec,
+          symbolInfo,
+        });
+      } else {
+        hit = await ensureSymbolBars({
+          datafeed: ctx.datafeed,
+          symbolInfo,
+          symbol,
+          resolution: pane.resolution,
+          countBack,
+          pane,
+          settingsStore: ctx.settingsStore,
+          symbolInfoExtra: symbolInfo,
+          getAllChartPanes: ctx.getAllChartPanes,
+          resolutions: ctx.resolutions,
+          playbackAnchorSec: anchorSec,
+        });
+      }
     }
     let entry = getHtfBars(symbol, pane.resolution);
     let guard = 0;
@@ -468,14 +501,30 @@ export function createIndicatorDataLoader({
       symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
       resolutions: ctx.resolutions,
     });
-    if (hit && hit.utcBars.length >= want) return;
+    const anchorSec =
+      typeof ctx.opts?.getPlaybackAnchorSec === "function"
+        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
+        : null;
+    // Sufficiency must be time-based too: a long-but-stale cache (tail ends
+    // before the replay cursor) still needs a tail top-up, or SMT-style
+    // compares freeze at the last covered pivot.
+    const tailStale =
+      anchorSec != null && htfCacheStaleForAnchor(symbol, resolution, anchorSec);
+    if (hit && hit.utcBars.length >= want && !tailStale) return;
 
     compareFetchInFlight.add(key);
     const beforeLen = htfStoreBarCount(symbol, resolution);
     void ctx.datafeed
       .resolveSymbol(symbol)
-      .then((symbolInfo) =>
-        ensureSymbolBars({
+      .then((symbolInfo) => {
+        if (tailStale && htfStoreBarCount(symbol, resolution) > 0) {
+          return extendHtfCacheForAnchor({
+            ...htfEnsureOpts(pane, symbol, resolution, 16, symbolInfo),
+            anchorSec,
+            symbolInfo,
+          });
+        }
+        return ensureSymbolBars({
           datafeed: ctx.datafeed,
           symbolInfo,
           symbol,
@@ -486,10 +535,11 @@ export function createIndicatorDataLoader({
           symbolInfoExtra: symbolInfo,
           getAllChartPanes: ctx.getAllChartPanes,
           resolutions: ctx.resolutions,
-        }),
-      )
+          playbackAnchorSec: anchorSec,
+        });
+      })
       .then(() => {
-        if (htfStoreBarCount(symbol, resolution) <= beforeLen) return;
+        if (!tailStale && htfStoreBarCount(symbol, resolution) <= beforeLen) return;
         refreshPanesUsingCompareSymbol(symbol);
       })
       .finally(() => compareFetchInFlight.delete(key));

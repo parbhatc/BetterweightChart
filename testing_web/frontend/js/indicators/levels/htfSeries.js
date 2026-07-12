@@ -51,21 +51,19 @@ export function resolveHtfAggSeries(cfg, chartUtcBars, chartBars, opts) {
 
   const htf = resolveHtfSeries(opts, opts.symbol, cfg.tfId, maxBack, { request: false });
   if (htf.utcBars.length) {
-    const offset = Math.max(0, htf.utcBars.length - maxBack);
-    const sliceStart = htf.utcBars.length > maxBack ? offset : 0;
-    const series = htf.utcBars.slice(sliceStart);
+    const series = htf.utcBars;
     // Datafeed-fetched entries store UTC copies as chartBars (no tz alignment).
     // Leave chartTimes undefined so overlay mapping falls back to
     // mapUtcTimeToChartTime against the pane's own bars.
     const utcCopyChartBars =
       htf.chartBars === htf.utcBars ||
-      (htf.chartBars?.[sliceStart]?.time === series[0]?.time &&
-        htf.chartBars?.at(-1)?.time === htf.utcBars.at(-1)?.time);
-    const times = series.map((_, i) =>
-      utcCopyChartBars ? undefined : htf.chartBars[sliceStart + i]?.time,
-    );
-    let { agg, chartTimes } = trimToWindow(series, times);
-    ({ agg, chartTimes } = filterAggConfirmedAt(agg, chartTimes, cfg.tfSec, anchorUnix));
+      (htf.chartBars?.[0]?.time === series[0]?.time &&
+        htf.chartBars?.at(-1)?.time === series.at(-1)?.time);
+    const times = series.map((_, i) => (utcCopyChartBars ? undefined : htf.chartBars[i]?.time));
+    // Filter to confirmed-at-anchor FIRST, then trim to maxBack — trimming first can
+    // leave a window dominated by not-yet-confirmed buckets and drop real levels.
+    let { agg, chartTimes } = filterAggConfirmedAt(series, times, cfg.tfSec, anchorUnix);
+    ({ agg, chartTimes } = trimToWindow(agg, chartTimes));
     return { agg, chartTimes, source: htf.source ?? "htf" };
   }
 

@@ -4,7 +4,7 @@
  */
 import { normalizeResolutionId } from "../../chart/resolutionFormat.js";
 import { chartDebug } from "../../debug/chart/index.js";
-import { mergeWithHtfStore } from "../../indicators/security/htfAccess.js";
+import { mergeWithHtfStore, sliceSeriesToAnchor } from "../../indicators/security/htfAccess.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
 import { ensureHtfBars, getHtfBars, seedHtfBars } from "./htfBarCache.js";
 
@@ -129,6 +129,7 @@ export function createSecurityContext(deps) {
     resolutions,
     scheduleFetch,
     scheduleCompareFetch,
+    getAnchorSec,
   } = deps;
 
   const baseOpts = () => ({
@@ -139,15 +140,22 @@ export function createSecurityContext(deps) {
     resolutions,
   });
 
+  /** Replay cursor cap for all series reads (null outside replay). */
+  const anchorSec = () => {
+    const a = typeof getAnchorSec === "function" ? getAnchorSec() : null;
+    return a != null && Number.isFinite(a) ? a : null;
+  };
+
   /** @param {string} [symbol] @param {string} resolution @param {number} [countBack] */
   const lookupSecurity = (symbol, resolution, countBack = 0) => {
     const sym = symbol ?? pane.symbol;
-    return lookupSecuritySeries({
+    const hit = lookupSecuritySeries({
       symbol: sym,
       resolution,
       countBack,
       ...baseOpts(),
     });
+    return sliceSeriesToAnchor(hit, anchorSec());
   };
 
   /** @param {string} [symbol] @param {string} resolution */
@@ -155,7 +163,7 @@ export function createSecurityContext(deps) {
     const sym = symbol ?? pane.symbol;
     const resId = normalizeResolutionId(resolution);
     const hit = lookupSecurity(sym, resId);
-    return mergeWithHtfStore(sym, resId, hit);
+    return sliceSeriesToAnchor(mergeWithHtfStore(sym, resId, hit), anchorSec());
   };
 
   /** Same symbol as chart pane — any resolution. */
@@ -184,11 +192,12 @@ export function createSecurityContext(deps) {
   /** @param {string} symbol @param {string} [resolution] */
   const getCompareBars = (symbol, resolution) => {
     const resId = normalizeResolutionId(resolution ?? pane.resolution);
-    return lookupSymbolBars({
+    const hit = lookupSymbolBars({
       symbol,
       resolution: resId,
       ...baseOpts(),
     });
+    return sliceSeriesToAnchor(hit, anchorSec());
   };
 
   const requestCompareBars = (symbol, countBack) => {

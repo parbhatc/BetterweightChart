@@ -212,6 +212,7 @@ export async function finishSeriesReload(ctx, panes) {
       syncHostReplayViewportAfterTfSwitch(ctx, pane, pane._tfSwitchFromResolution ?? null);
       delete pane._tfSwitchFromResolution;
       delete pane._tfSwitchSavedLayout;
+      delete pane._hostReplayTfSwitchInFlight;
     }
   }
   for (const pane of panes) {

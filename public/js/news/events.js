@@ -8,6 +8,7 @@ export const DEFAULT_NEWS_LEVELS = [
   { enabled: true, label: "PPI", eventId: "ppi" },
   { enabled: true, label: "CPI", eventId: "cpi" },
   { enabled: true, label: "FOMC", eventId: "fomc" },
+  { enabled: true, label: "NFP", eventId: "nfp" },
 ];
 
 /** @param {{ title?: string, event?: string, name?: string }} ev */
@@ -29,6 +30,12 @@ export function isCpiEvent(title) {
   return t === "core cpi m/m" || t === "cpi m/m";
 }
 
+/** @param {string} title — ForexFactory lists NFP as "Non-Farm Employment Change" */
+export function isNfpEvent(title) {
+  const t = String(title ?? "").trim().toLowerCase();
+  return t === "non-farm employment change" || t === "nonfarm employment change";
+}
+
 /** @param {string} title */
 export function isFomcEvent(title) {
   const t = String(title ?? "").trim().toLowerCase();
@@ -42,6 +49,7 @@ export function eventMatchesId(eventId, title) {
   if (id === "ppi") return isPpiEvent(t);
   if (id === "cpi") return isCpiEvent(t);
   if (id === "fomc") return isFomcEvent(t);
+  if (id === "nfp") return isNfpEvent(t);
   if (!id) return false;
   return t.includes(id);
 }
@@ -54,13 +62,19 @@ export function eventMatchesTypes(title, typeIds) {
 /** @param {unknown} raw @returns {NewsLevelRow[]} */
 export function normalizeNewsLevels(raw) {
   if (!Array.isArray(raw)) return DEFAULT_NEWS_LEVELS.map((r) => ({ ...r }));
-  return raw
+  const rows = raw
     .map((r) => ({
       enabled: r?.enabled !== false,
       label: String(r?.label ?? "").trim(),
       eventId: resolveNewsEventId(String(r?.label ?? "").trim(), String(r?.eventId ?? "")),
     }))
     .filter((r) => r.label);
+  // Surface newly-added default event types (e.g. NFP) for users whose
+  // persisted settings predate them; they can still be toggled off in the panel.
+  for (const def of DEFAULT_NEWS_LEVELS) {
+    if (!rows.some((r) => r.eventId === def.eventId)) rows.push({ ...def });
+  }
+  return rows;
 }
 
 /** @param {object} inputs @returns {NewsLevelRow[]} */
@@ -79,11 +93,12 @@ export function enabledNewsTypeIds(rows) {
 /** @param {string} label @param {string} [storedId] */
 export function resolveNewsEventId(label, storedId) {
   const id = String(storedId ?? "").trim().toLowerCase();
-  if (id && ["ppi", "cpi", "fomc"].includes(id)) return id;
+  if (id && ["ppi", "cpi", "fomc", "nfp"].includes(id)) return id;
   const lower = label.toLowerCase();
   if (lower.includes("ppi")) return "ppi";
   if (lower.includes("cpi")) return "cpi";
   if (lower.includes("fomc")) return "fomc";
+  if (lower.includes("nfp") || lower.includes("non-farm") || lower.includes("nonfarm")) return "nfp";
   return id || lower.replace(/\s+/g, "-") || "custom";
 }
 
@@ -101,20 +116,24 @@ export function releaseDayKindFromEvents(events, rows) {
   if (filtered.some((ev) => ids.includes("ppi") && isPpiEvent(eventTitle(ev)))) return "ppi";
   if (filtered.some((ev) => ids.includes("cpi") && isCpiEvent(eventTitle(ev)))) return "cpi";
   if (filtered.some((ev) => ids.includes("fomc") && isFomcEvent(eventTitle(ev)))) return "fomc";
+  if (filtered.some((ev) => ids.includes("nfp") && isNfpEvent(eventTitle(ev)))) return "nfp";
   return null;
 }
 
 export const PPI_COLOR = "#ff8c00";
 export const CPI_COLOR = "#6366f1";
 export const FOMC_COLOR = "#eab308";
+export const NFP_COLOR = "#22c55e";
 
-/** @param {"ppi"|"cpi"|"fomc"|null|undefined} kind */
+/** @param {"ppi"|"cpi"|"fomc"|"nfp"|null|undefined} kind */
 export function releaseMetaFromKind(kind) {
   switch (kind) {
     case "cpi":
       return { prefix: "CPI", color: CPI_COLOR };
     case "fomc":
       return { prefix: "FOMC", color: FOMC_COLOR };
+    case "nfp":
+      return { prefix: "NFP", color: NFP_COLOR };
     case "ppi":
     default:
       return { prefix: "PPI", color: PPI_COLOR };
@@ -137,6 +156,7 @@ export function buildReleasePlan(newsByDay, rows) {
       if (kind === "ppi") return isPpiEvent(t);
       if (kind === "cpi") return isCpiEvent(t);
       if (kind === "fomc") return isFomcEvent(t);
+      if (kind === "nfp") return isNfpEvent(t);
       return false;
     });
     const { prefix, color } = releaseMetaFromKind(kind);

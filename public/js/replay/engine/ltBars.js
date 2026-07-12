@@ -118,7 +118,14 @@ export function createReplayLtBars(ctx, replay, state) {
     }
 
     const cached = state.replayBarsByResolution.get(activePane.resolution);
-    if (cached?.bars?.length && barsCoverReplayAnchor(cached.bars, cursorUtc, paneSec)) {
+    // A cached series written before the cursor advanced (steps taken on another
+    // TF) has a stale forming bar — its OHLC misses those steps. Only restore
+    // when it was captured at this exact cursor; otherwise fetch fresh.
+    const cachedFresh =
+      cached?.cursorUtc == null || !isReplayHostControlled(ctx)
+        ? true
+        : cached.cursorUtc >= cursorUtc;
+    if (cached?.bars?.length && cachedFresh && barsCoverReplayAnchor(cached.bars, cursorUtc, paneSec)) {
       activePane.bars = trimBarsToUtcTime(cached.bars, cursorUtc);
       invalidatePaneChartView(activePane);
       replayDebug("resolutionChange.restoreCached", {
@@ -225,6 +232,12 @@ export function createReplayLtBars(ctx, replay, state) {
    */
   function beforeResolutionChange(pane, opts = {}) {
     const rs = replay.getState();
+    // TF switch invalidates the forward stash (it holds OLD-resolution bars; once
+    // pane.resolution flips, validForwardStash would happily append them into the
+    // new series → minute-range candles on a 30s chart). Also mark the switch in
+    // flight so host cursor syncs don't trim/stash old bars under the new label.
+    delete pane._hostReplayForwardBars;
+    if (isReplayHostControlled(ctx)) pane._hostReplayTfSwitchInFlight = true;
     const cursorUtc = resolveReplayCursorUtc(pane);
     if (!rs.active || cursorUtc == null) {
       clearLtBarsStash();

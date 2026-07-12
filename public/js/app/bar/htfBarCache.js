@@ -39,8 +39,10 @@ export function htfCacheStaleForAnchor(symbol, resolution, anchorSec) {
   const lastOpen = entry.utcBars.at(-1)?.time;
   if (lastOpen == null) return false;
   const anchorOpen = alignBarTime(anchorSec, tfSec);
-  // ponytail: pivot-right needs the next HTF bucket closed through anchor
-  return lastOpen < anchorOpen - tfSec;
+  // Refetch as soon as the anchor enters a bucket past the last stored one — this also
+  // finalizes the previously-partial last bucket (fetched with to=old anchor) so it isn't
+  // counted as a confirmed bar with truncated OHLC for a whole extra bucket.
+  return lastOpen < anchorOpen;
 }
 
 /**
@@ -100,7 +102,17 @@ export async function extendHtfCacheForAnchor(opts) {
     }
     const merged = [...byTime.values()].sort((a, b) => a.time - b.time);
     if (!merged.length) return entry ?? null;
-    if (entry && merged.length === base.length) return entry;
+    // Same length can still mean the last (previously partial) bucket got finalized OHLC.
+    const prevLast = base.at(-1);
+    const nextLast = merged.at(-1);
+    const lastUnchanged =
+      prevLast &&
+      nextLast &&
+      prevLast.time === nextLast.time &&
+      prevLast.high === nextLast.high &&
+      prevLast.low === nextLast.low &&
+      prevLast.close === nextLast.close;
+    if (entry && merged.length === base.length && lastUnchanged) return entry;
 
     const next = {
       utcBars: merged,
@@ -366,9 +378,10 @@ async function fetchHtfBars(opts) {
     utcBars,
     chartBars,
     // A short fetch is NOT exhaustion — wall-clock `from` over gaps/weekends can
-    // return fewer bars than wanted. Only a replay anchor caps history here;
-    // prependHtfBars is the sole authority for true exhaustion (noData / no older bars).
-    historyExhausted: opts.playbackAnchorSec != null,
+    // return fewer bars than wanted, and an anchored fetch only caps the tail.
+    // prependHtfBars is the sole authority for true exhaustion (noData / no older bars);
+    // marking anchored fetches exhausted permanently blocked history refills after rewinds.
+    historyExhausted: existing?.historyExhausted ?? false,
     updatedAt: Date.now(),
     source: utcBars.length >= want ? cacheSource : "datafeed",
   };

@@ -69,15 +69,24 @@ export function alignUtcBarsByChartTime(primaryChart, primaryUtc, cmpUtc, cmpCha
   const byUtc = new Map();
   /** @type {Map<number, object>} */
   const byChart = new Map();
+  // The chart-time fallback is only meaningful when the compare series carries
+  // real tz-aligned chart times. Store/cache-sourced series reuse UTC bars as
+  // chartBars — falling back there matches a compare bar hours away (chart
+  // display time vs UTC), fabricating divergences on missing-bar gaps.
+  let hasDistinctChartTimes = false;
   for (let i = 0; i < cmpUtc.length; i++) {
     const utcT = cmpUtc[i]?.time;
     if (utcT != null) byUtc.set(utcT, cmpUtc[i]);
     const chartT = cmpChart[i]?.time;
-    if (chartT != null) byChart.set(chartT, cmpUtc[i]);
+    if (chartT != null) {
+      byChart.set(chartT, cmpUtc[i]);
+      if (chartT !== utcT) hasDistinctChartTimes = true;
+    }
   }
   return primaryChart.map((b, i) => {
     const utcT = primaryUtc[i]?.time;
     if (utcT != null && byUtc.has(utcT)) return byUtc.get(utcT);
+    if (!hasDistinctChartTimes && utcT != null && b.time !== utcT) return null;
     return byChart.get(b.time) ?? null;
   });
 }

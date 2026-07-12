@@ -90,6 +90,11 @@ export function createReplayHostSync(ctx, replay, state) {
   /** @param {object} pane */
   function applyHostReplayCursorToPane(pane) {
     if (!pane?.bars?.length) return null;
+    // Mid-TF-switch: pane.resolution is already the NEW timeframe while
+    // pane.bars still hold the OLD one. Trimming/stashing here would label
+    // old-resolution bars with the new resolution and later append e.g. 1m
+    // bars into a 30s series (giant candles). Skip; the switch epilogue syncs.
+    if (pane._hostReplayTfSwitchInFlight) return null;
 
     const anchorUtc =
       typeof ctx.opts?.getPlaybackAnchorSec === "function"

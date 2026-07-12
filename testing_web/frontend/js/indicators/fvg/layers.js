@@ -1,7 +1,12 @@
 import { getHtfBars } from "/js/app/bar/htfBarCache.js";
 import { aggregateBars } from "/js/indicators/math/aggregate.js";
 import { mapUtcTimeToChartTime } from "/js/indicators/math/barTimeMap.js";
-import { getSecuritySeries, mapHtfBarsToSeries, requestSecuritySeries } from "/js/indicators/security/htfAccess.js";
+import {
+  getSecuritySeries,
+  mapHtfBarsToSeries,
+  requestSecuritySeries,
+  sliceSeriesToAnchor,
+} from "/js/indicators/security/htfAccess.js";
 import { aggregateReplayFormingBar } from "/js/replay/formingBar.js";
 import { fvgAtBar } from "./detect.js";
 import { onBarLayer, scanLayerSeries } from "./zones.js";
@@ -70,7 +75,16 @@ export function buildCompareLayerSeries(alignedCompare, chartBars, layer, chartS
     return { series, startIdx: Math.max(2, alignedCompare.length - maxBack) };
   }
 
-  const htf = getHtfBars(compareSymbol, layer.tfId);
+  // Cap the raw compare store at the replay position — it is append-only and
+  // cursor-blind; the last non-null aligned bar is the newest bar we may see.
+  let lastAlignedUtc = null;
+  for (let i = alignedCompare.length - 1; i >= 0; i--) {
+    if (alignedCompare[i]?.time != null) {
+      lastAlignedUtc = alignedCompare[i].time;
+      break;
+    }
+  }
+  const htf = sliceSeriesToAnchor(getHtfBars(compareSymbol, layer.tfId), lastAlignedUtc);
   if (htf?.utcBars?.length) {
     const series = mapHtfBarsToSeries(htf);
     return { series, startIdx: Math.max(2, series.length - maxBack) };
