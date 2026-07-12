@@ -1,10 +1,5 @@
 import { chartDebug } from "../../../debug/chart/index.js";
-import {
-  pivotBarIndex,
-  pivotHighAtSparse,
-  pivotLens,
-  pivotLowAtSparse,
-} from "../../math/pivots.js";
+import { pivotBarIndex, pivotLens } from "../../math/pivots.js";
 import { symbolTicker } from "../../../app/symbol/ticker.js";
 import { BarScriptIndicator } from "../../BarScriptIndicator.js";
 import {
@@ -205,25 +200,34 @@ class SmtIndicator extends BarScriptIndicator {
     const lastIdx = this.bars.length - 1;
     if (waitClose && this.index === lastIdx) return;
 
-    // Correlated symbols often print the "same" swing one bar apart (the classic
-    // SMT setup). Exact same-index matching drops those pairs entirely, so allow
-    // the compare pivot within ±pivotSync bars (0 = strict same-index).
+    // TradingView-style SMT: at each chart-symbol swing, compare the COMPARE
+    // symbol's price extreme over the same bars (±pivotSync) — not a same-index
+    // compare-pivot, which rarely lines up and froze the pair state so lines
+    // bridged distant swings straight through candles.
     const maxDetectIdx = waitClose ? lastIdx - 1 : lastIdx;
     const sync = this.state.pivotSync ?? 0;
-    const symPivotNear = (finder) => {
-      for (let k = 0; k <= sync; k++) {
-        for (const j of k === 0 ? [this.index] : [this.index - k, this.index + k]) {
-          if (j < 0 || j > maxDetectIdx) continue;
-          const v = finder(compareUtc, j, left, right);
-          if (v != null) return v;
-        }
+    const symExtremeAt = (pivotIdx, key, better) => {
+      let v = null;
+      for (let j = Math.max(0, pivotIdx - sync); j <= Math.min(maxDetectIdx, pivotIdx + sync); j++) {
+        const bar = compareUtc[j];
+        if (!bar) continue;
+        const p = bar[key];
+        if (p == null) continue;
+        v = v == null ? p : better(v, p);
       }
-      return null;
+      return v;
     };
 
     const ph = this.math.pivotHigh(left, right);
-    const symPh = ph != null ? symPivotNear(pivotHighAtSparse) : null;
+    const symPh = ph != null ? symExtremeAt(pivotBarIndex(this.index, right), "high", Math.max) : null;
 
+    if (ph != null && symPh == null) {
+      // No compare data at this swing — drop the pair so the next divergence
+      // can't bridge across it through candles.
+      this.state.lastPh = null;
+      this.state.lastSymPh = null;
+      this.state.lastPhBarIdx = null;
+    }
     if (ph != null && symPh != null) {
       if (
         showHigh &&
@@ -265,8 +269,13 @@ class SmtIndicator extends BarScriptIndicator {
     }
 
     const pl = this.math.pivotLow(left, right);
-    const symPl = pl != null ? symPivotNear(pivotLowAtSparse) : null;
+    const symPl = pl != null ? symExtremeAt(pivotBarIndex(this.index, right), "low", Math.min) : null;
 
+    if (pl != null && symPl == null) {
+      this.state.lastPl = null;
+      this.state.lastSymPl = null;
+      this.state.lastPlBarIdx = null;
+    }
     if (pl != null && symPl != null) {
       if (
         showLow &&
