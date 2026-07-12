@@ -29,6 +29,7 @@ import {
   preparePanesForSeriesReload,
   prepareHtfBeforeTimeframeSwitch,
 } from "./chart/pickers.js";
+import { createIndicatorsApi } from "../../indicators/widgetApi.js";
 
 /**
  * Public chart widget API returned from bootChart().
@@ -578,6 +579,19 @@ export function createChartWidgetApi(ctx) {
       return logIndicatorDebugSnapshot(ctx, indicatorController, opts);
     },
 
+    /**
+     * Add / remove indicators by catalog id.
+     * @example
+     * widget.indicators.add("ema")
+     * widget.indicators.remove("ema")
+     * widget.indicators.available()
+     */
+    indicators: createIndicatorsApi({
+      getController: () => ctx.indicatorController,
+      getActivePane,
+      ensureData: () => ctx.ensureIndicatorData?.(),
+    }),
+
     /** Bar replay controls for host UI (see replayToolbar: "external" boot option). */
     replay: createReplayControlApi({ replay: ctxReplay, replayEngine }),
 
@@ -603,8 +617,9 @@ export function createChartWidgetApi(ctx) {
       releaseTouchScrollLock?.();
       destroyDebugHud();
       ctx.tzClock?.destroy?.();
-      if (typeof window !== "undefined" && window.__BWC_WIDGET__ === widget) {
-        delete window.__BWC_WIDGET__;
+      if (typeof window !== "undefined") {
+        if (window.__BWC_WIDGET__ === widget) delete window.__BWC_WIDGET__;
+        if (window.bwc === widget) delete window.bwc;
       }
     },
   };

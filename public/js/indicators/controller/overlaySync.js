@@ -40,6 +40,7 @@ const OVERLAY_PRIMITIVE_ATTACH = {
  * @param {(pane: object) => { utcBars: object[], chartBars: object[] }} deps.getPaneBars
  * @param {() => Map<string, import("../types.js").IndicatorInstance>} deps.getInstances
  * @param {(pane: object) => object} [deps.getOverlayContext]
+ * @param {(paneIndex: number) => void} [deps.requestOverlayResync]
  */
 export function createOverlaySync(deps) {
   const { getPaneBars, getInstances, getOverlayContext, emit, getIndicatorClass } = deps;
@@ -178,11 +179,30 @@ export function createOverlaySync(deps) {
     } else if (cacheHit && !refreshLiveOnCacheHit) {
       overlayData = instance._overlayBoxCache;
     } else {
-      overlayData = Indicator.computeOverlay?.(utcBars, chartBars, instance, overlayCtx) ?? [];
-      if (!instance._initPending) {
-        instance._overlayRecomputeKey = recomputeKey;
-        instance._overlayBoxCache = overlayData;
-        instance._overlayGeomKey = overlayGeometryKey(overlayData);
+      const throttleMs = Indicator.overlayRecomputeThrottleMs;
+      const now = performance.now();
+      if (
+        throttleMs != null &&
+        Array.isArray(instance._overlayBoxCache) &&
+        !instance._initPending &&
+        now - (instance._lastOverlayComputeAt ?? 0) < throttleMs
+      ) {
+        overlayData = instance._overlayBoxCache;
+        clearTimeout(instance._overlayThrottleTimer);
+        instance._overlayThrottleTimer = setTimeout(() => {
+          instance._overlayThrottleTimer = undefined;
+          deps.requestOverlayResync?.(instance.paneIndex);
+        }, throttleMs);
+      } else {
+        clearTimeout(instance._overlayThrottleTimer);
+        instance._overlayThrottleTimer = undefined;
+        overlayData = Indicator.computeOverlay?.(utcBars, chartBars, instance, overlayCtx) ?? [];
+        instance._lastOverlayComputeAt = performance.now();
+        if (!instance._initPending) {
+          instance._overlayRecomputeKey = recomputeKey;
+          instance._overlayBoxCache = overlayData;
+          instance._overlayGeomKey = overlayGeometryKey(overlayData);
+        }
       }
     }
 

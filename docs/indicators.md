@@ -4,6 +4,21 @@ Detailed per-indicator function inventory lives in `docs/indicators-reference.md
 
 Add a custom indicator by extending **`BarScriptIndicator`** (per-bar / Pine-style) or **`ComputeIndicator`** (batch math). Use **`builders.js`** for plots, fills, and inputs.
 
+## Programmatic add / remove
+
+After `bootChart()`, use the widget API (also exposed as `window.bwc`):
+
+```javascript
+bwc.indicators.add("ema")
+bwc.indicators.add("rsi", { inputs: { length: 21 } })
+bwc.indicators.remove("ema")       // all EMA instances, or pass an instance id
+bwc.indicators.clear()             // remove every indicator
+bwc.indicators.list()              // active instances
+bwc.indicators.available()         // [{ id, title, shortTitle }, ...]
+```
+
+Built-in ids include `ema`, `rsi`, `macd`, `volume`, `pivot_points_hl`, `smt` (plus any host-registered studies).
+
 ## Adding an indicator (one command)
 
 ```bash

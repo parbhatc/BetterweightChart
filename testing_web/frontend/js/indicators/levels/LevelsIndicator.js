@@ -19,6 +19,8 @@ import { htfSeriesRecomputeKey } from "/js/indicators/security/htfPolicy.js";
 
 class LevelsIndicator extends BarScriptIndicator {
 
+  static overlayRecomputeThrottleMs = 100;
+
   constructor() {
     super("levels", "Levels", "Levels");
     this.setOverlayPrimitive("lines");

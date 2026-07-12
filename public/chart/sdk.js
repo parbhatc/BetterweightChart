@@ -17,6 +17,7 @@ export {
   registerIndicator,
   listIndicators,
   getIndicatorClass,
+  createIndicatorsApi,
   createTradingViewChartApi,
   createOrderLineManager,
   createPositionOverlay,

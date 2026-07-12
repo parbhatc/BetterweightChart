@@ -351,6 +351,9 @@ export class BaseIndicator {
   /** @type {string | null} Canvas overlay primitive (`labels`, etc.) — no LWC series plots */
   static overlayPrimitive = null;
 
+  /** @type {number | null} Minimum delay between full overlay recomputes */
+  static overlayRecomputeThrottleMs = null;
+
   /** @type {import("./types.js").GraphicObjectDef[]} Style-tab Graphic objects toggles */
   static graphicObjects = [];
 

@@ -21,6 +21,7 @@ export {
 } from "./datafeed/index.js";
 export { createDatafeed as createBrowserDatafeed } from "./datafeed/client.js";
 export { registerIndicator, listIndicators, getIndicatorClass } from "./indicators/catalog.js";
+export { createIndicatorsApi } from "./indicators/widgetApi.js";
 export { createTradingViewChartApi, createOrderLineManager, createPositionOverlay } from "./chart/orderLine/index.js";
 export { createExecutionShapeManager } from "./chart/executionShape/index.js";
 export { registerTradeContextActions,

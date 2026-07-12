@@ -7,11 +7,10 @@ export class FvgHtf {
   /** @param {object} inputs @param {string} [chartResolution] @returns {{ tfId: string, tfSec: number }[]} */
   enabledResolutions(inputs, chartResolution) {
     const chartSec = resolutionSec(chartResolution ?? "1");
-    let out = resolveFvgLayers(inputs, chartSec).filter((l) => l.tfSec > chartSec);
-    if (inputs.hideLowerTf !== false && out.length) {
-      const maxSec = Math.max(...out.map((l) => l.tfSec));
-      out = out.filter((l) => l.tfSec === maxSec);
-    }
+    // Every enabled HTF row needs its own data — do not collapse to the highest TF, or lower
+    // explicitly-enabled rows (e.g. 15m alongside 1h) render with no HTF bars. Matches
+    // applyHideLowerTfFilter: per-row enables are authoritative.
+    const out = resolveFvgLayers(inputs, chartSec).filter((l) => l.tfSec > chartSec);
     return out.map(({ tfId, tfSec }) => ({ tfId, tfSec }));
   }
 

@@ -41,6 +41,9 @@ export function overlayRecomputeKey(instance, chartBars, Indicator) {
 
 /** @param {object} instance @param {object} opts */
 export function clearOverlayInstanceCache(instance, opts = {}) {
+  clearTimeout(instance._overlayThrottleTimer);
+  instance._overlayThrottleTimer = undefined;
+  instance._lastOverlayComputeAt = undefined;
   instance._overlayRecomputeKey = undefined;
   instance._overlayGeomKey = undefined;
   instance._overlayBoxCache = undefined;

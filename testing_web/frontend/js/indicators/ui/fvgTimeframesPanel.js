@@ -127,21 +127,17 @@ export function resolveFvgLayers(inputs, chartSec) {
 }
 
 /**
- * When hideLowerTf is on, drop lower-TF layers only if the chart timeframe row is not enabled.
- * If the user explicitly enabled chart + HTF rows, keep both (chart may still be removed when it
- * duplicates an explicit row at the same resolution — see dedupeRedundantChartLayer).
+ * Each explicitly-enabled timeframe row renders its FVGs independently — the per-row enable
+ * checkbox is authoritative. Toggling the chart row off must leave the 15m/1h rows intact
+ * (and vice-versa). `hideLowerTf` therefore no longer collapses enabled rows to the highest
+ * timeframe; a chart layer that exactly duplicates an explicit same-resolution row is still
+ * removed by dedupeRedundantChartLayer.
  * @param {{ tfSec: number, tfId: string, label: string }[]} layers
- * @param {object} inputs
- * @param {number} chartSec
+ * @param {object} _inputs
+ * @param {number} _chartSec
  */
-export function applyHideLowerTfFilter(layers, inputs, chartSec) {
-  if (inputs.hideLowerTf === false || !layers.length) return layers;
-  const chartRowEnabled = resolveFvgTimeframeRows(inputs).some(
-    (row) => row.enabled && (row.timeframe ?? "chart") === "chart",
-  );
-  if (chartRowEnabled) return layers;
-  const maxSec = Math.max(...layers.map((l) => l.tfSec));
-  return layers.filter((l) => l.tfSec === maxSec);
+export function applyHideLowerTfFilter(layers, _inputs, _chartSec) {
+  return layers;
 }
 
 /**

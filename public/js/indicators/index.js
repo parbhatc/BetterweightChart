@@ -49,6 +49,7 @@ export {
   createIndicatorInstance,
 } from "./catalog.js";
 export { createIndicatorController } from "./controller.js";
+export { createIndicatorsApi } from "./widgetApi.js";
 export { firstBarIndexAtOrAfter, lastBarIndexAtOrBefore } from "./script/barIndex.js";
 export {
   createMatrix,

@@ -249,12 +249,13 @@ export async function bootChart(overrides = {}) {
     };
     if (typeof window !== "undefined") {
       window.__BWC_WIDGET__ = widget;
+      window.bwc = widget;
       window.__BWC_UI__ = ctx.ui;
       if (debugOn) {
         chartDebug("boot", "widget API", {
           getBars: typeof widget.getBars === "function",
           fetchBars: typeof widget.fetchBars === "function",
-          hint: "window.__BWC_WIDGET__.visibleBars(), .replaySnapshot(), .indicatorSnapshot()",
+          hint: 'bwc.indicators.add("ema"), bwc.indicators.remove("ema"), bwc.visibleBars()',
         });
       }
     }

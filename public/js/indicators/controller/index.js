@@ -43,6 +43,9 @@ export function createIndicatorController(opts) {
     return isInstanceVisibleOnPane(instance, paneIndex, getAllChartPanes);
   }
 
+  /** @type {{ refresh: ReturnType<typeof createRefresh> | null }} */
+  const pending = { refresh: null };
+
   const overlaySync = createOverlaySync({
     getAllChartPanes,
     getPaneBars,
@@ -51,6 +54,7 @@ export function createIndicatorController(opts) {
     isInstanceVisibleOnPane: isVisibleOnPane,
     getOverlayContext,
     emit,
+    requestOverlayResync: (paneIndex) => pending.refresh?.refreshOverlaysForPane(paneIndex),
   });
 
   const seriesSync = createSeriesSync({
@@ -61,9 +65,6 @@ export function createIndicatorController(opts) {
     syncOverlayPrimitive: overlaySync.syncOverlayPrimitive,
     useStackedScaleLabels,
   });
-
-  /** @type {{ refresh: ReturnType<typeof createRefresh> | null }} */
-  const pending = { refresh: null };
 
   const lifecycle = createLifecycle({
     paneByIndex,
