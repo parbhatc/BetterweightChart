@@ -61,7 +61,7 @@ export function showRemoveLockedConfirmDialog(handlers) {
     close();
   });
 
-  overlay.addEventListener("mousedown", (ev) => {
+  overlay.addEventListener("pointerdown", (ev) => {
     if (ev.target === overlay) {
       handlers.onNo();
       close();

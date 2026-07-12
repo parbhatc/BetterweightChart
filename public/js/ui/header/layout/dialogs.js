@@ -78,7 +78,7 @@ export function showLayoutNameDialog(opts) {
     document.addEventListener("keydown", onKey);
     overlay.querySelector("[data-cancel]")?.addEventListener("click", () => close(null));
     overlay.querySelector("[data-confirm]")?.addEventListener("click", submit);
-    overlay.addEventListener("mousedown", (ev) => {
+    overlay.addEventListener("pointerdown", (ev) => {
       if (ev.target === overlay) close(null);
     });
   });
@@ -135,7 +135,7 @@ export function showLayoutConfirmDialog(opts) {
     document.addEventListener("keydown", onKey);
     overlay.querySelector("[data-cancel]")?.addEventListener("click", () => close(false));
     overlay.querySelector("[data-confirm]")?.addEventListener("click", () => close(true));
-    overlay.addEventListener("mousedown", (ev) => {
+    overlay.addEventListener("pointerdown", (ev) => {
       if (ev.target === overlay) close(false);
     });
   });

@@ -75,14 +75,32 @@ export function barIndexToTime(barIdx, bars, barSec) {
 }
 
 /** Index of last real (non-whitespace) bar in bars array. */
+let _rlbiBars = null;
+let _rlbiLen = -1;
+let _rlbiTime = null;
+let _rlbiIdx = -1;
 function realLastBarIndex(bars, lastRealChartTime) {
   if (!bars.length) return -1;
   if (lastRealChartTime == null) return bars.length - 1;
-  let idx = 0;
-  for (let i = 0; i < bars.length; i += 1) {
-    if (bars[i].time <= lastRealChartTime) idx = i;
-    else break;
+  if (bars === _rlbiBars && bars.length === _rlbiLen && lastRealChartTime === _rlbiTime) {
+    return _rlbiIdx;
   }
+  // Binary search: last index with time <= lastRealChartTime (bars sorted ascending).
+  let idx = 0;
+  if (bars[0].time <= lastRealChartTime) {
+    let lo = 0;
+    let hi = bars.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (bars[mid].time <= lastRealChartTime) lo = mid;
+      else hi = mid - 1;
+    }
+    idx = lo;
+  }
+  _rlbiBars = bars;
+  _rlbiLen = bars.length;
+  _rlbiTime = lastRealChartTime;
+  _rlbiIdx = idx;
   return idx;
 }
 

@@ -685,6 +685,25 @@ export function createPointerHandlers(api) {
     else api.repinDrawCrosshair?.();
   }
 
+  // Double-tap (touch) → same behavior as dblclick, which touch browsers don't reliably fire.
+  let lastTapAt = 0;
+  let lastTapX = 0;
+  let lastTapY = 0;
+  function onChartPointerUpForDoubleTap(ev) {
+    if (ev.pointerType !== "touch") return;
+    const now = ev.timeStamp || performance.now();
+    const isDoubleTap =
+      now - lastTapAt < 350 &&
+      Math.abs(ev.clientX - lastTapX) < 24 &&
+      Math.abs(ev.clientY - lastTapY) < 24;
+    lastTapAt = now;
+    lastTapX = ev.clientX;
+    lastTapY = ev.clientY;
+    if (!isDoubleTap) return;
+    lastTapAt = 0;
+    onChartDoubleClick(ev);
+  }
+
   function onCrosshairMove(param) {
     if (!["dot", "demonstration"].includes(api.getActiveTool())) return;
     if (param?.point) api.updateCursorMark(0, 0, param.point);
@@ -700,6 +719,7 @@ export function createPointerHandlers(api) {
   function bindChartListeners() {
     api.container.addEventListener("pointerdown", onChartPointerDown, true);
     api.container.addEventListener("dblclick", onChartDoubleClick, true);
+    api.container.addEventListener("pointerup", onChartPointerUpForDoubleTap, true);
     api.container.addEventListener("lostpointercapture", onLostPointerCapture);
     api.overlayRoot.addEventListener("pointermove", onPointerMove);
     api.container.addEventListener("pointermove", onPointerMove);
@@ -714,6 +734,7 @@ export function createPointerHandlers(api) {
   function unbindChartListeners() {
     api.container.removeEventListener("pointerdown", onChartPointerDown, true);
     api.container.removeEventListener("dblclick", onChartDoubleClick, true);
+    api.container.removeEventListener("pointerup", onChartPointerUpForDoubleTap, true);
     api.container.removeEventListener("lostpointercapture", onLostPointerCapture);
     api.overlayRoot.removeEventListener("pointermove", onPointerMove);
     api.container.removeEventListener("pointermove", onPointerMove);

@@ -1,3 +1,5 @@
+import { installLongPressContextMenu } from "./longPress.js";
+
 /** @typedef {{ close: () => void, isOpen: () => boolean, contains: (node: Node) => boolean }} ContextMenuEntry */
 
 /** @type {Set<ContextMenuEntry>} */
@@ -52,6 +54,7 @@ function attachOutsideListener() {
 export function registerContextMenu(entry) {
   menus.add(entry);
   attachOutsideListener();
+  installLongPressContextMenu();
   return () => menus.delete(entry);
 }
 

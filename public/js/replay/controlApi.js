@@ -53,7 +53,7 @@ export function createReplayControlApi(deps) {
     setSpeed: (speed) => replay.setSpeed(speed),
     setStepInterval: (stepInterval) => replay.setStepInterval(stepInterval),
     setAutoSelectInterval: (on) => replay.setAutoSelectInterval(on),
-    setReplayPosition: (pos) => replay.setReplayPosition?.(pos),
+    setReplayPosition: (pos, opts) => replay.setReplayPosition?.(pos, opts),
     getMaxBarIndex: () => replayEngine?.getMaxBarIndex?.() ?? null,
     hasForwardBars: () => replayEngine?.hasForwardBars?.() ?? false,
     getCursorBarIndex: () =>

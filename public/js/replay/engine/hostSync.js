@@ -222,12 +222,15 @@ export function createReplayHostSync(ctx, replay, state) {
 
     if (activeResult) {
       const { cursorUtc, currentIdx, bars } = activeResult;
-      replay.setReplayPosition({
-        selectedBarIndex: currentIdx,
-        currentBarIndex: currentIdx,
-        selectedBarTime: bars[currentIdx]?.time ?? cursorUtc,
-        currentBarTime: cursorUtc,
-      });
+      replay.setReplayPosition(
+        {
+          selectedBarIndex: currentIdx,
+          currentBarIndex: currentIdx,
+          selectedBarTime: bars[currentIdx]?.time ?? cursorUtc,
+          currentBarTime: cursorUtc,
+        },
+        { keepPlaying: true },
+      );
       state.lastAppliedEndIndex = currentIdx;
       state.lastAppliedBarTime = cursorUtc;
     }

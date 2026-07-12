@@ -155,15 +155,18 @@ export function mountReplayMode(opts) {
         playing: opts.fromPlayback ? state.playing : false,
       });
     },
-    /** @param {{ selectedBarIndex: number, currentBarIndex: number, selectedBarTime: number, currentBarTime: number }} pos */
-    setReplayPosition: (pos) => {
+    /**
+     * @param {{ selectedBarIndex: number, currentBarIndex: number, selectedBarTime: number, currentBarTime: number }} pos
+     * @param {{ keepPlaying?: boolean }} [opts] keepPlaying: host-driven step — don't force-pause
+     */
+    setReplayPosition: (pos, opts = {}) => {
       if (!state.active) return;
       patch({
         selectedBarIndex: pos.selectedBarIndex,
         currentBarIndex: pos.currentBarIndex,
         selectedBarTime: pos.selectedBarTime,
         currentBarTime: pos.currentBarTime,
-        playing: false,
+        playing: opts.keepPlaying ? state.playing : false,
         selectingBar: false,
       });
     },

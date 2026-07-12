@@ -394,6 +394,7 @@ export function mountReplayToolbar(opts) {
   });
 
   selectModeBtn?.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  selectModeBtn?.addEventListener("pointerdown", (ev) => ev.stopPropagation());
 
   modeMenu?.querySelectorAll("[data-mode]").forEach((el) => {
     el.addEventListener("click", (ev) => {
@@ -454,11 +455,13 @@ export function mountReplayToolbar(opts) {
     }
   });
 
-  modeMenu?.addEventListener("mousedown", (ev) => ev.stopPropagation());
-  speedMenu?.addEventListener("mousedown", (ev) => ev.stopPropagation());
-  intervalMenu?.addEventListener("mousedown", (ev) => ev.stopPropagation());
+  for (const type of ["mousedown", "pointerdown"]) {
+    modeMenu?.addEventListener(type, (ev) => ev.stopPropagation());
+    speedMenu?.addEventListener(type, (ev) => ev.stopPropagation());
+    intervalMenu?.addEventListener(type, (ev) => ev.stopPropagation());
+  }
 
-  document.addEventListener("mousedown", (ev) => {
+  const onOutsidePress = (ev) => {
     if (!(ev.target instanceof Node)) return;
     if (isModeMenuOpen()) {
       if (selectWrap?.contains(ev.target)) return;
@@ -475,7 +478,9 @@ export function mountReplayToolbar(opts) {
       if (intervalMenu?.contains(ev.target)) return;
       closeIntervalMenu();
     }
-  });
+  };
+  document.addEventListener("mousedown", onOutsidePress);
+  document.addEventListener("pointerdown", onOutsidePress);
 
   window.addEventListener("resize", () => {
     if (isModeMenuOpen()) positionMenu(selectModeBtn, modeMenu);

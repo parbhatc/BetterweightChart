@@ -70,8 +70,8 @@ export function mountDialogDrag(dialogEl, handleEl) {
   let originX = 0;
   let originY = 0;
 
-  /** @param {MouseEvent} ev */
-  function onMouseMove(ev) {
+  /** @param {PointerEvent} ev */
+  function onPointerMove(ev) {
     if (!dragging) return;
     const x = originX + (ev.clientX - startX);
     const y = originY + (ev.clientY - startY);
@@ -81,14 +81,15 @@ export function mountDialogDrag(dialogEl, handleEl) {
     dialogEl.style.top = `${Math.min(maxY, Math.max(8, y))}px`;
   }
 
-  function onMouseUp() {
+  function onPointerUp() {
     dragging = false;
-    document.removeEventListener("mousemove", onMouseMove);
-    document.removeEventListener("mouseup", onMouseUp);
+    document.removeEventListener("pointermove", onPointerMove);
+    document.removeEventListener("pointerup", onPointerUp);
+    document.removeEventListener("pointercancel", onPointerUp);
   }
 
-  handleEl.addEventListener("mousedown", (ev) => {
-    if (ev.button !== 0) return;
+  handleEl.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0 && ev.pointerType === "mouse") return;
     const target = ev.target;
     if (target instanceof Element && target.closest("button, input, select, textarea, label")) return;
     dragging = true;
@@ -102,10 +103,12 @@ export function mountDialogDrag(dialogEl, handleEl) {
     dialogEl.style.left = `${originX}px`;
     dialogEl.style.top = `${originY}px`;
     dialogEl.style.transform = "none";
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("pointermove", onPointerMove);
+    document.addEventListener("pointerup", onPointerUp);
+    document.addEventListener("pointercancel", onPointerUp);
     ev.preventDefault();
   });
+  handleEl.style.touchAction = "none";
 }
 
 /** @param {HTMLElement} dialogEl */
