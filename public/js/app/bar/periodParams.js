@@ -2,7 +2,10 @@ export const DEFAULT_INITIAL_COUNT_BACK = 500;
 /** Scroll-back chunk cap — TV prefetches smaller batches than the first load. */
 export const DEFAULT_HISTORY_CHUNK = 200;
 const COUNT_BACK_MIN = 50;
-const COUNT_BACK_MAX = 2000;
+// 4000 so session-level indicators (30h lookback = 3600 bars on a 30s chart) fit
+// in the FIRST request — the prepend top-up loop is best-effort and can be
+// interrupted (panning, TF switch), which silently dropped Asia/London lines.
+const COUNT_BACK_MAX = 4000;
 
 /**
  * Estimate bars needed from chart viewport (TV derives countBack from pixel width / bar spacing).

@@ -782,7 +782,7 @@ export function createBarLoader(opts) {
           alignBarTime(Date.now() / 1000, barSec);
         loadTo = end;
         requestCountBack = Math.min(
-          2000,
+          4000, // keep in sync with COUNT_BACK_MAX — session levels need 3600 bars on 30s
           estimateReplayCountBack(replayCtx.anchorFrom, end, barSec, requestCountBack),
         );
       }
