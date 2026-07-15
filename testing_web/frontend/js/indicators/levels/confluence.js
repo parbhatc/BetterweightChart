@@ -43,6 +43,13 @@ export function applyClusterConfluence(lines, proximity, confHi, confLo) {
     parent[find(a)] = find(b);
   }
 
+  /** @param {LiqLine} l */
+  const bornOf = (l) => l.bornTime ?? l.startTime;
+  /** A level swept BEFORE another was born is a separate liquidity event — a
+   * 9:15 low swept at 9:40 must not merge with a fresh 10:00 low at the same
+   * price; the old line stays swept, the new one lives on its own. */
+  const sweptBefore = (a, b) => a.swept && a.sweepTime != null && a.sweepTime <= bornOf(b);
+
   for (let i = 0; i < n; i++) {
     if (lines[i]._drop) continue;
     for (let j = i + 1; j < n; j++) {
@@ -50,6 +57,7 @@ export function applyClusterConfluence(lines, proximity, confHi, confLo) {
       if (lines[i].kind !== lines[j].kind) continue;
       if (Math.abs(lines[i].price - lines[j].price) > proximity) continue;
       if (Math.abs(lines[i].startTime - lines[j].startTime) > CONFLO_START_GAP_SEC) continue;
+      if (sweptBefore(lines[i], lines[j]) || sweptBefore(lines[j], lines[i])) continue;
       unite(i, j);
     }
   }
@@ -72,6 +80,10 @@ export function applyClusterConfluence(lines, proximity, confHi, confLo) {
     const side = group[0].kind === "high" ? "High" : "Low";
     const confColor = group[0].kind === "high" ? confHi : confLo;
     const sweptMembers = group.filter((l) => l.swept && l.sweepTime != null);
+    // Swept only when EVERY member is swept — an unswept member means liquidity
+    // still rests at this price (e.g. a live Asia low re-formed on an old swept
+    // pivot); inheriting a stale sweep would hide the active level.
+    const allSwept = sweptMembers.length === group.length;
     let survivor = group.reduce((best, l) => {
       const bt = l.bornTime ?? l.startTime;
       const bb = best.bornTime ?? best.startTime;
@@ -87,7 +99,7 @@ export function applyClusterConfluence(lines, proximity, confHi, confLo) {
         survivor.startTime = l.startTime;
         survivor.startChartTime = l.startChartTime;
       }
-      if (!sweptMembers.length && l.endTime > survivor.endTime) {
+      if (!allSwept && l.endTime > survivor.endTime) {
         survivor.endTime = l.endTime;
         survivor.endChartTime = l.endChartTime;
       }
@@ -95,11 +107,14 @@ export function applyClusterConfluence(lines, proximity, confHi, confLo) {
     survivor.label = formatMergedTags(tags, side);
     survivor.color = confColor;
     survivor.lineWidth = 3;
-    if (sweptMembers.length) {
+    if (allSwept && sweptMembers.length) {
       const times = sweptMembers.map((l) => l.sweepTime).filter((t) => t != null);
       const chartTimes = sweptMembers.map((l) => l.sweepChartTime ?? l.endChartTime).filter((t) => t != null);
       survivor.swept = true;
-      survivor.sweepTime = Math.min(...times);
+      // Latest sweep — the merged pool is only fully taken when its LAST member
+      // is swept; the earliest sweep would end the line before the newest level
+      // (e.g. an Asia low re-formed on an old pivot) was even born.
+      survivor.sweepTime = Math.max(...times);
       survivor.endTime = survivor.sweepTime;
       if (chartTimes.length) {
         const bySweep = sweptMembers

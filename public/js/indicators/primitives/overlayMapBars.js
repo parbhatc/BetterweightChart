@@ -94,10 +94,16 @@ export function resolveOverlayTimeMapping(series, timeCtx) {
  */
 export function createOverlayTimeToXFromMapping(chart, mapping) {
   const { mapBars, logicalOffset, barSec, lastReal, timeAdapter } = mapping;
+  const firstTime = mapBars[0]?.time;
 
   return (t) => {
     if (t == null || !Number.isFinite(Number(t))) return null;
-    const time = Number(t);
+    let time = Number(t);
+    // Times before loaded history have no coordinate on the time scale; the
+    // fallbacks below would extrapolate a bogus x (ghost overlays after day
+    // jumps / short reloads). Clamp to the first loaded bar — extrapolating
+    // into the FUTURE stays allowed (whitespace/extended overlays rely on it).
+    if (firstTime != null && time < firstTime) time = firstTime;
     const ts = chart.timeScale();
     if (typeof ts.timeToCoordinate === "function") {
       const direct = ts.timeToCoordinate(time);

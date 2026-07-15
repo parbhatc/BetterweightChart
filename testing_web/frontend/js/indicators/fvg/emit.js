@@ -86,11 +86,22 @@ export function emitZoneBox(script, layer, series, zone, opts = {}) {
   const showLabel = cfg.showLabels && Boolean(label && String(label).trim());
   debugFvgDrawBox(layer, zone, series, label, showLabel, silent);
 
+  // HTF zones can start before the pane's loaded history (datafeed HTF stores
+  // reach further back than the chart bars). Times outside the time scale have
+  // no coordinate — the fallback extrapolation draws ghost bands in the wrong
+  // place. Clamp to the first loaded bar; skip boxes entirely left of history.
+  const firstChartTime = script.chartBars?.[0]?.time;
+  let drawStart = startTime;
+  if (firstChartTime != null && drawStart < firstChartTime) {
+    if (!extendRight && endTime <= firstChartTime) return;
+    drawStart = firstChartTime;
+  }
+
   script.drawBox({
-    timeStart: startTime,
-    timeEnd: endTime,
+    timeStart: drawStart,
+    timeEnd: extendRight ? endTime : Math.max(endTime, drawStart),
     extendRight,
-    labelTime: extendRight ? startTime + LABEL_DISTANCE_BARS * cfg.chartSec : null,
+    labelTime: extendRight ? drawStart + LABEL_DISTANCE_BARS * cfg.chartSec : null,
     priceTop: zone.top,
     priceBottom: zone.bottom,
     fillColor,

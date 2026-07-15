@@ -36,7 +36,11 @@ export function buildLayerSeries(script, layer) {
   if (!replayLocked) {
     const htf = getSecuritySeries(overlayCtx, undefined, layer.tfId);
     if (htf?.utcBars?.length) {
-      const series = mapHtfBarsToSeries(htf);
+      // The store keeps the forming HTF bucket with its FINAL OHLC (append-only,
+      // cursor-blind) — during replay that leaks future highs/lows into detection
+      // and draws FVGs that don't exist yet. Rebuild the forming bar from the
+      // chart bars actually loaded up to the cursor, same as refreshHtfLayersForLive.
+      const series = patchFormingHtfBarFromChart(script, mapHtfBarsToSeries(htf), layer, chartSec);
       return { series, startIdx: Math.max(2, series.length - maxBack) };
     }
     requestSecuritySeries(overlayCtx, undefined, layer.tfId, maxBack);

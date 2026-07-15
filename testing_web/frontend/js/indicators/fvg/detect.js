@@ -10,6 +10,9 @@ export function fvgAtBar(bars, i, tfSec = 900) {
   const b2 = bars[i];
   if (!b0 || !b1 || !b2) return null;
   if (b2.time - b1.time > tfSec) return null;
+  // Same adjacency guard on the first pair — a session/weekend gap between b0
+  // and b1 (e.g. Friday close → Sunday open) is an opening gap, not a 3-bar FVG.
+  if (b1.time - b0.time > tfSec) return null;
   if (b2.low > b0.high) {
     return { kind: "bull", top: b2.low, bottom: b0.high, barIndex: i - 2 };
   }
