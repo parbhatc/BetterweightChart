@@ -414,7 +414,23 @@ export function createPaneExtras(deps) {
   function wirePanePanPerf(pane) {
     /** @type {ReturnType<typeof setTimeout> | null} */
     let historyPrefetchTimer = null;
+    /** @type {number | null} */
+    let liveLayoutSyncRaf = null;
     const HISTORY_PREFETCH_IDLE_MS = 150;
+
+    const stopLiveLayoutSync = () => {
+      if (liveLayoutSyncRaf == null) return;
+      cancelAnimationFrame(liveLayoutSyncRaf);
+      liveLayoutSyncRaf = null;
+    };
+
+    const syncLayoutWhilePanning = () => {
+      liveLayoutSyncRaf = null;
+      if (!ui.chartPanning) return;
+      const logicalRange = pane.chart.timeScale().getVisibleLogicalRange();
+      viewportDeps?.syncLayoutDateRangeFrom?.(pane.chart, logicalRange);
+      liveLayoutSyncRaf = requestAnimationFrame(syncLayoutWhilePanning);
+    };
 
     const cancelHistoryPrefetch = () => {
       if (historyPrefetchTimer == null) return;
@@ -445,11 +461,15 @@ export function createPaneExtras(deps) {
         ui.chartPanning = true;
         for (const p of getAllChartPanes()) p._deferSeriesUpdates = true;
         cancelHistoryPrefetch();
+        stopLiveLayoutSync();
+        liveLayoutSyncRaf = requestAnimationFrame(syncLayoutWhilePanning);
         viewportDeps?.onChartPanStart?.();
         panFps.start("pan");
       },
       onEnd: () => {
+        stopLiveLayoutSync();
         ui.chartPanning = false;
+        viewportDeps?.syncLayoutDateRangeFrom?.(pane.chart);
         for (const p of getAllChartPanes()) p._deferSeriesUpdates = false;
         panFps.stop("pan");
         for (const p of getAllChartPanes()) flushDeferredPaneInteraction(p);

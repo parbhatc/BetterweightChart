@@ -38,24 +38,22 @@ import {
 
 /** Load more when the visible range is within this many bars of the left edge. */
 export const HISTORY_EDGE_BARS = 80;
-/** Max negative logical `from` still treated as left-edge whitespace (not zoom-out). */
-const LEFT_WHITESPACE_EDGE_BARS = 16;
 
 /**
  * True when the user has panned near the oldest loaded bar (scroll-back prefetch).
- * Deeply negative `from` (zoomed out) is not the history edge.
+ * Negative logical positions are whitespace before the oldest loaded bar. A
+ * quick drag can move far into that whitespace, so every negative value must
+ * remain eligible for history loading.
  * @param {{ from: number, to: number } | null | undefined} range
  */
 export function isNearHistoryLeftEdge(range) {
-  if (!range) return false;
-  if (range.from < -LEFT_WHITESPACE_EDGE_BARS) return false;
-  if (range.from < 0) return true;
-  return range.from < HISTORY_EDGE_BARS;
+  const from = Number(range?.from);
+  return Number.isFinite(from) && from < HISTORY_EDGE_BARS;
 }
 /** Max burst loads per pan when prefetching history. */
 const HISTORY_BURST_MAX = 2;
-/** Cooldown after a failed history request (ms). */
-const HISTORY_ERROR_COOLDOWN_MS = 45_000;
+/** Short cooldown after a failed history request (ms). */
+const HISTORY_ERROR_COOLDOWN_MS = 5_000;
 
 /**
  * @param {{ time: number }[]} bars
@@ -132,8 +130,29 @@ export function createBarLoader(opts) {
 
   /** @type {Map<number, ReturnType<typeof setTimeout>>} */
   const historyNotifyTimerByPane = new Map();
+  /** @type {Map<number, ReturnType<typeof setTimeout>>} */
+  const historyRetryTimerByPane = new Map();
   /** @type {Map<number, { bar: object, raf: number }>} */
   const formingCoalesceByPane = new Map();
+
+  function clearHistoryRetry(pane) {
+    const timer = historyRetryTimerByPane.get(pane.index);
+    if (timer != null) clearTimeout(timer);
+    historyRetryTimerByPane.delete(pane.index);
+  }
+
+  function scheduleHistoryRetry(pane) {
+    clearHistoryRetry(pane);
+    const symbol = pane.symbol;
+    const resolution = pane.resolution;
+    const timer = setTimeout(() => {
+      historyRetryTimerByPane.delete(pane.index);
+      if (pane.symbol !== symbol || pane.resolution !== resolution) return;
+      if (!(getAllChartPanes?.() ?? []).includes(pane)) return;
+      void ensureHistoryNearEdge(pane);
+    }, HISTORY_ERROR_COOLDOWN_MS + 50);
+    historyRetryTimerByPane.set(pane.index, timer);
+  }
 
   function cancelFormingCoalesce(paneIndex) {
     const slot = formingCoalesceByPane.get(paneIndex);
@@ -493,7 +512,10 @@ export function createBarLoader(opts) {
     if (!pane.symbolInfo) return false;
     if (trySyncHistoryFromPeer(pane)) return true;
 
-    pane._historyFetchInFlight = true;
+    const requestSymbol = pane.symbol;
+    const requestResolution = pane.resolution;
+    const requestToken = {};
+    pane._historyFetchInFlight = requestToken;
     try {
       const first = pane.bars[0];
       const barSec = getBarSecForPane?.(pane) ?? 60;
@@ -509,23 +531,37 @@ export function createBarLoader(opts) {
       const result = await chartDebugTimeAsync("data", `prependHistory pane ${pane.index}`, () =>
         datafeed.getBars(pane.symbolInfo, pane.resolution, periodParams),
       );
+      if (pane.symbol !== requestSymbol || pane.resolution !== requestResolution) {
+        chartDebug("data", "prependHistory stale response dropped", {
+          pane: pane.index,
+          requestSymbol,
+          requestResolution,
+          currentSymbol: pane.symbol,
+          currentResolution: pane.resolution,
+        });
+        return false;
+      }
       const older = (result.bars ?? []).filter((b) => b.time < first.time);
       if (isPanning()) {
         if (older.length) queueDeferredHistory(pane, older);
         return false;
       }
-      if (!result.bars?.length || result.noData) {
+      if (!result.bars?.length) {
         chartDebug("data", "prependHistory noData — history exhausted", {
           pane: pane.index,
           noData: Boolean(result.noData),
           meta: result.meta,
         });
         pane._historyExhausted = true;
+        clearHistoryRetry(pane);
         return false;
       }
 
       if (!older.length) {
-        pane._historyExhausted = true;
+        // An overlapping/short proxy response does not prove that the source
+        // has no older bars. Let a later edge gesture retry after a short pause.
+        pane._historyErrorUntil = Date.now() + HISTORY_ERROR_COOLDOWN_MS;
+        scheduleHistoryRetry(pane);
         return false;
       }
 
@@ -534,17 +570,33 @@ export function createBarLoader(opts) {
         adjustViewport: !opts.skipViewportAdjust,
       });
       if (added <= 0) {
-        pane._historyExhausted = true;
+        pane._historyErrorUntil = Date.now() + HISTORY_ERROR_COOLDOWN_MS;
+        scheduleHistoryRetry(pane);
         return false;
       }
       syncPrependedBarsToPeers(pane, older);
+      // Some feeds mark a short but valid batch as noData. Keep those bars and
+      // require an actually empty response before declaring true exhaustion.
+      pane._historyErrorUntil = null;
+      clearHistoryRetry(pane);
       return true;
     } catch (err) {
+      if (pane.symbol !== requestSymbol || pane.resolution !== requestResolution) {
+        chartDebug("data", "prependHistory stale failure ignored", {
+          pane: pane.index,
+          requestSymbol,
+          requestResolution,
+        });
+        return false;
+      }
       chartDebug("data", "prependHistory failed", { pane: pane.index, err: String(err) });
       pane._historyErrorUntil = Date.now() + HISTORY_ERROR_COOLDOWN_MS;
+      scheduleHistoryRetry(pane);
       return false;
     } finally {
-      pane._historyFetchInFlight = false;
+      if (pane._historyFetchInFlight === requestToken) {
+        pane._historyFetchInFlight = false;
+      }
     }
   }
 
@@ -659,6 +711,8 @@ export function createBarLoader(opts) {
   }
 
   function clearPaneBarState(pane) {
+    clearHistoryRetry(pane);
+    pane._historyFetchInFlight = false;
     pane._historyExhausted = false;
     pane._firstDataRequest = true;
     pane._emptyStateMeta = null;

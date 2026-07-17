@@ -47,6 +47,8 @@ export function attachPaneHelpers(ctx) {
     getLayoutManager: () => ctx.layoutManager,
     getLayoutCharts,
     getLayoutPanes,
+    getActivePane,
+    isChartPanning: () => Boolean(ctx.ui?.chartPanning),
     isBarsLoading: () => Boolean(ctx.ui?.barsLoading),
     isHistoryRestorePending: () =>
       getAllChartPanes().some((p) => p._historyRestorePending),
