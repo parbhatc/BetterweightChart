@@ -72,7 +72,9 @@ export function lookupSecuritySeries(opts) {
 export async function requestSecuritySeries(opts) {
   const symbol = opts.symbol;
   const resolution = normalizeResolutionId(opts.resolution);
-  const want = Math.max(50, Math.min(2000, Number(opts.countBack) || 300));
+  // Match the chart history cap so compare-symbol studies (for example SMT)
+  // can load their full required window in the first request.
+  const want = Math.max(50, Math.min(4000, Number(opts.countBack) || 300));
 
   const hit = lookupSecuritySeries({ ...opts, symbol, resolution, countBack: want });
   if (hit?.sufficient) {

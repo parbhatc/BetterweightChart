@@ -324,7 +324,10 @@ export async function ensureHtfBars(opts) {
   const { datafeed, symbolInfo, symbol, resolution, countBack, pane, settingsStore, symbolInfoExtra } =
     opts;
   const key = htfCacheKey(symbol, resolution);
-  const want = Math.max(50, Math.min(2000, Number(countBack) || 300));
+  // Keep this aligned with periodParams.COUNT_BACK_MAX. Indicators can
+  // legitimately need 3,000-4,000 bars; capping the first fetch at 2,000
+  // forced a long chain of 200-bar prepend requests on every fresh boot.
+  const want = Math.max(50, Math.min(4000, Number(countBack) || 300));
   const anchorSec = opts.playbackAnchorSec;
   const tfSec = resolutionSec(resolution);
   const chartSec = resolutionSec(pane?.resolution ?? "") ?? null;
@@ -461,7 +464,7 @@ async function fetchHtfBars(opts) {
     // Coarser live timeframes include the currently-forming bucket in history.
     // We drop that bucket below, so request one extra bar; otherwise a request
     // for 2000 repeatedly stores 1999 and immediately refetches forever.
-    const fetchCount = confirmedOnly ? want + 1 : want;
+    const fetchCount = Math.min(4000, confirmedOnly ? want + 1 : want);
     const params = buildInitialPeriodParams(barSec, fetchCount);
     params.to = to;
     chartDebug("data", "htf cache fetch", { symbol, resolution, countBack: want, to: params.to });
