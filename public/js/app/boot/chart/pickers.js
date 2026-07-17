@@ -8,7 +8,7 @@ import {
 } from "../../../chart/pane/viewportBarLayout.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { replayBarIndexForUtcTime } from "../../../replay/persist.js";
-import { clearHtfCoarserThan, seedHtfBars } from "../../bar/htfBarCache.js";
+import { bumpDataEpoch, clearHtfCoarserThan, seedHtfBars } from "../../bar/htfBarCache.js";
 import { resolutionSec } from "../../../chart/resolutions.js";
 import {
   paintPaneAfterTimeframeLoad,
@@ -257,6 +257,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           paneCount: panes.length,
         });
         const saved = capturePaneViewports(panes);
+        bumpDataEpoch("symbol-change");
         preparePanesForSeriesReload(ctx, panes);
         const prevSymbols = panes.map((p) => p.symbol);
         for (const pane of panes) {
@@ -301,6 +302,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
         sync: false,
       });
       const saved = capturePaneViewports([pane]);
+      bumpDataEpoch("symbol-change");
       preparePanesForSeriesReload(ctx, [pane]);
       pane.symbol = sym;
       if (pane.index === 0) ctx.chartPanes.get(0).symbol = sym;
@@ -389,6 +391,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
             paneCount: panes.length,
           });
           const savedLayouts = capturePaneBarLayouts(ctx, panes);
+          bumpDataEpoch("timeframe-change");
           preparePanesForSeriesReload(ctx, panes);
           for (let i = 0; i < panes.length; i += 1) {
             const pane = panes[i];
@@ -449,6 +452,7 @@ export async function wireSymbolAndTimeframePickers(ctx) {
           sync: false,
         });
         const savedLayout = captureViewportBarLayout(pane, ctx.settingsStore, ctx.resolutions);
+        bumpDataEpoch("timeframe-change");
         preparePanesForSeriesReload(ctx, [pane]);
         pane._tfSwitchFromResolution = pane.resolution;
         pane._tfSwitchSavedLayout = savedLayout;

@@ -7,7 +7,8 @@
 
 .tv-replay-date-dialog {
   position: fixed;
-  width: 320px;
+  width: min(320px, calc(100vw - var(--space-4)));
+  max-width: calc(100vw - var(--space-4));
   border-radius: var(--radius-lg);
   border: 1px solid var(--tv-border);
   background: var(--tv-bg-elevated);
@@ -210,4 +211,21 @@
 
 .tv-replay-date-dialog__btn--primary:hover {
   filter: brightness(1.08);
+}
+
+@media (hover: none), (pointer: coarse) {
+  .tv-replay-date-dialog__close,
+  .tv-replay-date-dialog__nav {
+    width: var(--touch-min, 2.25rem);
+    height: var(--touch-min, 2.25rem);
+  }
+
+  .tv-replay-date-dialog__day,
+  .tv-replay-date-dialog__pad {
+    min-height: var(--touch-min, 2.25rem);
+  }
+
+  .tv-replay-date-dialog__field {
+    min-height: var(--touch-min, 2.25rem);
+  }
 }

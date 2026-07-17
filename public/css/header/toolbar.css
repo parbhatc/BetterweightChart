@@ -156,7 +156,7 @@
 .tv-header-menu {
   position: fixed;
   z-index: 180;
-  min-width: 220px;
+  min-width: min(220px, calc(100vw - var(--space-4)));
   max-width: min(92vw, 420px);
   max-height: min(80vh, 640px);
   overflow-x: hidden;
@@ -180,7 +180,7 @@
 }
 
 .tv-header-menu--layouts {
-  min-width: 280px;
+  min-width: min(280px, calc(100vw - var(--space-4)));
 }
 
 .tv-header-menu__title {

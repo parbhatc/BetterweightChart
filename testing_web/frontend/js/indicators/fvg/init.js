@@ -44,8 +44,8 @@ export function initFvgEngine(script) {
   const borderStyle = String(inputs.borderStyle ?? "solid");
   const borderWidth = Math.max(1, Number(inputs.borderWidth) || 1);
   const borderDash = borderStyle === "dotted" ? [2, 2] : borderStyle === "dashed" ? [6, 4] : [];
-  const bullBorderOp = inputs.bullBorderColorOpacity !== undefined ? Number(inputs.bullBorderColorOpacity) : 0;
-  const bearBorderOp = inputs.bearBorderColorOpacity !== undefined ? Number(inputs.bearBorderColorOpacity) : 0;
+  const bullBorderOp = inputs.bullBorderColorOpacity !== undefined ? Number(inputs.bullBorderColorOpacity) : 50;
+  const bearBorderOp = inputs.bearBorderColorOpacity !== undefined ? Number(inputs.bearBorderColorOpacity) : 50;
 
   const lastChartTime = script.chartBars.at(-1)?.time;
   if (lastChartTime == null) {
@@ -124,12 +124,12 @@ export function initFvgEngine(script) {
     ifvgLabel: String(inputs.ifvgLabel ?? "IFVG"),
     borderWidth,
     borderDash,
-    bullFill: inputsColorWithOpacity(inputs, "bullBoxColor", "#00e676", 10),
-    bearFill: inputsColorWithOpacity(inputs, "bearBoxColor", "#f23645", 10),
+    bullFill: inputsColorWithOpacity(inputs, "bullBoxColor", "#00897b", 15),
+    bearFill: inputsColorWithOpacity(inputs, "bearBoxColor", "#880e4f", 15),
     bullBorder:
-      bullBorderOp > 0 ? inputsColorWithOpacity(inputs, "bullBorderColor", "#00e676", bullBorderOp) : null,
+      bullBorderOp > 0 ? inputsColorWithOpacity(inputs, "bullBorderColor", "#00897b", bullBorderOp) : null,
     bearBorder:
-      bearBorderOp > 0 ? inputsColorWithOpacity(inputs, "bearBorderColor", "#f23645", bearBorderOp) : null,
+      bearBorderOp > 0 ? inputsColorWithOpacity(inputs, "bearBorderColor", "#880e4f", bearBorderOp) : null,
     ifvgColor: inputsColorWithOpacity(inputs, "ifvgBoxColor", "#ffff00", 20),
     partialFill: inputsColorWithOpacity(inputs, "partialCloseColor", "#ff9800", 20),
     formingBullFill: inputsColorWithOpacity(inputs, "formingBullColor", "#00bcd4", 25),

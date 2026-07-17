@@ -82,25 +82,41 @@ export function initPrimaryChart(ctx) {
     true,
   );
 
+  const resetScaleAtPoint = (clientX, clientY) => {
+    const rect = ctx.el.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const rw = chart.priceScale("right").width();
+    const lw = chart.priceScale("left").width();
+    const onRight = rw > 0 && x >= rect.width - rw;
+    const onLeft = lw > 0 && x <= lw;
+    if (!onRight && !onLeft) return;
+    if (lwcPaneIndexAtY(chart, y) !== 0) return;
+
+    const pane = ctx.chartPanes.get(0);
+    if (!pane) return;
+
+    requestAnimationFrame(() => {
+      resetPanePriceScale(pane, ctx.settingsStore, ctx.activePriceScaleId);
+    });
+  };
+
+  ctx.el.addEventListener("dblclick", (ev) => resetScaleAtPoint(ev.clientX, ev.clientY), false);
+
+  // Touch never fires dblclick here; detect a double-tap on the price axis manually.
+  let lastAxisTap = null;
   ctx.el.addEventListener(
-    "dblclick",
+    "pointerup",
     (ev) => {
-      const rect = ctx.el.getBoundingClientRect();
-      const x = ev.clientX - rect.left;
-      const y = ev.clientY - rect.top;
-      const rw = chart.priceScale("right").width();
-      const lw = chart.priceScale("left").width();
-      const onRight = rw > 0 && x >= rect.width - rw;
-      const onLeft = lw > 0 && x <= lw;
-      if (!onRight && !onLeft) return;
-      if (lwcPaneIndexAtY(chart, y) !== 0) return;
-
-      const pane = ctx.chartPanes.get(0);
-      if (!pane) return;
-
-      requestAnimationFrame(() => {
-        resetPanePriceScale(pane, ctx.settingsStore, ctx.activePriceScaleId);
-      });
+      if (ev.pointerType !== "touch") return;
+      const now = ev.timeStamp;
+      const prev = lastAxisTap;
+      lastAxisTap = { x: ev.clientX, y: ev.clientY, t: now };
+      if (!prev) return;
+      if (now - prev.t > 350) return;
+      if (Math.abs(ev.clientX - prev.x) > 24 || Math.abs(ev.clientY - prev.y) > 24) return;
+      lastAxisTap = null;
+      resetScaleAtPoint(ev.clientX, ev.clientY);
     },
     false,
   );

@@ -407,22 +407,56 @@ export function mountTimeframePicker(opts) {
     { capture: true },
   );
 
-  root.addEventListener("click", (ev) => {
+  /** @param {Event} ev @returns {boolean} */
+  function handleRootActivation(ev) {
+    if (!(ev.target instanceof Element)) return false;
     if (ev.target.closest(".tv-tf__menu-btn")) {
       if (panelOpen) closePanel();
       else openPanel();
-      return;
+      return true;
     }
     const favBtn = ev.target.closest("[data-fav-toggle]");
     if (favBtn) {
       ev.preventDefault();
       ev.stopPropagation();
       toggleFavoriteId(favBtn.dataset.resolution);
-      return;
+      return true;
     }
     const btn = ev.target.closest("[data-resolution]");
-    if (!btn || btn.closest(".tv-tf__panel")) return;
+    if (!btn || btn.closest(".tv-tf__panel")) return false;
     setActive(btn.dataset.resolution, { toggleIfSame: true });
+    return true;
+  }
+
+  // iOS can swallow/delay the synthesized click inside this horizontally
+  // scrollable bar. Activate a stationary touch on pointerup, but leave swipes
+  // alone so users can still scroll through favorites.
+  let touchStart = null;
+  let suppressClickUntil = 0;
+  root.addEventListener("pointerdown", (ev) => {
+    if (ev.pointerType !== "touch") return;
+    touchStart = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
+  }, { passive: true });
+  root.addEventListener("pointercancel", () => {
+    touchStart = null;
+  }, { passive: true });
+  root.addEventListener("pointerup", (ev) => {
+    if (ev.pointerType !== "touch" || !touchStart || touchStart.id !== ev.pointerId) return;
+    const moved = Math.hypot(ev.clientX - touchStart.x, ev.clientY - touchStart.y);
+    touchStart = null;
+    if (moved > 10) return;
+    if (!handleRootActivation(ev)) return;
+    suppressClickUntil = performance.now() + 700;
+    ev.preventDefault();
+  });
+
+  root.addEventListener("click", (ev) => {
+    if (performance.now() < suppressClickUntil) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      return;
+    }
+    handleRootActivation(ev);
   });
 
   panel.addEventListener("click", (ev) => {

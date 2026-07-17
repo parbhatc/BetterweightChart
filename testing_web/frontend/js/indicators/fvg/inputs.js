@@ -139,12 +139,6 @@ export function buildInputs() {
       { section: "Border Settings" },
     ),
     createInt("borderWidth", "Border Width", 1, { section: "Border Settings" }),
-    inlinePair(
-      "Border Settings",
-      createColor("bullBorderColor", "Bullish", { color: "#00e676", opacity: 0 }),
-      createColor("bearBorderColor", "Bearish", { color: "#f23645", opacity: 0 }),
-      { header: "FVG Border Colors" },
-    ),
     createColor("ifvgBoxColor", "IFVG", { color: "#ffff00", opacity: 20 }, { section: "IFVG settings" }),
   ];
 }

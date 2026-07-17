@@ -944,27 +944,40 @@ export function createIndicatorSettingsDialog(opts) {
     if (fvgBoxColorPick instanceof HTMLElement && fvgBoxColorPick.dataset.fvgBoxColorPick) {
       ev.preventDefault();
       ev.stopPropagation();
-      const [tfKey, side] = fvgBoxColorPick.dataset.fvgBoxColorPick.split("|");
-      if (!tfKey || (side !== "bull" && side !== "bear")) return;
+      const [tfKey, swatchKind] = fvgBoxColorPick.dataset.fvgBoxColorPick.split("|");
+      const [side, role] = String(swatchKind ?? "").split("-");
+      if (!tfKey || !["bull", "bear"].includes(side) || !["fill", "border"].includes(role)) return;
       if (fvgBoxColorPick.hasAttribute("disabled")) return;
-      const colorKey = side === "bull" ? "bullColor" : "bearColor";
-      const opacityKey = side === "bull" ? "bullOpacity" : "bearOpacity";
-      const globalColorKey = side === "bull" ? "bullBoxColor" : "bearBoxColor";
-      const globalOpacityKey = side === "bull" ? "bullBoxColorOpacity" : "bearBoxColorOpacity";
+      const stem = side === "bull" ? "bull" : "bear";
+      const colorKey = role === "border" ? `${stem}BorderColor` : `${stem}Color`;
+      const opacityKey = role === "border" ? `${stem}BorderOpacity` : `${stem}Opacity`;
+      const globalColorKey = role === "border" ? `${stem}BorderColor` : `${stem}BoxColor`;
+      const globalOpacityKey = role === "border" ? `${stem}BorderColorOpacity` : `${stem}BoxColorOpacity`;
       const stored =
         draft.inputs.fvgBoxColorsByTf &&
         typeof draft.inputs.fvgBoxColorsByTf === "object" &&
         !Array.isArray(draft.inputs.fvgBoxColorsByTf)
           ? draft.inputs.fvgBoxColorsByTf[tfKey]
           : null;
-      const fallbackColor = side === "bull" ? "#00e676" : "#f23645";
-      const currentColor = String(stored?.[colorKey] ?? draft.inputs[globalColorKey] ?? fallbackColor);
+      const isChartFill = tfKey === "chart" && role === "fill";
+      const swatch = inputsPanel.querySelector(`[data-fvg-box-swatch="${tfKey}|${swatchKind}"]`);
+      const fallbackColor = isChartFill
+        ? (side === "bull" ? "#4caf50" : "#f23645")
+        : (side === "bull" ? "#00897b" : "#880e4f");
+      const currentColor = String(
+        stored?.[colorKey] ??
+        draft.inputs[globalColorKey] ??
+        (swatch instanceof HTMLElement ? swatch.dataset.color : null) ??
+        fallbackColor,
+      );
       const currentOpacity =
         stored?.[opacityKey] !== undefined && stored?.[opacityKey] !== null
           ? Number(stored[opacityKey])
           : draft.inputs[globalOpacityKey] !== undefined && draft.inputs[globalOpacityKey] !== null
             ? Number(draft.inputs[globalOpacityKey])
-            : 10;
+            : swatch instanceof HTMLElement && swatch.dataset.opacity != null
+              ? Number(swatch.dataset.opacity)
+              : role === "border" ? 50 : isChartFill ? 20 : 15;
       colorPicker.openSwatch(
         fvgBoxColorPick,
         { color: currentColor, opacity: currentOpacity },
@@ -977,11 +990,11 @@ export function createIndicatorSettingsDialog(opts) {
             entry[colorKey] = color;
             entry[opacityKey] = opacity;
             draft.inputs.fvgBoxColorsByTf[tfKey] = entry;
-            const swatch = inputsPanel.querySelector(`[data-fvg-box-swatch="${tfKey}|${side}"]`);
-            if (swatch instanceof HTMLElement) {
-              swatch.dataset.color = color;
-              swatch.dataset.opacity = String(opacity);
-              swatch.style.background = applyColorOpacity(color, opacity);
+            const changedSwatch = inputsPanel.querySelector(`[data-fvg-box-swatch="${tfKey}|${swatchKind}"]`);
+            if (changedSwatch instanceof HTMLElement) {
+              changedSwatch.dataset.color = color;
+              changedSwatch.dataset.opacity = String(opacity);
+              changedSwatch.style.background = applyColorOpacity(color, opacity);
             }
             applyDraft();
           },

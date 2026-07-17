@@ -71,7 +71,9 @@ export function emitZoneBox(script, layer, series, zone, opts = {}) {
   } else {
     const layerFills = resolveLayerBoxFills(layer, script.inputs);
     fillColor = isBull ? (layerFills?.bullFill ?? cfg.bullFill) : (layerFills?.bearFill ?? cfg.bearFill);
-    borderColor = isBull ? cfg.bullBorder : cfg.bearBorder;
+    borderColor = isBull
+      ? (layerFills?.bullBorder ?? cfg.bullBorder)
+      : (layerFills?.bearBorder ?? cfg.bearBorder);
     borderWidth = borderColor ? cfg.borderWidth : 0;
     label = opts.layerLabel ?? layer.label;
     textColor = isBull

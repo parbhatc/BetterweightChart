@@ -9,24 +9,35 @@ export function fvgBoxColorTfKey(timeframe) {
 }
 
 /** @param {object} inputs */
-function defaultGlobalBoxColors(inputs) {
+function defaultGlobalBoxColors(inputs, tfKey) {
+  const palettes = {
+    chart: { bull: "#4caf50", bear: "#f23645", fillOpacity: 20 },
+    "15": { bull: "#00897b", bear: "#880e4f", fillOpacity: 15 },
+    "60": { bull: "#00bcd4", bear: "#e53935", fillOpacity: 15 },
+    "240": { bull: "#2962ff", bear: "#ff6d00", fillOpacity: 15 },
+  };
+  const palette = palettes[tfKey] ?? palettes["15"];
   return {
-    bullColor: String(inputs.bullBoxColor ?? "#00e676"),
+    bullColor: String(inputs.bullBoxColor ?? palette.bull),
     bullOpacity:
       inputs.bullBoxColorOpacity !== undefined && inputs.bullBoxColorOpacity !== null
         ? Number(inputs.bullBoxColorOpacity)
-        : 10,
-    bearColor: String(inputs.bearBoxColor ?? "#f23645"),
+        : palette.fillOpacity,
+    bearColor: String(inputs.bearBoxColor ?? palette.bear),
     bearOpacity:
       inputs.bearBoxColorOpacity !== undefined && inputs.bearBoxColorOpacity !== null
         ? Number(inputs.bearBoxColorOpacity)
-        : 10,
+        : palette.fillOpacity,
+    bullBorderColor: String(inputs.bullBorderColor ?? palette.bull),
+    bullBorderOpacity: inputs.bullBorderColorOpacity != null ? Number(inputs.bullBorderColorOpacity) : 50,
+    bearBorderColor: String(inputs.bearBorderColor ?? palette.bear),
+    bearBorderOpacity: inputs.bearBorderColorOpacity != null ? Number(inputs.bearBorderColorOpacity) : 50,
   };
 }
 
 /** @param {object} inputs @param {string} tfKey */
 export function resolveFvgBoxColorsForTf(inputs, tfKey) {
-  const defaults = defaultGlobalBoxColors(inputs);
+  const defaults = defaultGlobalBoxColors(inputs, tfKey);
   const stored = inputs.fvgBoxColorsByTf;
   const custom =
     stored && typeof stored === "object" && !Array.isArray(stored) ? stored[tfKey] : null;
@@ -42,6 +53,14 @@ export function resolveFvgBoxColorsForTf(inputs, tfKey) {
       custom.bearOpacity !== undefined && custom.bearOpacity !== null
         ? Number(custom.bearOpacity)
         : defaults.bearOpacity,
+    bullBorderColor: String(custom.bullBorderColor ?? defaults.bullBorderColor),
+    bullBorderOpacity: custom.bullBorderOpacity != null
+      ? Number(custom.bullBorderOpacity)
+      : defaults.bullBorderOpacity,
+    bearBorderColor: String(custom.bearBorderColor ?? defaults.bearBorderColor),
+    bearBorderOpacity: custom.bearBorderOpacity != null
+      ? Number(custom.bearBorderOpacity)
+      : defaults.bearBorderOpacity,
   };
 }
 
@@ -55,6 +74,8 @@ export function resolveLayerBoxFills(layer, inputs) {
   return {
     bullFill: applyColorOpacity(colors.bullColor, colors.bullOpacity),
     bearFill: applyColorOpacity(colors.bearColor, colors.bearOpacity),
+    bullBorder: applyColorOpacity(colors.bullBorderColor, colors.bullBorderOpacity),
+    bearBorder: applyColorOpacity(colors.bearBorderColor, colors.bearBorderOpacity),
   };
 }
 
@@ -68,15 +89,19 @@ function timeframeOptionLabel(tfId, options) {
 
 /**
  * @param {"bull" | "bear"} side
+ * @param {"fill" | "border"} role
  * @param {object} colors
  */
-function swatchButton(tfKey, side, colors) {
-  const color = side === "bull" ? colors.bullColor : colors.bearColor;
-  const opacity = side === "bull" ? colors.bullOpacity : colors.bearOpacity;
+function swatchButton(tfKey, side, role, colors) {
+  const prefix = side === "bull" ? "bull" : "bear";
+  const suffix = role === "border" ? "Border" : "";
+  const color = colors[`${prefix}${suffix}Color`];
+  const opacity = colors[`${prefix}${suffix}Opacity`];
   const bg = applyColorOpacity(color, opacity);
-  const label = side === "bull" ? "Bullish box color" : "Bearish box color";
-  return `<button type="button" class="tv-ind-settings__fvg-box-color-btn" data-fvg-box-color-pick="${escapeAttr(tfKey)}|${side}" aria-label="${label}">
-      <span class="tv-drawing-settings__color-swatch" data-fvg-box-swatch="${escapeAttr(tfKey)}|${side}" data-color="${escapeAttr(color)}" data-opacity="${opacity}" style="background:${bg}"></span>
+  const label = `${side === "bull" ? "Bullish" : "Bearish"} ${role} color`;
+  const key = `${side}-${role}`;
+  return `<button type="button" class="tv-ind-settings__fvg-box-color-btn" data-fvg-box-color-pick="${escapeAttr(tfKey)}|${key}" aria-label="${label}">
+      <span class="tv-drawing-settings__color-swatch" data-fvg-box-swatch="${escapeAttr(tfKey)}|${key}" data-color="${escapeAttr(color)}" data-opacity="${opacity}" style="background:${bg}"></span>
     </button>`;
 }
 
@@ -104,8 +129,10 @@ export function renderFvgBoxColorsPanel(input, draftInputs, getTimeframeOptions)
       <span class="tv-ind-settings__fvg-box-colors-label">${escapeHtml(row.label || tfLabel)}</span>
       <span class="tv-ind-settings__fvg-box-colors-tf">${escapeHtml(tfLabel)}</span>
       <div class="tv-ind-settings__fvg-box-colors-swatches"${disabledAttr ? " aria-disabled=\"true\"" : ""}>
-        ${swatchButton(tfKey, "bull", colors)}
-        ${swatchButton(tfKey, "bear", colors)}
+        ${swatchButton(tfKey, "bull", "fill", colors)}
+        ${swatchButton(tfKey, "bull", "border", colors)}
+        ${swatchButton(tfKey, "bear", "fill", colors)}
+        ${swatchButton(tfKey, "bear", "border", colors)}
       </div>
     </div>`;
     })
@@ -113,7 +140,7 @@ export function renderFvgBoxColorsPanel(input, draftInputs, getTimeframeOptions)
 
   return `<div class="tv-ind-settings__fvg-box-colors${disabledClass}" data-fvg-box-colors-root data-fvg-box-colors-field="${input.id}">
     <div class="tv-ind-settings__fvg-box-colors-cols" aria-hidden="true">
-      <span>Label</span><span>Timeframe</span><span>Colors</span>
+      <span>Label</span><span>Timeframe</span><span>Fill / border colors</span>
     </div>
     <div class="tv-ind-settings__fvg-box-colors-list" data-fvg-box-colors-list>
       ${rowHtml || `<div class="tv-ind-settings__tf-rules-empty">Enable timeframes in the Timeframes section first.</div>`}
@@ -141,10 +168,14 @@ export function readFvgBoxColorsFromPanel(inputsPanel, fieldId) {
     const tfKey = row.dataset.tfKey;
     if (!tfKey) return;
     map[tfKey] = {
-      bullColor: readSwatchValue(row, tfKey, "bull", "color"),
-      bullOpacity: readSwatchValue(row, tfKey, "bull", "opacity"),
-      bearColor: readSwatchValue(row, tfKey, "bear", "color"),
-      bearOpacity: readSwatchValue(row, tfKey, "bear", "opacity"),
+      bullColor: readSwatchValue(row, tfKey, "bull-fill", "color"),
+      bullOpacity: readSwatchValue(row, tfKey, "bull-fill", "opacity"),
+      bullBorderColor: readSwatchValue(row, tfKey, "bull-border", "color"),
+      bullBorderOpacity: readSwatchValue(row, tfKey, "bull-border", "opacity"),
+      bearColor: readSwatchValue(row, tfKey, "bear-fill", "color"),
+      bearOpacity: readSwatchValue(row, tfKey, "bear-fill", "opacity"),
+      bearBorderColor: readSwatchValue(row, tfKey, "bear-border", "color"),
+      bearBorderOpacity: readSwatchValue(row, tfKey, "bear-border", "opacity"),
     };
   });
   return map;

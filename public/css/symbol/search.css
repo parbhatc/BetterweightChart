@@ -29,9 +29,18 @@
   display: none;
 }
 
-.tv-symbol__trigger:hover {
-  background: var(--tv-surface-hover);
-  border-color: var(--tv-border-subtle);
+@media (hover: hover) and (pointer: fine) {
+  .tv-symbol__trigger:hover {
+    background: var(--tv-surface-hover);
+    border-color: var(--tv-border-subtle);
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .tv-symbol__trigger:active {
+    background: var(--tv-surface-hover);
+    border-color: var(--tv-border-subtle);
+  }
 }
 
 .tv-symbol__trigger[aria-expanded="true"] {
@@ -486,4 +495,49 @@ body.tv-symbol-modal-open {
   padding: var(--space-1) 0;
   max-height: min(300px, 42vh);
   overflow-y: auto;
+}
+
+/* iOS can latch :hover after a tap. Symbol controls use hover only with a real
+   mouse; touch gets a short :active state and never retains the highlight. */
+@media (hover: none), (pointer: coarse) {
+  .tv-symbol__trigger:hover,
+  .tv-symbol-modal__close:hover,
+  .tv-symbol-modal__clear:hover,
+  .tv-symbol-modal__tab:hover,
+  .tv-symbol-modal__item:hover,
+  .tv-symbol__item:hover {
+    background: transparent;
+  }
+
+  .tv-symbol__trigger:hover {
+    border-color: transparent;
+  }
+
+  .tv-symbol-modal__close:hover,
+  .tv-symbol-modal__clear:hover {
+    color: var(--tv-muted);
+  }
+
+  .tv-symbol-modal__tab.is-active:hover {
+    color: var(--tv-accent);
+  }
+
+  .tv-symbol-modal__item.is-active:hover,
+  .tv-symbol__item.is-active:hover {
+    background: var(--tv-accent-muted);
+  }
+
+  .tv-symbol__trigger:active,
+  .tv-symbol-modal__close:active,
+  .tv-symbol-modal__clear:active,
+  .tv-symbol-modal__tab:active,
+  .tv-symbol-modal__item:active,
+  .tv-symbol__item:active {
+    background: var(--tv-surface-hover);
+  }
+
+  .tv-symbol-modal__close:active,
+  .tv-symbol-modal__clear:active {
+    color: var(--tv-text);
+  }
 }

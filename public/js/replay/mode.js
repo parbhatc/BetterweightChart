@@ -1,4 +1,5 @@
 import { replayDebug, replayDebugState } from "./debug.js";
+import { bumpDataEpoch } from "../app/bar/htfBarCache.js";
 
 /**
  * @typedef {import("./icons.js").ReplaySelectMode} ReplaySelectMode
@@ -60,6 +61,7 @@ export function mountReplayMode(opts) {
   function setActive(next) {
     if (lockActive && !next && state.active) return;
     if (state.active === next) return;
+    bumpDataEpoch(next ? "replay-enter" : "replay-exit");
     if (!next) {
       state = {
         active: false,
@@ -136,6 +138,9 @@ export function mountReplayMode(opts) {
       patch({ selectMode, selectingBar: false, playing: false });
     },
     setSelectedBar: (index, utcTime) => {
+      if (state.currentBarTime != null && utcTime < state.currentBarTime) {
+        bumpDataEpoch("replay-rewind");
+      }
       replayDebug("selectBar.set", { index, time: utcTime });
       patch({
         selectedBarIndex: index,
@@ -149,6 +154,9 @@ export function mountReplayMode(opts) {
     setReplayCursor: (utcTime, opts = {}) => {
       if (!state.active || state.selectedBarTime == null) return;
       if (utcTime == null || !Number.isFinite(utcTime)) return;
+      if (state.currentBarTime != null && utcTime < state.currentBarTime) {
+        bumpDataEpoch("replay-rewind");
+      }
       patch({
         currentBarTime: utcTime,
         ...(opts.index != null ? { currentBarIndex: opts.index } : {}),
@@ -161,6 +169,9 @@ export function mountReplayMode(opts) {
      */
     setReplayPosition: (pos, opts = {}) => {
       if (!state.active) return;
+      if (state.currentBarTime != null && pos.currentBarTime < state.currentBarTime) {
+        bumpDataEpoch("replay-rewind");
+      }
       patch({
         selectedBarIndex: pos.selectedBarIndex,
         currentBarIndex: pos.currentBarIndex,
@@ -212,6 +223,7 @@ export function mountReplayMode(opts) {
     },
     /** @param {Partial<ReplayState> & { active: true }} persisted */
     restoreFromPersist(persisted) {
+      bumpDataEpoch("replay-restore");
       state = {
         ...state,
         ...persisted,

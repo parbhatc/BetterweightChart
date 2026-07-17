@@ -395,11 +395,15 @@
   }
 }
 
+/* On compact layouts the primary tool button opens its flyout directly, so
+   the separate chevron strip only wastes width and appears as clipped arrows. */
 @media (max-width: 840px) {
   .draw-tools__cluster--has-menu .draw-tools__expand {
     display: none !important;
   }
+}
 
+@media (max-width: 840px) {
   .draw-tools__cluster:hover .draw-tools__control,
   .draw-tools__cluster--open .draw-tools__control {
     background: transparent;
@@ -992,6 +996,42 @@
 
 /* ── Touch-friendly controls globally on coarse pointers ── */
 @media (hover: none) and (pointer: coarse) {
+  html.tv-app--touch,
+  html.tv-app--touch * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Ensure ordinary controls use the browser's reliable tap path. In
+     particular, drawing-editor and indicator buttons previously inherited the
+     app shell's touch-action:none and could lose their synthesized click. */
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  label,
+  summary,
+  [role="button"],
+  [role="menuitem"],
+  [role="option"],
+  [role="tab"] {
+    touch-action: manipulation;
+  }
+
+  /* iOS Safari zooms the page when focusing an input whose font-size < 16px;
+     with touch-action locked on the chart the user can't zoom back out. */
+  input[type="text"],
+  input[type="search"],
+  input[type="number"],
+  input[type="email"],
+  input[type="url"],
+  input[type="password"],
+  input:not([type]),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+  }
+
   .tv-symbol-modal__search,
   .tv-ind-lib__search,
   .tv-layouts-modal__search,
@@ -1052,7 +1092,14 @@
   }
 
   .tv-header-tools__btn,
-  .tv-header-layouts__btn {
+  .tv-header-layouts__btn,
+  .tv-tf__btn,
+  .tv-tf__menu-btn,
+  .tv-tf__interval,
+  .tv-tf__fav-btn,
+  .tv-tf__group-head,
+  .tv-tf__panel-close,
+  .tv-tf__add-custom {
     touch-action: manipulation;
   }
 

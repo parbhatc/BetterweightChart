@@ -179,9 +179,14 @@
   color: var(--tv-muted);
 }
 
-.tv-chart-tools__btn:hover .tv-chart-tools__icon,
 .tv-chart-tools__btn.is-pressed .tv-chart-tools__icon {
   color: var(--tv-text);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tv-chart-tools__btn:hover .tv-chart-tools__icon {
+    color: var(--tv-text);
+  }
 }
 
 .tv-chart-tools__icon svg {
@@ -230,10 +235,16 @@
   cursor: pointer;
 }
 
-.tv-chart-tools__fav-btn:hover,
 .tv-chart-tools__fav-btn[aria-expanded="true"] {
   color: var(--tv-text);
   background: var(--tv-surface-hover);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tv-chart-tools__fav-btn:hover {
+    color: var(--tv-text);
+    background: var(--tv-surface-hover);
+  }
 }
 
 .tv-chart-tools__chev {
@@ -277,6 +288,24 @@
   cursor: pointer;
 }
 
-.tv-chart-tools__menu .tv-ind-prop__menu-item:hover {
-  background: var(--tv-surface-hover);
+@media (hover: hover) and (pointer: fine) {
+  .tv-chart-tools__menu .tv-ind-prop__menu-item:hover {
+    background: var(--tv-surface-hover);
+  }
+}
+
+@media (hover: none), (pointer: coarse) {
+  .tv-chart-tools__btn:active,
+  .tv-chart-tools__menu-btn:active,
+  .tv-chart-tools__fav-btn:active,
+  .tv-chart-tools__fav-pill:active,
+  .tv-chart-tools__menu .tv-ind-prop__menu-item:active {
+    background: var(--tv-surface-hover);
+  }
+
+  .tv-chart-tools__btn:active .tv-chart-tools__icon,
+  .tv-chart-tools__menu-btn:active,
+  .tv-chart-tools__fav-btn:active {
+    color: var(--tv-text);
+  }
 }

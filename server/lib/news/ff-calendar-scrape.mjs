@@ -9,6 +9,26 @@ import path from "node:path";
 const MONTH_NAMES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
 
 export class FfCalendarScraper {
+  /** Prefer Forex Factory's absolute event timestamp over its viewer-local label. */
+  static eventTimeLabelEt(event) {
+    const rawTs = event?.dateline ?? event?.timestamp ?? event?.timeStamp ?? null;
+    const ts = typeof rawTs === "number" ? rawTs : Number(rawTs);
+    if (Number.isFinite(ts) && ts > 1_000_000_000) {
+      const epochMs = ts > 10_000_000_000 ? ts : ts * 1000;
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      }).formatToParts(new Date(epochMs));
+      const hour = parts.find((p) => p.type === "hour")?.value;
+      const minute = parts.find((p) => p.type === "minute")?.value;
+      const period = parts.find((p) => p.type === "dayPeriod")?.value?.toLowerCase();
+      if (hour && minute && period) return `${hour}:${minute}${period}`;
+    }
+    return event?.timeLabel || event?.time || "All Day";
+  }
+
   /**
    * @param {number} year
    * @param {number} month 1-12
@@ -108,13 +128,14 @@ export class FfCalendarScraper {
     else if (event.impactName === "medium" || event.impactName === "orange") impact = "medium";
 
     const name = event.name || event.prefencedName || "Unknown Event";
+    const timeLabel = FfCalendarScraper.eventTimeLabelEt(event);
     return {
       id: `${year}-${String(month).padStart(2, "0")}-${event.id || Date.now()}-${name.slice(0, 20)}`
         .replace(/[^a-zA-Z0-9-]/g, "-")
         .toLowerCase(),
       date,
-      time: event.timeLabel || event.time || "All Day",
-      timeLabel: event.timeLabel || event.time || null,
+      time: timeLabel,
+      timeLabel: timeLabel === "All Day" ? null : timeLabel,
       currency: event.currency || "N/A",
       event: name,
       impact,

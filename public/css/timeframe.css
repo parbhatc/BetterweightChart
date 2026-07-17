@@ -640,3 +640,101 @@
   cursor: not-allowed;
   opacity: 1;
 }
+
+/* Touch browsers can keep :hover latched after a tap. Restore the resting
+   styles on coarse/no-hover pointers and use :active for tap feedback. */
+@media (hover: none), (pointer: coarse) {
+  .tv-tf__btn:hover {
+    background: transparent;
+    color: var(--tv-muted);
+    border-color: transparent;
+  }
+
+  .tv-tf__btn.is-active:hover {
+    background: transparent;
+    color: var(--tv-accent);
+    border-color: transparent;
+  }
+
+  .tv-tf--solo .tv-tf__btn.is-active:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .tv-tf__btn:active,
+  .tv-tf--solo .tv-tf__btn.is-active:active {
+    background: var(--tv-surface-hover);
+    border-color: var(--tv-border-subtle);
+  }
+
+  .tv-tf:hover .tv-tf__menu-btn:hover,
+  .tv-tf__bar:hover .tv-tf__menu-btn:hover {
+    background: transparent;
+    color: var(--tv-muted);
+  }
+
+  .tv-tf__menu-btn:hover svg {
+    opacity: 0.85;
+  }
+
+  .tv-tf__menu-btn:active {
+    background: var(--tv-surface-hover);
+    color: var(--tv-text);
+  }
+
+  .tv-tf__group-head:hover,
+  .tv-tf__add-custom:hover,
+  .tv-tf__interval:hover,
+  .tv-tf-dialog__close:hover,
+  .tv-tf-dialog__type:hover,
+  .tv-tf-dialog__type-opt:hover,
+  .tv-tf-dialog__input:hover,
+  .tv-tf-dialog__btn--secondary:hover {
+    background: transparent;
+  }
+
+  .tv-tf__group-head:hover,
+  .tv-tf-dialog__close:hover {
+    color: var(--tv-muted);
+  }
+
+  .tv-tf-dialog__type:hover,
+  .tv-tf-dialog__input:hover {
+    border-color: var(--tv-border-subtle);
+  }
+
+  .tv-tf__interval.is-active:hover,
+  .tv-tf-dialog__type-opt.is-active:hover {
+    background: color-mix(in srgb, var(--tv-accent) 20%, transparent);
+    color: var(--tv-accent);
+  }
+
+  .tv-tf__fav-btn:hover {
+    color: var(--tv-muted);
+    background: transparent;
+  }
+
+  .tv-tf__fav-btn.is-fav:hover {
+    color: var(--tv-warning);
+  }
+
+  .tv-tf__fav-btn:active {
+    color: var(--tv-warning);
+    background: color-mix(in srgb, var(--tv-warning) 12%, transparent);
+  }
+
+  .tv-tf__remove-btn:hover {
+    color: var(--tv-muted);
+    background: transparent;
+  }
+
+  .tv-tf__remove-btn {
+    opacity: 1;
+  }
+
+  .tv-tf__group-head:active,
+  .tv-tf__add-custom:active,
+  .tv-tf__interval:active {
+    background: var(--tv-accent-muted);
+  }
+}

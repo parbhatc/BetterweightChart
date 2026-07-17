@@ -1,5 +1,5 @@
 import { resolveHtfSeries } from "./htfAccess.js";
-import { getHtfBars, htfCacheStaleForAnchor } from "../../app/bar/htfBarCache.js";
+import { getHtfBars, getHtfSeriesVersion, htfCacheStaleForAnchor } from "../../app/bar/htfBarCache.js";
 import { resolutionSec } from "/js/chart/resolutions.js";
 
 /** Re-export for indicators; canonical copy lives in htfAccess. */
@@ -81,10 +81,13 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
   const replayHost =
     ctx.replayHostControlled === true ||
     (typeof ctx.isReplayLocked === "function" && ctx.isReplayLocked());
+  const chartSec = resolutionSec(ctx.chartResolution ?? "") ?? null;
   let pending = false;
   for (const tfId of tfIds) {
     const want = Math.max(10, Number(perTf?.[tfId] ?? barsNeeded) || 300);
     const minStart = strict ? want : Math.min(50, want);
+    const tfSec = resolutionSec(tfId);
+    const confirmedOnly = tfSec != null && chartSec != null && tfSec > chartSec;
 
     // ponytail: replay host with a fresh cache never re-fetches mid-playback
     const stored = getHtfBars(symbol, tfId);
@@ -92,7 +95,7 @@ export function htfPendingForLayers(ctx, symbol, tfIds, barsNeeded, opts = {}) {
       replayHost &&
       replayAnchor != null &&
       stored?.utcBars?.length &&
-      !htfCacheStaleForAnchor(symbol, tfId, replayAnchor)
+      !htfCacheStaleForAnchor(symbol, tfId, replayAnchor, { confirmedOnly })
     ) {
       continue;
     }
@@ -118,9 +121,11 @@ export function htfSeriesRecomputeKey(ctx, symbol, tfIds) {
       const hit = resolveHtfSeries(ctx, symbol, tfId, 0, { request: false });
       const first = hit.utcBars[0];
       const last = hit.utcBars.at(-1);
-      // Head/tail times + last OHLC: length alone misses rewinds that keep the
-      // count and tail refetches that finalize the forming bucket's values.
-      return `${tfId}:${hit.utcBars.length}:${hit.source}:${first?.time ?? ""}:${last?.time ?? ""}:${last?.high ?? ""},${last?.low ?? ""},${last?.close ?? ""}`;
+      // Store version catches ANY store mutation (mid-series replaces with equal
+      // endpoints included); head/tail times + last OHLC additionally capture
+      // anchor-sliced reads and the chart-derived forming bucket.
+      const version = getHtfSeriesVersion(symbol, tfId);
+      return `${tfId}:v${version}:${hit.utcBars.length}:${hit.source}:${first?.time ?? ""}:${last?.time ?? ""}:${last?.high ?? ""},${last?.low ?? ""},${last?.close ?? ""}`;
     })
     .join(",");
 }

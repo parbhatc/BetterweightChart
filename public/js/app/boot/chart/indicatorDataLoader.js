@@ -4,7 +4,17 @@ import {
   instanceUsesCompareSymbols,
   paneDataNeedsEmpty,
 } from "../../../indicators/security/indicatorDataNeeds.js";
-import { ensureHtfBars, extendHtfCacheForAnchor, getHtfBars, htfCacheStaleForAnchor, prependHtfBars } from "../../bar/htfBarCache.js";
+import {
+  ensureHtfBars,
+  extendHtfCacheForAnchor,
+  getDataEpoch,
+  getHtfBars,
+  getHtfSeriesVersion,
+  htfCacheStaleForAnchor,
+  noteReplayAnchor,
+  prependHtfBars,
+} from "../../bar/htfBarCache.js";
+import { resolutionSec } from "../../../chart/resolutions.js";
 import { ensureSymbolBars, lookupSymbolBars } from "../../bar/symbolBarCache.js";
 import { getPaneChartView } from "../../../chart/pane/viewCache.js";
 import { uniqueEtDaysFromBars } from "../../../core/etTime.js";
@@ -26,16 +36,21 @@ function htfStoreBarCount(symbol, resolution) {
   return getHtfBars(symbol, resolution)?.utcBars?.length ?? 0;
 }
 
-/** @param {import("../../../indicators/security/indicatorDataNeeds.js").PaneDataNeeds} needs @param {object} pane */
+/**
+ * Snapshot store VERSIONS (not bar counts) — an equal-length write that
+ * corrects values (finalized forming bucket, range replace) must still
+ * invalidate overlay caches.
+ * @param {import("../../../indicators/security/indicatorDataNeeds.js").PaneDataNeeds} needs @param {object} pane
+ */
 function snapshotPaneBarCounts(needs, pane) {
   const htf = new Map();
   for (const key of new Set([...needs.htf.keys(), ...needs.compareHtf.keys()])) {
     const sep = key.indexOf("|");
-    htf.set(key, htfStoreBarCount(key.slice(0, sep), key.slice(sep + 1)));
+    htf.set(key, getHtfSeriesVersion(key.slice(0, sep), key.slice(sep + 1)));
   }
   const compare = new Map();
   for (const symbol of needs.compareChart.keys()) {
-    compare.set(symbol, htfStoreBarCount(symbol, pane.resolution));
+    compare.set(symbol, getHtfSeriesVersion(symbol, pane.resolution));
   }
   return { htf, compare };
 }
@@ -44,12 +59,12 @@ function snapshotPaneBarCounts(needs, pane) {
 function paneBarCountsChanged(needs, pane, before) {
   for (const key of new Set([...needs.htf.keys(), ...needs.compareHtf.keys()])) {
     const sep = key.indexOf("|");
-    const next = htfStoreBarCount(key.slice(0, sep), key.slice(sep + 1));
-    if (next > (before.htf.get(key) ?? 0)) return true;
+    const next = getHtfSeriesVersion(key.slice(0, sep), key.slice(sep + 1));
+    if (next !== (before.htf.get(key) ?? 0)) return true;
   }
   for (const symbol of needs.compareChart.keys()) {
-    const next = htfStoreBarCount(symbol, pane.resolution);
-    if (next > (before.compare.get(symbol) ?? 0)) return true;
+    const next = getHtfSeriesVersion(symbol, pane.resolution);
+    if (next !== (before.compare.get(symbol) ?? 0)) return true;
   }
   return false;
 }
@@ -80,13 +95,34 @@ export function createIndicatorDataLoader({
   /** @type {Set<string>} */
   const compareFetchInFlight = new Set();
 
-  /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack @param {object} [symbolInfo] */
-  function htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo) {
-    const info = symbolInfo ?? pane.symbolInfo ?? ctx.symbolInfo;
-    const playbackAnchorSec =
+  /**
+   * Replay anchor for the pane, or null. Also feeds rewind detection — a
+   * backward anchor move bumps the data epoch (drops stale anchored caches).
+   * @param {object} pane
+   */
+  function paneAnchorSec(pane) {
+    const a =
       typeof ctx.opts?.getPlaybackAnchorSec === "function"
         ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
         : null;
+    if (a != null && Number.isFinite(a)) {
+      noteReplayAnchor(pane.resolution, a);
+      return a;
+    }
+    return null;
+  }
+
+  /** True when `resolution` is coarser than the pane chart (store holds closed buckets only). */
+  function confirmedOnlyFor(pane, resolution) {
+    const tf = resolutionSec(resolution);
+    const chart = resolutionSec(pane?.resolution ?? "");
+    return tf != null && chart != null && tf > chart;
+  }
+
+  /** @param {object} pane @param {string} symbol @param {string} resolution @param {number} countBack @param {object} [symbolInfo] */
+  function htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo) {
+    const info = symbolInfo ?? pane.symbolInfo ?? ctx.symbolInfo;
+    const playbackAnchorSec = paneAnchorSec(pane);
     return {
       datafeed: ctx.datafeed,
       symbolInfo: info,
@@ -105,11 +141,9 @@ export function createIndicatorDataLoader({
   /** @param {object} pane @returns {Promise<boolean>} true when any HTF tail was extended */
   async function extendHtfTailForReplay(pane) {
     if (!pane?.symbol || !ctx.datafeed) return false;
-    const anchorSec =
-      typeof ctx.opts?.getPlaybackAnchorSec === "function"
-        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
-        : null;
-    if (anchorSec == null || !Number.isFinite(anchorSec)) return false;
+    const anchorSec = paneAnchorSec(pane);
+    if (anchorSec == null) return false;
+    const startEpoch = getDataEpoch();
 
     const view = getPaneChartView(
       pane,
@@ -131,7 +165,8 @@ export function createIndicatorDataLoader({
       const sep = key.indexOf("|");
       const symbol = key.slice(0, sep);
       const resolution = key.slice(sep + 1);
-      if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec)) continue;
+      const confirmedOnly = confirmedOnlyFor(pane, resolution);
+      if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec, { confirmedOnly })) continue;
       const symbolInfo =
         symbol === pane.symbol
           ? pane.symbolInfo ?? ctx.symbolInfo
@@ -142,6 +177,7 @@ export function createIndicatorDataLoader({
         anchorSec,
         symbolInfo,
       });
+      if (getDataEpoch() !== startEpoch) return false;
       extended = true;
       controller.invalidateOverlayCacheForPane(pane.index, { htfKeys: new Set([key]) });
     }
@@ -158,6 +194,7 @@ export function createIndicatorDataLoader({
         anchorSec,
         symbolInfo,
       });
+      if (getDataEpoch() !== startEpoch) return false;
       extended = true;
       controller.invalidateOverlayCacheForPane(pane.index, {
         htfKeys: new Set([`${symbol}|${pane.resolution}`]),
@@ -190,12 +227,14 @@ export function createIndicatorDataLoader({
     }
     const ensureOpts = htfEnsureOpts(pane, symbol, resolution, countBack, symbolInfo);
     const anchorSec = ensureOpts.playbackAnchorSec;
+    const confirmedOnly = confirmedOnlyFor(pane, resolution);
     if (anchorSec != null && ctx.opts?.replayHostControlled) {
       const stored = getHtfBars(symbol, resolution);
-      if (stored?.utcBars?.length && !htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+      const stale = htfCacheStaleForAnchor(symbol, resolution, anchorSec, { confirmedOnly });
+      if (stored?.utcBars?.length && !stale) {
         return;
       }
-      if (stored?.utcBars?.length && htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+      if (stored?.utcBars?.length && stale) {
         await extendHtfCacheForAnchor({
           ...ensureOpts,
           anchorSec,
@@ -207,7 +246,7 @@ export function createIndicatorDataLoader({
       await ensureHtfBars(ensureOpts);
       return;
     }
-    if (anchorSec != null && htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+    if (anchorSec != null && htfCacheStaleForAnchor(symbol, resolution, anchorSec, { confirmedOnly })) {
       await extendHtfCacheForAnchor({
         ...ensureOpts,
         anchorSec,
@@ -233,10 +272,7 @@ export function createIndicatorDataLoader({
 
   /** @param {object} pane @param {string} symbol @param {number} countBack */
   async function fillCompareChart(pane, symbol, countBack) {
-    const anchorSec =
-      typeof ctx.opts?.getPlaybackAnchorSec === "function"
-        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
-        : null;
+    const anchorSec = paneAnchorSec(pane);
     let hit = lookupSymbolBars({ ...symbolBarLookupOpts(pane, symbol), resolution: pane.resolution });
     const tailStale =
       anchorSec != null && htfCacheStaleForAnchor(symbol, pane.resolution, anchorSec);
@@ -356,8 +392,10 @@ export function createIndicatorDataLoader({
       return;
     }
     if (paneInFlight.has(pane.index)) return;
+    const startEpoch = getDataEpoch();
 
     await ctx.ensureIndicatorChartHistory?.(pane);
+    if (getDataEpoch() !== startEpoch) return;
 
     const view = getPaneChartView(
       pane,
@@ -401,6 +439,7 @@ export function createIndicatorDataLoader({
     paneInFlight.add(pane.index);
     try {
       await ensureGlobalNews(pane);
+      if (getDataEpoch() !== startEpoch) return;
       if (!ctx.datafeed) {
         controller.invalidateOverlayCacheForPane(pane.index);
         requestOverlayRefresh(pane.index);
@@ -434,6 +473,9 @@ export function createIndicatorDataLoader({
         const resolution = key.slice(sep + 1);
         await fillHtfHistory(pane, symbol, resolution, countBack);
       }
+      // A symbol/TF/replay transition happened mid-load: results were dropped
+      // by the store, and pane state may no longer match — skip refresh.
+      if (getDataEpoch() !== startEpoch) return;
       if (!paneBarCountsChanged(needs, pane, barCountsBefore)) return;
       controller.invalidateOverlayCacheForPane(pane.index, {
         htfKeys: new Set([...needs.htf.keys(), ...needs.compareHtf.keys()]),
@@ -501,10 +543,7 @@ export function createIndicatorDataLoader({
       symbolInfoExtra: pane.symbolInfo ?? ctx.symbolInfo,
       resolutions: ctx.resolutions,
     });
-    const anchorSec =
-      typeof ctx.opts?.getPlaybackAnchorSec === "function"
-        ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
-        : null;
+    const anchorSec = paneAnchorSec(pane);
     // Sufficiency must be time-based too: a long-but-stale cache (tail ends
     // before the replay cursor) still needs a tail top-up, or SMT-style
     // compares freeze at the last covered pivot.
@@ -513,7 +552,8 @@ export function createIndicatorDataLoader({
     if (hit && hit.utcBars.length >= want && !tailStale) return;
 
     compareFetchInFlight.add(key);
-    const beforeLen = htfStoreBarCount(symbol, resolution);
+    const startEpoch = getDataEpoch();
+    const beforeVersion = getHtfSeriesVersion(symbol, resolution);
     void ctx.datafeed
       .resolveSymbol(symbol)
       .then((symbolInfo) => {
@@ -539,7 +579,8 @@ export function createIndicatorDataLoader({
         });
       })
       .then(() => {
-        if (!tailStale && htfStoreBarCount(symbol, resolution) <= beforeLen) return;
+        if (getDataEpoch() !== startEpoch) return;
+        if (getHtfSeriesVersion(symbol, resolution) === beforeVersion) return;
         refreshPanesUsingCompareSymbol(symbol);
       })
       .finally(() => compareFetchInFlight.delete(key));
@@ -558,20 +599,28 @@ export function createIndicatorDataLoader({
         ? ctx.opts.getPlaybackAnchorSec(pane.resolution)
         : null;
     if (ctx.opts?.replayHostControlled && anchorSec != null) {
+      const startEpoch = getDataEpoch();
+      const confirmedOnly = confirmedOnlyFor(pane, resId);
       const stored = getHtfBars(sym, resId);
-      if (stored?.utcBars?.length && !htfCacheStaleForAnchor(sym, resId, anchorSec)) {
+      if (
+        stored?.utcBars?.length &&
+        !htfCacheStaleForAnchor(sym, resId, anchorSec, { confirmedOnly })
+      ) {
         return;
       }
       const key = `${sym}|${resId}`;
       if (htfFetchInFlight.has(key)) return;
       htfFetchInFlight.add(key);
-      const beforeLen = htfStoreBarCount(sym, resId);
+      const beforeVersion = getHtfSeriesVersion(sym, resId);
       const symbolInfo = sym === pane.symbol ? pane.symbolInfo ?? ctx.symbolInfo : null;
       void Promise.resolve(symbolInfo ?? ctx.datafeed.resolveSymbol(sym))
         .then((info) => {
           if (!info) return null;
           const ensureOpts = htfEnsureOpts(pane, sym, resId, countBack, info);
-          if (stored?.utcBars?.length && htfCacheStaleForAnchor(sym, resId, anchorSec)) {
+          if (
+            stored?.utcBars?.length &&
+            htfCacheStaleForAnchor(sym, resId, anchorSec, { confirmedOnly })
+          ) {
             return extendHtfCacheForAnchor({
               ...ensureOpts,
               anchorSec,
@@ -581,8 +630,9 @@ export function createIndicatorDataLoader({
           return ensureHtfBars(ensureOpts);
         })
         .then((entry) => {
-          const afterLen = entry?.utcBars?.length ?? htfStoreBarCount(sym, resId);
-          if (afterLen <= beforeLen) return;
+          if (getDataEpoch() !== startEpoch) return;
+          const afterVersion = entry?.version ?? getHtfSeriesVersion(sym, resId);
+          if (afterVersion === beforeVersion) return;
           controller.invalidateOverlayCacheForPane(pane.index, {
             htfKeys: new Set([key]),
           });
@@ -594,11 +644,13 @@ export function createIndicatorDataLoader({
     const key = `${sym}|${resId}`;
     if (htfFetchInFlight.has(key)) return;
     htfFetchInFlight.add(key);
-    const beforeLen = htfStoreBarCount(sym, resId);
+    const startEpoch = getDataEpoch();
+    const beforeVersion = getHtfSeriesVersion(sym, resId);
     void ensureHtfBars(htfEnsureOpts(pane, sym, resId, countBack))
       .then((entry) => {
-        const afterLen = entry?.utcBars?.length ?? htfStoreBarCount(sym, resId);
-        if (afterLen <= beforeLen) return;
+        if (getDataEpoch() !== startEpoch) return;
+        const afterVersion = entry?.version ?? getHtfSeriesVersion(sym, resId);
+        if (afterVersion === beforeVersion) return;
         controller.invalidateOverlayCacheForPane(pane.index, {
           htfKeys: new Set([key]),
         });

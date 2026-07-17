@@ -1,4 +1,4 @@
-@media (hover: none) {
+@media (hover: none), (pointer: coarse) {
   .tv-floating-toolbar__hint {
     display: none !important;
   }

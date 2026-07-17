@@ -6,12 +6,58 @@ import { resolutionSec } from "../../chart/resolutions.js";
 import { buildInitialPeriodParams, buildPrependPeriodParams, buildTvPeriodParams, alignBarTime } from "./periodParams.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
 
-/** @typedef {{ utcBars: object[], chartBars: object[], historyExhausted: boolean, updatedAt: number, source?: string }} HtfBarEntry */
+/** @typedef {{ utcBars: object[], chartBars: object[], historyExhausted: boolean, updatedAt: number, source?: string, epoch: number, version: number }} HtfBarEntry */
 
 /** @type {Map<string, HtfBarEntry>} */
 const store = new Map();
 /** @type {Map<string, Promise<HtfBarEntry | null>>} */
 const inFlight = new Map();
+
+// ---------------------------------------------------------------------------
+// Data epoch: every entry is stamped with the epoch it was written in. Bumping
+// the epoch (symbol change, TF change, replay enter/exit, replay rewind)
+// invalidates the whole store lazily — stale-epoch entries read as null and
+// async fetch completions from an older epoch are dropped instead of stored.
+// ---------------------------------------------------------------------------
+let dataEpoch = 0;
+let versionCounter = 0;
+/** @type {Map<string, number>} last seen replay anchor per resolution (rewind detection) */
+const lastAnchorByRes = new Map();
+
+export function getDataEpoch() {
+  return dataEpoch;
+}
+
+/** @param {string} [reason] */
+export function bumpDataEpoch(reason = "") {
+  dataEpoch += 1;
+  lastAnchorByRes.clear();
+  chartDebug("data", "htf data epoch bump", { epoch: dataEpoch, reason });
+  return dataEpoch;
+}
+
+/**
+ * Track the replay anchor; a backward move (rewind / jump back) bumps the
+ * epoch so anchored fetches made at a later cursor cannot leak future data.
+ * @param {string} resolution
+ * @param {number} anchorSec
+ */
+export function noteReplayAnchor(resolution, anchorSec) {
+  if (!resolution || anchorSec == null || !Number.isFinite(anchorSec)) return;
+  const prev = lastAnchorByRes.get(resolution);
+  if (prev != null && anchorSec < prev) {
+    bumpDataEpoch("replay-rewind");
+  }
+  lastAnchorByRes.set(resolution, anchorSec);
+}
+
+/** Stamp + version an entry and publish it. @param {string} key @param {HtfBarEntry} entry */
+function putHtfEntry(key, entry) {
+  entry.epoch = dataEpoch;
+  entry.version = ++versionCounter;
+  store.set(key, entry);
+  return entry;
+}
 
 /** @param {string} symbol @param {string} resolution */
 export function htfCacheKey(symbol, resolution) {
@@ -21,7 +67,50 @@ export function htfCacheKey(symbol, resolution) {
 /** @param {string} symbol @param {string} resolution @returns {HtfBarEntry | null} */
 export function getHtfBars(symbol, resolution) {
   if (!symbol || !resolution) return null;
-  return store.get(htfCacheKey(symbol, resolution)) ?? null;
+  const key = htfCacheKey(symbol, resolution);
+  const entry = store.get(key) ?? null;
+  if (entry && entry.epoch !== dataEpoch) {
+    store.delete(key);
+    return null;
+  }
+  return entry;
+}
+
+/** Store mutation counter for symbol+resolution — 0 when absent. Recompute keys use this. */
+export function getHtfSeriesVersion(symbol, resolution) {
+  return getHtfBars(symbol, resolution)?.version ?? 0;
+}
+
+/**
+ * Drop trailing bars whose bucket is not fully closed at `capSec`.
+ * @param {object[]} bars @param {number} barSec @param {number} capSec
+ */
+function dropUnclosedTail(bars, barSec, capSec) {
+  if (!bars?.length || !barSec || capSec == null) return bars ?? [];
+  let end = bars.length;
+  while (end > 0 && bars[end - 1].time + barSec > capSec) end -= 1;
+  return end === bars.length ? bars : bars.slice(0, end);
+}
+
+/**
+ * Merge paired utc/chart records: incoming replaces the covered time range,
+ * existing records survive only outside [incoming head, incoming tail].
+ * @param {{ utc: object, chart: object }[]} existing
+ * @param {{ utc: object, chart: object }[]} incoming
+ */
+function mergeRecordsReplacingRange(existing, incoming) {
+  if (!incoming?.length) return existing ?? [];
+  if (!existing?.length) return incoming;
+  const first = incoming[0].utc.time;
+  const last = incoming.at(-1).utc.time;
+  const head = existing.filter((r) => r.utc.time < first);
+  const tail = existing.filter((r) => r.utc.time > last);
+  return [...head, ...incoming, ...tail];
+}
+
+/** @param {object[]} utcBars @param {object[]} [chartBars] */
+function toRecords(utcBars, chartBars) {
+  return (utcBars ?? []).map((b, i) => ({ utc: b, chart: chartBars?.[i] ?? b }));
 }
 
 /**
@@ -29,9 +118,12 @@ export function getHtfBars(symbol, resolution) {
  * (e.g. 9:15 15m bar cached at 9:29 — 9:30 bucket missing until anchor passes 9:45).
  * @param {string} symbol
  * @param {string} resolution
- * @param {number} anchorSec replay playback anchor (1m UTC)
+ * @param {number} anchorSec replay playback anchor (or live chart tail, 1m UTC)
+ * @param {{ confirmedOnly?: boolean }} [opts] confirmedOnly: the store holds only fully
+ *   closed buckets (true HTF series) — stale only when a NEWER CLOSED bucket exists,
+ *   so extension fires once per bucket boundary, not on every anchor step.
  */
-export function htfCacheStaleForAnchor(symbol, resolution, anchorSec) {
+export function htfCacheStaleForAnchor(symbol, resolution, anchorSec, opts = {}) {
   const tfSec = resolutionSec(resolution);
   if (!symbol || !resolution || anchorSec == null || !tfSec) return false;
   const entry = getHtfBars(symbol, resolution);
@@ -39,9 +131,11 @@ export function htfCacheStaleForAnchor(symbol, resolution, anchorSec) {
   const lastOpen = entry.utcBars.at(-1)?.time;
   if (lastOpen == null) return false;
   const anchorOpen = alignBarTime(anchorSec, tfSec);
-  // Refetch as soon as the anchor enters a bucket past the last stored one — this also
-  // finalizes the previously-partial last bucket (fetched with to=old anchor) so it isn't
-  // counted as a confirmed bar with truncated OHLC for a whole extra bucket.
+  if (opts.confirmedOnly) {
+    // Newest closed bucket open: bucket [o, o+tf) is closed iff o+tf <= anchor.
+    return lastOpen < anchorOpen - tfSec;
+  }
+  // Chart-resolution series (compare bars): the bucket at the anchor is the current bar.
   return lastOpen < anchorOpen;
 }
 
@@ -60,7 +154,9 @@ export async function extendHtfCacheForAnchor(opts) {
   if (!datafeed || !symbolInfo || !symbol || !resolution || anchorSec == null || !tfSec) {
     return getHtfBars(symbol, resolution);
   }
-  if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+  const chartSec = resolutionSec(opts.pane?.resolution ?? "") ?? null;
+  const confirmedOnly = chartSec != null && tfSec > chartSec;
+  if (!htfCacheStaleForAnchor(symbol, resolution, anchorSec, { confirmedOnly })) {
     return getHtfBars(symbol, resolution);
   }
 
@@ -69,6 +165,7 @@ export async function extendHtfCacheForAnchor(opts) {
   const pending = inFlight.get(flightKey);
   if (pending) return pending;
 
+  const startEpoch = dataEpoch;
   const task = (async () => {
     const entry = getHtfBars(symbol, resolution);
     const lastOpen = entry?.utcBars?.at(-1)?.time ?? null;
@@ -92,11 +189,17 @@ export async function extendHtfCacheForAnchor(opts) {
     });
 
     const result = await datafeed.getBars(symbolInfo, resolution, params);
-    if (!result.bars?.length) return entry ?? null;
+    // Stale epoch (symbol/TF/replay changed while fetching): drop the result.
+    if (startEpoch !== dataEpoch) return getHtfBars(symbol, resolution);
+    let fetched = result.bars ?? [];
+    // Never store a partially formed HTF bucket as a confirmed bar — the
+    // forming bucket is rebuilt on read from chart bars (htfAccess).
+    if (confirmedOnly) fetched = dropUnclosedTail(fetched, tfSec, anchorSec);
+    if (!fetched.length) return entry ?? null;
 
     const base = entry?.utcBars ?? [];
     const byTime = new Map(base.map((b) => [b.time, b]));
-    for (const bar of result.bars) {
+    for (const bar of fetched) {
       if (lastOpen != null && bar.time < lastOpen) continue;
       byTime.set(bar.time, bar);
     }
@@ -114,14 +217,13 @@ export async function extendHtfCacheForAnchor(opts) {
       prevLast.close === nextLast.close;
     if (entry && merged.length === base.length && lastUnchanged) return entry;
 
-    const next = {
+    const next = putHtfEntry(key, {
       utcBars: merged,
       chartBars: merged,
       historyExhausted: entry?.historyExhausted ?? false,
       updatedAt: Date.now(),
       source: entry?.source ?? "datafeed",
-    };
-    store.set(key, next);
+    });
     chartDebug("data", "htf cache extended", {
       symbol,
       resolution,
@@ -147,57 +249,49 @@ export async function extendHtfCacheForAnchor(opts) {
 export function seedHtfBars(symbol, resolution, utcBars, chartBars, source = "seed") {
   if (!symbol || !resolution || !utcBars?.length) return null;
   const key = htfCacheKey(symbol, resolution);
-  const existing = store.get(key);
+  const existing = getHtfBars(symbol, resolution);
 
-  if (source === "timeframe-switch" && existing?.utcBars?.length) {
-    const byTime = new Map(
-      existing.utcBars.map((b, i) => [
-        b.time,
-        { utc: b, chart: existing.chartBars?.[i] ?? b },
-      ]),
-    );
-    for (let i = 0; i < utcBars.length; i++) {
-      byTime.set(utcBars[i].time, {
-        utc: utcBars[i],
-        chart: chartBars?.[i] ?? utcBars[i],
-      });
-    }
-    const mergedUtc = [...byTime.values()]
-      .sort((a, b) => a.utc.time - b.utc.time)
-      .map((e) => e.utc);
-    const mergedChart = [...byTime.values()]
-      .sort((a, b) => a.utc.time - b.utc.time)
-      .map((e) => e.chart);
-    const entry = {
-      utcBars: mergedUtc,
-      chartBars: mergedChart,
-      historyExhausted: existing.historyExhausted ?? false,
-      updatedAt: Date.now(),
-      source,
-    };
-    store.set(key, entry);
-    chartDebug("data", "htf cache seed merge", {
-      symbol,
-      resolution,
-      source,
-      bars: entry.utcBars.length,
-      mergedFrom: utcBars.length,
-    });
-    return entry;
+  // Incoming bars replace their covered time range; existing bars survive only
+  // outside it. No length-based arbitration — a fresh seed always wins its window.
+  const merged = mergeRecordsReplacingRange(
+    toRecords(existing?.utcBars, existing?.chartBars),
+    toRecords(utcBars, chartBars?.length === utcBars.length ? chartBars : null),
+  );
+
+  const prev = existing;
+  const nextUtc = merged.map((r) => r.utc);
+  if (
+    prev &&
+    prev.utcBars.length === nextUtc.length &&
+    prev.utcBars[0]?.time === nextUtc[0]?.time &&
+    barsShallowEqual(prev.utcBars.at(-1), nextUtc.at(-1))
+  ) {
+    // No visible change — keep the entry (and its version) stable.
+    return prev;
   }
 
-  if (existing && existing.utcBars.length >= utcBars.length) return existing;
-
-  const entry = {
-    utcBars: utcBars.slice(),
-    chartBars: chartBars?.length ? chartBars.slice() : utcBars.slice(),
+  const entry = putHtfEntry(key, {
+    utcBars: nextUtc,
+    chartBars: merged.map((r) => r.chart),
     historyExhausted: existing?.historyExhausted ?? false,
     updatedAt: Date.now(),
     source,
-  };
-  store.set(key, entry);
+  });
   chartDebug("data", "htf cache seed", { symbol, resolution, source, bars: entry.utcBars.length });
   return entry;
+}
+
+/** @param {object | undefined} a @param {object | undefined} b */
+function barsShallowEqual(a, b) {
+  return (
+    !!a &&
+    !!b &&
+    a.time === b.time &&
+    a.open === b.open &&
+    a.high === b.high &&
+    a.low === b.low &&
+    a.close === b.close
+  );
 }
 
 /**
@@ -232,11 +326,22 @@ export async function ensureHtfBars(opts) {
   const key = htfCacheKey(symbol, resolution);
   const want = Math.max(50, Math.min(2000, Number(countBack) || 300));
   const anchorSec = opts.playbackAnchorSec;
+  const tfSec = resolutionSec(resolution);
+  const chartSec = resolutionSec(pane?.resolution ?? "") ?? null;
+  const confirmedOnly = tfSec != null && chartSec != null && tfSec > chartSec;
+  // Tail cap: replay anchor, or (live mode) the newest chart bar — so a store
+  // that ends before the newest closed HTF bucket is extended, not trusted.
+  const tailCap =
+    anchorSec != null && Number.isFinite(anchorSec)
+      ? anchorSec
+      : pane?.bars?.length
+        ? pane.bars.at(-1).time
+        : null;
 
-  if (anchorSec != null && htfCacheStaleForAnchor(symbol, resolution, anchorSec)) {
+  if (tailCap != null && htfCacheStaleForAnchor(symbol, resolution, tailCap, { confirmedOnly })) {
     const symInfo = symbolInfo ?? pane?.symbolInfo ?? symbolInfoExtra;
     if (symInfo) {
-      await extendHtfCacheForAnchor({ ...opts, anchorSec, symbolInfo: symInfo });
+      await extendHtfCacheForAnchor({ ...opts, anchorSec: tailCap, symbolInfo: symInfo });
     }
   }
 
@@ -245,21 +350,14 @@ export async function ensureHtfBars(opts) {
     return seedHtfBars(symbol, resolution, cached.utcBars, cached.chartBars, cached.source);
   }
 
-  let existing = store.get(key);
+  let existing = getHtfBars(symbol, resolution);
+  const tailFresh =
+    tailCap == null || !htfCacheStaleForAnchor(symbol, resolution, tailCap, { confirmedOnly });
   // ponytail: replay anchor caps HTF depth — never chase countBack=1000 on every step
-  if (
-    anchorSec != null &&
-    existing?.utcBars?.length &&
-    !htfCacheStaleForAnchor(symbol, resolution, anchorSec)
-  ) {
+  if (anchorSec != null && existing?.utcBars?.length && tailFresh) {
     return existing;
   }
-  if (
-    existing &&
-    existing.utcBars.length >= want &&
-    !existing.historyExhausted &&
-    (anchorSec == null || !htfCacheStaleForAnchor(symbol, resolution, anchorSec))
-  ) {
+  if (existing && existing.utcBars.length >= want && !existing.historyExhausted && tailFresh) {
     return existing;
   }
 
@@ -303,6 +401,9 @@ async function fetchHtfBars(opts) {
   } = opts;
   const key = htfCacheKey(symbol, resolution);
   const barSec = resolutionSec(resolution);
+  const chartSec = resolutionSec(pane?.resolution ?? "") ?? null;
+  const confirmedOnly = barSec != null && chartSec != null && barSec > chartSec;
+  const startEpoch = dataEpoch;
 
   let cacheSource = "datafeed";
   const warmed = lookupBarsForEnsure(
@@ -361,32 +462,43 @@ async function fetchHtfBars(opts) {
     params.to = to;
     chartDebug("data", "htf cache fetch", { symbol, resolution, countBack: want, to: params.to });
     const result = await datafeed.getBars(symbolInfo, resolution, params);
-    if (result.bars?.length) {
-      utcBars = result.bars;
+    // Stale epoch (symbol/TF/replay changed while fetching): drop the result.
+    if (startEpoch !== dataEpoch) return getHtfBars(symbol, resolution);
+    let fetched = result.bars ?? [];
+    // Never store a partially formed HTF bucket as confirmed — it's rebuilt on read.
+    if (confirmedOnly) fetched = dropUnclosedTail(fetched, barSec, to);
+    if (fetched.length) {
+      // Fresh native fetch replaces its covered range; lookup bars survive outside it.
+      utcBars = mergeRecordsReplacingRange(toRecords(utcBars), toRecords(fetched)).map(
+        (r) => r.utc,
+      );
+      cacheSource = "datafeed";
     }
   }
 
+  if (startEpoch !== dataEpoch) return getHtfBars(symbol, resolution);
   if (!utcBars.length) return existing ?? null;
 
-  // ponytail: never shrink store — unless replay anchor moved forward (handled above)
-  if (existing?.utcBars?.length && utcBars.length <= existing.utcBars.length) {
-    return existing;
-  }
+  // Same-epoch fresh data replaces the covered range of the existing entry —
+  // no length-based "never shrink" arbitration.
+  const currentExisting = getHtfBars(symbol, resolution);
+  const merged = mergeRecordsReplacingRange(
+    toRecords(currentExisting?.utcBars, currentExisting?.chartBars),
+    toRecords(utcBars),
+  );
 
-  const chartBars = utcBars;
-  const entry = {
-    utcBars,
-    chartBars,
+  const entry = putHtfEntry(key, {
+    utcBars: merged.map((r) => r.utc),
+    chartBars: merged.map((r) => r.chart),
     // A short fetch is NOT exhaustion — wall-clock `from` over gaps/weekends can
     // return fewer bars than wanted, and an anchored fetch only caps the tail.
     // prependHtfBars is the sole authority for true exhaustion (noData / no older bars);
     // marking anchored fetches exhausted permanently blocked history refills after rewinds.
-    historyExhausted: existing?.historyExhausted ?? false,
+    historyExhausted: currentExisting?.historyExhausted ?? false,
     updatedAt: Date.now(),
-    source: utcBars.length >= want ? cacheSource : "datafeed",
-  };
-  store.set(key, entry);
-  chartDebug("data", "htf cache store", { symbol, resolution, bars: utcBars.length });
+    source: cacheSource,
+  });
+  chartDebug("data", "htf cache store", { symbol, resolution, bars: entry.utcBars.length });
   return entry;
 }
 
@@ -398,13 +510,16 @@ export async function prependHtfBars(opts) {
   const { datafeed, symbolInfo, symbol, resolution, countBack, pane, settingsStore, symbolInfoExtra } =
     opts;
   const key = htfCacheKey(symbol, resolution);
-  const entry = store.get(key);
+  const entry = getHtfBars(symbol, resolution);
   if (!entry || entry.historyExhausted || !entry.utcBars.length) return entry ?? null;
 
+  const startEpoch = dataEpoch;
   const barSec = resolutionSec(resolution);
   const first = entry.utcBars[0].time;
   const params = buildPrependPeriodParams(first, barSec, Math.min(500, countBack));
   const result = await datafeed.getBars(symbolInfo, resolution, params);
+  // Stale epoch: drop — do not mutate an entry from a different data generation.
+  if (startEpoch !== dataEpoch) return getHtfBars(symbol, resolution);
   if (!result.bars?.length || result.noData) {
     entry.historyExhausted = true;
     return entry;
@@ -416,19 +531,21 @@ export async function prependHtfBars(opts) {
     return entry;
   }
 
-  const seen = new Set();
-  const merged = [...older, ...entry.utcBars].filter((b) => {
-    if (seen.has(b.time)) return false;
-    seen.add(b.time);
-    return true;
+  const olderChart = older.slice();
+  const next = putHtfEntry(key, {
+    utcBars: [...older, ...entry.utcBars],
+    chartBars: [...olderChart, ...(entry.chartBars ?? entry.utcBars)],
+    historyExhausted: entry.historyExhausted,
+    updatedAt: Date.now(),
+    source: entry.source,
   });
-
-  entry.utcBars = merged;
-  entry.chartBars = merged;
-  entry.updatedAt = Date.now();
-  store.set(key, entry);
-  chartDebug("data", "htf cache prepend", { symbol, resolution, bars: merged.length, added: older.length });
-  return entry;
+  chartDebug("data", "htf cache prepend", {
+    symbol,
+    resolution,
+    bars: next.utcBars.length,
+    added: older.length,
+  });
+  return next;
 }
 
 /** Clear all cached HTF / security bar series. */

@@ -1,4 +1,6 @@
 import { alignUtcBarsByChartTime } from "../math/pivots.js";
+import { normalizeResolutionId } from "/js/chart/resolutionFormat.js";
+import { getHtfSeriesVersion } from "../../app/bar/htfBarCache.js";
 import { createBool, createSymbol } from "../builders.js";
 import { compareSymbol } from "./compareSymbol.js";
 
@@ -72,12 +74,15 @@ export function compareBarsRecomputeKey(ctx, inputs, opts = {}) {
   const cmp = ctx.getCompareBars?.(compare, ctx.chartResolution);
   const len = cmp?.utcBars?.length ?? 0;
   const tail = cmp?.utcBars?.at(-1);
+  // Store version catches mid-series replacements invisible to len/tail hashes.
+  const resId = normalizeResolutionId(ctx.chartResolution) ?? ctx.chartResolution ?? "";
+  const version = getHtfSeriesVersion(compare, resId);
   if (opts.ohlc) {
     const ohlc = tail ? `${tail.open}|${tail.high}|${tail.low}|${tail.close}` : "";
-    return `${compare}|${len}|${ohlc}`;
+    return `${compare}|v${version}|${len}|${ohlc}`;
   }
   if (opts.tailTime !== false) {
-    return `${compare}|${len}|${tail?.time ?? ""}`;
+    return `${compare}|v${version}|${len}|${tail?.time ?? ""}`;
   }
-  return `${compare}|${len}`;
+  return `${compare}|v${version}|${len}`;
 }

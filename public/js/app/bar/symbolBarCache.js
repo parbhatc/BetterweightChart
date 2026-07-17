@@ -1,15 +1,6 @@
 import { getPaneChartView } from "../../chart/pane/viewCache.js";
-import { getResolutionCacheBars } from "./resolutionCache.js";
 import { getHtfBars } from "./htfBarCache.js";
 import { requestSecuritySeries } from "./requestSecurity.js";
-
-/** @param {string} symbol */
-function symbolLookupKeys(symbol) {
-  const keys = [symbol];
-  const colon = symbol.indexOf(":");
-  if (colon >= 0) keys.push(symbol.slice(colon + 1));
-  return keys;
-}
 
 /** @param {string} a @param {string} b */
 export function symbolsMatch(a, b) {
@@ -43,16 +34,10 @@ export function lookupSymbolBars(opts) {
     return { utcBars: view.utcBars, chartBars: view.chartBars, source: `pane:${p.index}` };
   }
 
-  const cached = symbolLookupKeys(symbol)
-    .map((sym) => getResolutionCacheBars(sym, resolution))
-    .find((bars) => bars?.length);
-  if (cached?.length && settingsStore && pane) {
-    return { utcBars: cached, chartBars: cached, source: "resolution-cache" };
-  }
-
-  const stored = symbolLookupKeys(symbol)
-    .map((sym) => getHtfBars(sym, resolution))
-    .find((entry) => entry?.utcBars?.length);
+  // Exact-symbol store read only — no bare-symbol fuzzy fallback (cross-feed
+  // ghost data) and no resolution-cache snapshots (stale, cursor-blind; that
+  // cache exists purely for pane restore on TF round-trips).
+  const stored = getHtfBars(symbol, resolution);
   if (stored?.utcBars?.length) {
     return {
       utcBars: stored.utcBars,

@@ -30,6 +30,8 @@ const TYPE_TABS = [
   { id: "index", label: "Indices" },
 ];
 
+const SYMBOL_TOUCH_MQ = window.matchMedia("(hover: none), (pointer: coarse)");
+
 /** @param {string} [type] */
 function normalizeType(type) {
   const t = String(type || "").toLowerCase();
@@ -172,6 +174,10 @@ export function mountSymbolSearch(opts) {
   }
 
   function close() {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement && modal.contains(activeElement)) {
+      activeElement.blur();
+    }
     open = false;
     modal.hidden = true;
     document.body.classList.remove("tv-symbol-modal-open");
@@ -191,6 +197,10 @@ export function mountSymbolSearch(opts) {
     syncClearButton();
     void renderList("");
     requestAnimationFrame(() => searchInput.focus());
+  }
+
+  function restoreTriggerFocusForKeyboard() {
+    if (!SYMBOL_TOUCH_MQ.matches) trigger?.focus();
   }
 
   /** @param {object[]} results */
@@ -259,9 +269,25 @@ export function mountSymbolSearch(opts) {
     });
   }
 
-  trigger.addEventListener("click", () => {
-    if (open) close();
-    else openDropdown();
+  function toggleSymbolPicker() {
+    if (modal.hidden) openDropdown();
+    else close();
+  }
+
+  let suppressTriggerClickUntil = 0;
+  trigger.addEventListener("pointerup", (ev) => {
+    if (ev.pointerType !== "touch") return;
+    suppressTriggerClickUntil = performance.now() + 700;
+    ev.preventDefault();
+    ev.stopPropagation();
+    toggleSymbolPicker();
+  });
+  trigger.addEventListener("click", (ev) => {
+    if (performance.now() < suppressTriggerClickUntil) {
+      ev.preventDefault();
+      return;
+    }
+    toggleSymbolPicker();
   });
 
   searchInput.addEventListener("input", () => {
@@ -297,10 +323,24 @@ export function mountSymbolSearch(opts) {
     });
   }
 
+  let suppressModalCloseClickUntil = 0;
+  modal.addEventListener("pointerup", (ev) => {
+    if (ev.pointerType !== "touch") return;
+    if (!(ev.target instanceof Element) || !ev.target.closest("[data-close], [data-backdrop]")) return;
+    suppressModalCloseClickUntil = performance.now() + 700;
+    ev.preventDefault();
+    ev.stopPropagation();
+    close();
+  });
+
   modal.addEventListener("click", (ev) => {
     if (ev.target instanceof Element && ev.target.closest("[data-close], [data-backdrop]")) {
+      if (performance.now() < suppressModalCloseClickUntil) {
+        ev.preventDefault();
+        return;
+      }
       close();
-      trigger?.focus();
+      restoreTriggerFocusForKeyboard();
     }
   });
 
@@ -312,7 +352,7 @@ export function mountSymbolSearch(opts) {
     const meta = metaBySymbol.get(sym) ?? { symbol: sym };
     addRecentSymbol(sym, meta);
     close();
-    trigger?.focus();
+    restoreTriggerFocusForKeyboard();
     if (matchesActiveSymbol(sym, meta, activeSymbol)) return;
     activeSymbol = sym;
     setDisplay(sym, meta);

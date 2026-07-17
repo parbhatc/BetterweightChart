@@ -3,10 +3,11 @@
  * Reuses data in priority order: chart pane → other panes → resolution cache → bar store → datafeed.
  */
 import { normalizeResolutionId } from "../../chart/resolutionFormat.js";
+import { resolutionSec } from "../../chart/resolutions.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import { mergeWithHtfStore, sliceSeriesToAnchor } from "../../indicators/security/htfAccess.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
-import { ensureHtfBars, getHtfBars, seedHtfBars } from "./htfBarCache.js";
+import { ensureHtfBars, getHtfBars, htfCacheStaleForAnchor, seedHtfBars } from "./htfBarCache.js";
 
 /** @typedef {{ utcBars: object[], chartBars: object[], source: string, symbol: string, resolution: string, barCount: number, sufficient: boolean }} SecuritySeries */
 
@@ -146,6 +147,20 @@ export function createSecurityContext(deps) {
     return a != null && Number.isFinite(a) ? a : null;
   };
 
+  /** Bucket seconds when `resolution` is coarser than the pane (true HTF), else null. */
+  const htfSecFor = (resolution) => {
+    const tf = resolutionSec(resolution);
+    const chart = resolutionSec(pane.resolution ?? "");
+    return tf != null && chart != null && tf > chart ? tf : null;
+  };
+
+  /** Store tail staleness at the read cap (replay anchor or live pane tail). */
+  const storeTailStale = (sym, resId) => {
+    const cap = anchorSec() ?? pane.bars?.at(-1)?.time ?? null;
+    if (cap == null) return false;
+    return htfCacheStaleForAnchor(sym, resId, cap, { confirmedOnly: htfSecFor(resId) != null });
+  };
+
   /** @param {string} [symbol] @param {string} resolution @param {number} [countBack] */
   const lookupSecurity = (symbol, resolution, countBack = 0) => {
     const sym = symbol ?? pane.symbol;
@@ -155,7 +170,7 @@ export function createSecurityContext(deps) {
       countBack,
       ...baseOpts(),
     });
-    return sliceSeriesToAnchor(hit, anchorSec());
+    return sliceSeriesToAnchor(hit, anchorSec(), htfSecFor(normalizeResolutionId(resolution)));
   };
 
   /** @param {string} [symbol] @param {string} resolution */
@@ -163,7 +178,7 @@ export function createSecurityContext(deps) {
     const sym = symbol ?? pane.symbol;
     const resId = normalizeResolutionId(resolution);
     const hit = lookupSecurity(sym, resId);
-    return sliceSeriesToAnchor(mergeWithHtfStore(sym, resId, hit), anchorSec());
+    return sliceSeriesToAnchor(mergeWithHtfStore(sym, resId, hit), anchorSec(), htfSecFor(resId));
   };
 
   /** Same symbol as chart pane — any resolution. */
@@ -180,7 +195,9 @@ export function createSecurityContext(deps) {
       countBack: want,
       ...baseOpts(),
     });
-    if (hit?.sufficient) {
+    // Count sufficiency alone is not enough — a long-but-stale store (tail
+    // ends before the newest closed bucket) still needs a tail top-up.
+    if (hit?.sufficient && !storeTailStale(sym, resId)) {
       seedSecurityBars(sym, resId, hit.utcBars, hit.chartBars, hit.source);
       return;
     }
@@ -214,12 +231,13 @@ export function createSecurityContext(deps) {
         countBack,
         ...baseOpts(),
       });
-      if (hit && !hit.sufficient) {
+      if (hit && (!hit.sufficient || storeTailStale(sym, resId))) {
         scheduleFetch(sym, resId, countBack);
       } else if (hit?.sufficient) {
         seedSecurityBars(sym, resId, hit.utcBars, hit.chartBars, hit.source);
       }
-      return hit;
+      // Replay/anchor cap — the raw lookup must never expose bars past the cursor.
+      return sliceSeriesToAnchor(hit, anchorSec(), htfSecFor(resId));
     },
   };
 
