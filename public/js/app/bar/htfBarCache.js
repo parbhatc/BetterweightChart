@@ -458,7 +458,11 @@ async function fetchHtfBars(opts) {
         : pane.bars?.length > 0
           ? alignBarTime(pane.bars.at(-1).time, barSec)
           : alignBarTime(Date.now() / 1000, barSec);
-    const params = buildInitialPeriodParams(barSec, want);
+    // Coarser live timeframes include the currently-forming bucket in history.
+    // We drop that bucket below, so request one extra bar; otherwise a request
+    // for 2000 repeatedly stores 1999 and immediately refetches forever.
+    const fetchCount = confirmedOnly ? want + 1 : want;
+    const params = buildInitialPeriodParams(barSec, fetchCount);
     params.to = to;
     chartDebug("data", "htf cache fetch", { symbol, resolution, countBack: want, to: params.to });
     const result = await datafeed.getBars(symbolInfo, resolution, params);
