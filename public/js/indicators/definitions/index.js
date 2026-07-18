@@ -4,6 +4,7 @@ import RsiIndicator from "./rsi/RsiIndicator.js";
 import MacdIndicator from "./macd/MacdIndicator.js";
 import PivotPointsHlIndicator from "./pivot/PivotPointsHlIndicator.js";
 import SmtIndicator from "./smt/SmtIndicator.js";
+import MarketStructureIndicator from "./marketStructure/MarketStructureIndicator.js";
 
 /** Built-in indicators shipped with the public chart API. */
 export const ALL_INDICATORS = [
@@ -13,6 +14,7 @@ export const ALL_INDICATORS = [
   MacdIndicator,
   PivotPointsHlIndicator,
   SmtIndicator,
+  MarketStructureIndicator,
 ];
 
 export {
@@ -22,4 +24,5 @@ export {
   MacdIndicator,
   PivotPointsHlIndicator,
   SmtIndicator,
+  MarketStructureIndicator,
 };

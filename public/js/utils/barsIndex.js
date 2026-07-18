@@ -4,7 +4,7 @@ import { Aggregate } from "./aggregate.js";
 export class BarsIndex {
   /** @param {{ time: number }[]} raw1m @param {number | null} tipUnix @returns {number | null} */
   static normalizeTip(raw1m, tipUnix) {
-    if (!raw1m.length || tipUnix == null || !Number.isFinite(tipUnix)) return null;
+    if (!Array.isArray(raw1m) || !raw1m.length || tipUnix == null || !Number.isFinite(tipUnix)) return null;
     let best = null;
     for (const c of raw1m) {
       if (c.time <= tipUnix && (best === null || c.time > best)) best = c.time;
@@ -13,14 +13,14 @@ export class BarsIndex {
   }
 
   static sessionOpen(bars, openTimeUnix) {
-    if (!bars.length) return 0;
+    if (!Array.isArray(bars) || !bars.length) return 0;
     if (openTimeUnix == null) return bars.length - 1;
     const idx = bars.findIndex((b) => b.time >= openTimeUnix);
     return idx === -1 ? bars.length - 1 : idx;
   }
 
   static aggThroughTip(bars, tipOpenTime) {
-    if (!bars.length || tipOpenTime == null) return 0;
+    if (!Array.isArray(bars) || !bars.length || tipOpenTime == null) return 0;
     let lo = 0;
     let hi = bars.length - 1;
     let ans = 0;
@@ -37,7 +37,7 @@ export class BarsIndex {
   }
 
   static aggForReplayTip(bars, tipOpenTime, tfKey) {
-    if (!bars.length || tipOpenTime == null) return 0;
+    if (!Array.isArray(bars) || !bars.length || tipOpenTime == null) return 0;
     if (tfKey === "1m") {
       const idx = bars.findIndex((b) => b.time === tipOpenTime);
       return idx !== -1 ? idx : BarsIndex.aggThroughTip(bars, tipOpenTime);
@@ -50,7 +50,14 @@ export class BarsIndex {
   }
 
   static current1mOpen(raw1m, windowed, visibleEndIdx, tfKey) {
-    if (!raw1m.length || !windowed.length || visibleEndIdx < 0 || visibleEndIdx >= windowed.length) return null;
+    if (
+      !Array.isArray(raw1m) ||
+      !Array.isArray(windowed) ||
+      !raw1m.length ||
+      !windowed.length ||
+      visibleEndIdx < 0 ||
+      visibleEndIdx >= windowed.length
+    ) return null;
     const tfSec = TF_MAP[tfKey] ?? 60;
     const included = new Set();
     for (let i = 0; i <= visibleEndIdx; i++) {

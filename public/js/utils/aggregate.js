@@ -36,35 +36,53 @@ export class Aggregate {
 
   /** @param {{ time: number; open: number; high: number; low: number; close: number; volume: number }[]} data @param {string} tfKey */
   static candles(data, tfKey) {
+    if (!Array.isArray(data)) return [];
     const interval = TF_MAP[tfKey];
     if (!interval) return data;
     const maxCandles = interval / 60;
     if (maxCandles <= 1) return data;
 
-    /** @type {Record<number, { time: number; open: number; high: number; low: number; close: number; volume: number }>} */
-    const grouped = {};
+    /**
+     * A Map keeps timestamp keys as numbers. Track the first/last source time
+     * so a response that arrives out of order still has the right OHLC values.
+     */
+    const grouped = new Map();
     for (const candle of data) {
+      if (!candle || !Number.isFinite(candle.time)) continue;
       const t = Aggregate.bucketTime(candle.time, interval);
-      if (!grouped[t]) {
-        grouped[t] = {
+      const volume = Number.isFinite(candle.volume) ? candle.volume : 0;
+      const existing = grouped.get(t);
+      if (!existing) {
+        grouped.set(t, {
           time: t,
           open: candle.open,
           high: candle.high,
           low: candle.low,
           close: candle.close,
-          volume: candle.volume || 0,
-        };
+          volume,
+          firstTime: candle.time,
+          lastTime: candle.time,
+        });
       } else {
-        const g = grouped[t];
+        const g = existing;
         g.high = Math.max(g.high, candle.high);
         g.low = Math.min(g.low, candle.low);
-        g.close = candle.close;
-        g.volume += candle.volume || 0;
+        if (candle.time < g.firstTime) {
+          g.firstTime = candle.time;
+          g.open = candle.open;
+        }
+        if (candle.time >= g.lastTime) {
+          g.lastTime = candle.time;
+          g.close = candle.close;
+        }
+        g.volume += volume;
       }
     }
-    return Object.values(grouped)
+    return [...grouped.values()]
       .filter((c) => c.high !== c.low || c.volume > 0)
-      .sort((a, b) => a.time - b.time);
+      .sort((a, b) => a.time - b.time)
+      // Keep bookkeeping internal; callers receive the original candle shape.
+      .map(({ time, open, high, low, close, volume }) => ({ time, open, high, low, close, volume }));
   }
 
   /** @param {{ time: number; open: number; high: number; low: number; close: number; volume?: number }[]} raw1m @param {{ time: number; open: number; high: number; low: number; close: number; volume?: number }} fullAggBar */
@@ -74,29 +92,32 @@ export class Aggregate {
     if (!interval || interval <= 60) return fullAggBar;
 
     const bucketOpen = fullAggBar.time;
-    /** @type {typeof raw1m} */
-    const included = [];
+    let first = null;
+    let last = null;
+    let high = -Infinity;
+    let low = Infinity;
+    let volume = 0;
     for (const c of raw1m) {
       if (Aggregate.bucketTime(c.time, interval) !== bucketOpen) continue;
-      if (c.time <= replayTip1mOpen) included.push(c);
-    }
-    if (included.length === 0) return fullAggBar;
-
-    const open = included[0].open;
-    let high = included[0].high;
-    let low = included[0].low;
-    let vol = 0;
-    for (const c of included) {
+      if (c.time > replayTip1mOpen) continue;
+      // Do this in one pass: replay updates call this frequently, and sorting
+      // or allocating a temporary bar array would create avoidable churn.
+      if (!first || c.time < first.time) first = c;
+      if (!last || c.time >= last.time) last = c;
       high = Math.max(high, c.high);
       low = Math.min(low, c.low);
-      vol += c.volume || 0;
+      volume += Number.isFinite(c.volume) ? c.volume : 0;
     }
-    const close = included[included.length - 1].close;
+    if (!first || !last) return fullAggBar;
+
+    const open = first.open;
+    const close = last.close;
     if (
       open === fullAggBar.open &&
       high === fullAggBar.high &&
       low === fullAggBar.low &&
-      close === fullAggBar.close
+      close === fullAggBar.close &&
+      volume === fullAggBar.volume
     ) {
       return fullAggBar;
     }
@@ -106,7 +127,7 @@ export class Aggregate {
       high,
       low,
       close,
-      volume: vol,
+      volume,
     };
   }
 

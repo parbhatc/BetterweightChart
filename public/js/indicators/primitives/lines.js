@@ -88,6 +88,20 @@ function drawLine(ctx, line, x1, x2, priceToY, paneW) {
     return;
   }
 
+  // Market-structure labels are annotations on the level itself, not callouts.
+  // Keep this opt-in so existing overlays (for example SMT) retain their
+  // current boxed-label appearance.
+  if (line.labelPlain) {
+    ctx.save();
+    ctx.font = "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+    ctx.fillStyle = line.labelTextColor ?? line.color ?? "#089981";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(String(line.label), lx, ly - 2);
+    ctx.restore();
+    return;
+  }
+
   ctx.save();
   const labelAngle = isSmt ? Math.atan2(y2 - y1, x2 - x1) : undefined;
   drawLabelCallout(
@@ -163,6 +177,7 @@ function linesEqual(a, b) {
       x.labelBg !== y.labelBg ||
       x.labelTextColor !== y.labelTextColor ||
       x.labelAnchor !== y.labelAnchor ||
+      x.labelPlain !== y.labelPlain ||
       x.swept !== y.swept ||
       x.width !== y.width
     ) {

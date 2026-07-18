@@ -8,34 +8,43 @@ export class CompletedAgg {
       typeof intervalSecOrTfKey === "string" ? TF_MAP[intervalSecOrTfKey] : intervalSecOrTfKey;
     if (!data1m?.length || !intervalSec || intervalSec <= 60) return data1m ?? [];
 
-    /** @type {Record<number, { time: number; open: number; high: number; low: number; close: number; volume: number; last1m: number }>} */
-    const grouped = {};
+    /** @type {Map<number, { time: number; open: number; high: number; low: number; close: number; volume: number; first1m: number; last1m: number }>} */
+    const grouped = new Map();
 
     for (const candle of data1m) {
+      if (!candle || !Number.isFinite(candle.time)) continue;
       const bucketOpen = Aggregate.bucketTime(candle.time, intervalSec);
-      const g = grouped[bucketOpen];
+      const g = grouped.get(bucketOpen);
+      const volume = Number.isFinite(candle.volume) ? candle.volume : 0;
       if (!g) {
-        grouped[bucketOpen] = {
+        grouped.set(bucketOpen, {
           time: bucketOpen,
           open: candle.open,
           high: candle.high,
           low: candle.low,
           close: candle.close,
-          volume: candle.volume || 0,
+          volume,
+          first1m: candle.time,
           last1m: candle.time,
-        };
+        });
       } else {
         g.high = Math.max(g.high, candle.high);
         g.low = Math.min(g.low, candle.low);
-        g.close = candle.close;
-        g.volume += candle.volume || 0;
-        g.last1m = Math.max(g.last1m, candle.time);
+        if (candle.time < g.first1m) {
+          g.first1m = candle.time;
+          g.open = candle.open;
+        }
+        if (candle.time >= g.last1m) {
+          g.last1m = candle.time;
+          g.close = candle.close;
+        }
+        g.volume += volume;
       }
     }
 
     const bucketClose1m = intervalSec - 60;
 
-    return Object.values(grouped)
+    return [...grouped.values()]
       .filter((c) => c.last1m >= c.time + bucketClose1m)
       .filter((c) => c.high !== c.low || c.volume > 0)
       .sort((a, b) => a.time - b.time)

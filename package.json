@@ -33,7 +33,8 @@
     "dev:live": "node scripts/dev-live.mjs",
     "start:testing": "node server/index.mjs",
     "dev:testing": "npm run dev",
-    "new:indicator": "node scripts/new-indicator.mjs"
+    "new:indicator": "node scripts/new-indicator.mjs",
+    "test": "node --test test/**/*.test.mjs"
   },
   "dependencies": {
     "lightweight-charts": "github:parbhatc/lightweight-charts",
