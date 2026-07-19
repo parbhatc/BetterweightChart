@@ -50,9 +50,11 @@ export function createPointerHandlers(api) {
   const MOBILE_SCROLL_CANCEL_PX = 32;
   const MOBILE_TAP_MAX_MS = 250;
   const MOBILE_FREEHAND_START_PX = 12;
+  const TOOLTIP_EXIT_TAP_SLOP_PX = 8;
 
   let pendingMobileTap = null;
   let mobileScrollGesture = false;
+  let pinnedCrosshairPointer = null;
   /** @type {number | null} */
   let mobilePlacementPointerId = null;
   /** @type {{ startClientX: number, startClientY: number, mediaX: number, mediaY: number } | null} */
@@ -319,6 +321,16 @@ export function createPointerHandlers(api) {
     if (ev.button !== 0) return;
     if (ev.target.closest(api.DRAWING_UI_SELECTOR)) return;
 
+    if (api.isValuesTooltipPinned?.()) {
+      pinnedCrosshairPointer = {
+        pointerId: ev.pointerId,
+        x: ev.clientX,
+        y: ev.clientY,
+      };
+      api.swallowChartPointer(ev);
+      return;
+    }
+
     const rect = api.container.getBoundingClientRect();
     const px = ev.clientX - rect.left;
     const py = ev.clientY - rect.top;
@@ -560,6 +572,26 @@ export function createPointerHandlers(api) {
   }
 
   function onPointerUp(ev) {
+    if (api.isValuesTooltipPinned?.()) {
+      api.clearLongPress();
+      if (ev.type === "pointercancel") {
+        pinnedCrosshairPointer = null;
+        api.unpinValuesTooltip();
+        return;
+      }
+      // The release after the original long press keeps inspection active.
+      // A later stationary tap exits; dragging continues to inspect bars.
+      if (pinnedCrosshairPointer && pinnedCrosshairPointer.pointerId === ev.pointerId) {
+        const moved = Math.hypot(
+          ev.clientX - pinnedCrosshairPointer.x,
+          ev.clientY - pinnedCrosshairPointer.y,
+        );
+        pinnedCrosshairPointer = null;
+        if (moved <= TOOLTIP_EXIT_TAP_SLOP_PX) api.unpinValuesTooltip();
+      }
+      return;
+    }
+
     let pinnedFromMobileTap = false;
     if (pendingMobileTap) {
       const tap = pendingMobileTap;
@@ -599,8 +631,7 @@ export function createPointerHandlers(api) {
     }
     api.finishPointerDrag(ev);
     api.clearLongPress();
-    if (api.isValuesTooltipPinned?.()) api.unpinValuesTooltip();
-    else api.hideValuesTooltip();
+    api.hideValuesTooltip();
     if (api.shouldSyncDrawCrosshair?.() && !pinnedFromMobileTap && !api.useMobileDragPlacement?.()) {
       api.pinDrawCrosshairAt?.(ev.clientX, ev.clientY);
     }
@@ -667,7 +698,6 @@ export function createPointerHandlers(api) {
 
   function onDocumentPointerUp(ev) {
     if (api.isValuesTooltipPinned?.()) {
-      api.unpinValuesTooltip();
       return;
     }
     if (api.useMobileDragPlacement?.()) return;

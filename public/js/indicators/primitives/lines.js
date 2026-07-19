@@ -1,7 +1,6 @@
 import { safePriceToY } from "../../chart/coords/timeScale.js";
 import { chartDebug } from "../../debug/chart/index.js";
 import { drawLabelCallout } from "./labelCallout.js";
-import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
 import { resolveOverlayTimeMapping, createOverlayTimeToXFromMapping } from "./overlayMapBars.js";
 
 const LABEL_FONT = "600 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
@@ -96,8 +95,9 @@ function drawLine(ctx, line, x1, x2, priceToY, paneW) {
     ctx.font = "10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
     ctx.fillStyle = line.labelTextColor ?? line.color ?? "#089981";
     ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    ctx.fillText(String(line.label), lx, ly - 2);
+    const labelBelow = line.labelStyle === "down";
+    ctx.textBaseline = labelBelow ? "top" : "bottom";
+    ctx.fillText(String(line.label), lx, labelBelow ? ly + 2 : ly - 2);
     ctx.restore();
     return;
   }
@@ -201,8 +201,6 @@ class LinesPrimitive {
     this._series = null;
     /** @type {(() => void) | null} */
     this._requestUpdate = null;
-    /** @type {(() => void) | null} */
-    this._unsub = null;
     this._paneView = new LinesPaneView(this);
   }
 
@@ -249,15 +247,9 @@ class LinesPrimitive {
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
     this._timeMapping = null;
-    this._unsub = subscribePrimitiveViewportRefresh(
-      this._chart.timeScale(),
-      () => this._requestUpdate?.(),
-    );
   }
 
   detached() {
-    this._unsub?.();
-    this._unsub = null;
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;

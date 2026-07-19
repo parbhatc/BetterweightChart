@@ -941,6 +941,33 @@ body.tv-ind-lib-open {
   color: var(--tv-muted);
 }
 
+/* Keep paired colour controls compact: label immediately followed by swatch. */
+.tv-ind-settings .tv-drawing-settings__panel[data-panel="inputs"] .tv-ind-settings__pair-block .tv-ind-settings__tv-inline-pair {
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-4) var(--space-3);
+}
+
+.tv-ind-settings .tv-drawing-settings__panel[data-panel="inputs"] .tv-ind-settings__pair-block .tv-ind-settings__tv-pair-cell {
+  flex: 0 0 auto;
+}
+
+.tv-ind-settings .tv-drawing-settings__panel[data-panel="inputs"] .tv-ind-settings__pair-block .tv-ind-settings__tv-pair-cell + .tv-ind-settings__tv-pair-cell {
+  border-left: none;
+}
+
+.tv-ind-settings .tv-drawing-settings__panel[data-panel="inputs"] .tv-ind-settings__tv-pair-cell .tv-set__field-row:only-child {
+  display: flex;
+  grid-template-columns: none;
+  gap: var(--space-2);
+  padding: 0;
+}
+
+.tv-ind-settings .tv-drawing-settings__panel[data-panel="inputs"] .tv-ind-settings__tv-pair-cell .tv-set__field-row:only-child .tv-set__field-label {
+  display: block;
+  flex: 0 0 auto;
+}
+
 .tv-ind-settings__tv-inline-pair {
   display: flex;
   gap: 0;

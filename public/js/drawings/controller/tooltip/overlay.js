@@ -17,6 +17,7 @@ export function createTooltipOverlay(deps) {
   let longPressOrigin = null;
   let pinned = false;
   let savedHorzCrosshairVisible = true;
+  let savedVertCrosshairVisible = true;
 
   function nearestBar(time) {
     const { bars } = getContext();
@@ -88,12 +89,12 @@ export function createTooltipOverlay(deps) {
     valuesTooltip.style.top = `${clientY - rect.top + 12}px`;
   }
 
-  /** @param {object} bar */
-  function syncCrosshairToBar(bar) {
+  /** @param {object} bar @param {number} price */
+  function syncCrosshairToPoint(bar, price) {
     if (!chart || !series || !bar) return;
     const ta = getContext().timeAdapter;
     const chartTime = ta ? ta.time.toChart(bar.time) : bar.time;
-    chart.setCrosshairPosition(bar.close, chartTime, series);
+    chart.setCrosshairPosition(Number.isFinite(price) ? price : bar.close, chartTime, series);
   }
 
   /**
@@ -106,10 +107,9 @@ export function createTooltipOverlay(deps) {
     if (!point) return null;
     const { bar, prev } = nearestBar(point.time);
     if (!bar) return null;
-    valuesTooltip.innerHTML = buildTooltipHtml(bar, prev);
-    positionTooltip(clientX, clientY);
-    valuesTooltip.hidden = false;
-    syncCrosshairToBar(bar);
+    // Keep values in the chart legend and leave candles unobstructed.
+    valuesTooltip.hidden = true;
+    syncCrosshairToPoint(bar, point.price);
     onBarHover?.(bar, prev);
     return { bar, prev };
   }
@@ -134,8 +134,12 @@ export function createTooltipOverlay(deps) {
     valuesTooltip.hidden = true;
     if (chart) {
       chart.applyOptions({
-        crosshair: { horzLine: { visible: savedHorzCrosshairVisible } },
+        crosshair: {
+          horzLine: { visible: savedHorzCrosshairVisible },
+          vertLine: { visible: savedVertCrosshairVisible },
+        },
       });
+      chart.clearCrosshairPosition?.();
     }
     onPinChange?.(false);
     onBarHover?.(null, null);
@@ -146,11 +150,14 @@ export function createTooltipOverlay(deps) {
     if (!hit) return;
     pinned = true;
     if (chart) {
-      const horz = chart.options().crosshair?.horzLine;
+      const crosshair = chart.options().crosshair;
+      const horz = crosshair?.horzLine;
+      const vert = crosshair?.vertLine;
       savedHorzCrosshairVisible = horz?.visible !== false;
+      savedVertCrosshairVisible = vert?.visible !== false;
       chart.applyOptions({
         crosshair: {
-          horzLine: { visible: false },
+          horzLine: { visible: true },
           vertLine: { visible: true },
         },
       });

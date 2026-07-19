@@ -1,6 +1,5 @@
 import { safePriceToY } from "../../chart/coords/timeScale.js";
 import { applyColorOpacity } from "../../ui/color/picker.js";
-import { subscribePrimitiveViewportRefresh } from "../../primitives/viewportRefresh.js";
 import { resolveOverlayTimeMapping, createOverlayTimeToXFromMapping } from "./overlayMapBars.js";
 
 const LABEL_FONT =
@@ -224,15 +223,9 @@ class BoxesPrimitive {
     this._series = param.series;
     this._requestUpdate = param.requestUpdate;
     this._timeMapping = null;
-    this._unsub = subscribePrimitiveViewportRefresh(
-      this._chart.timeScale(),
-      () => this._requestUpdate?.(),
-    );
   }
 
   detached() {
-    this._unsub?.();
-    this._unsub = null;
     this._chart = null;
     this._series = null;
     this._requestUpdate = null;

@@ -70,7 +70,12 @@ export class LevelsHtf {
       symbol,
       htfs.map(({ tfId }) => tfId),
       this.requiredHtfBars(inputs),
-      { strict: true, perTfWant },
+      // Replay intentionally keeps initial history responses compact. Waiting
+      // for every requested HTF bar can therefore leave Levels in a permanent
+      // loading state even though each layer already has enough history to
+      // compute stable pivots. The shared non-strict gate still waits for a
+      // meaningful minimum and continues extending caches at HTF boundaries.
+      { strict: false, perTfWant },
     );
   }
 

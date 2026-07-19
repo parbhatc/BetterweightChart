@@ -1,5 +1,5 @@
 import { BarScriptIndicator } from "../../BarScriptIndicator.js";
-import { createBool, createColor, createInt } from "../../builders.js";
+import { createBool, createColor, createInt, inlinePair } from "../../builders.js";
 import { pivotLens } from "../../math/pivots.js";
 import { styleColor, styleColorWithOpacity } from "../../styleColor.js";
 
@@ -19,6 +19,8 @@ class MarketStructureIndicator extends BarScriptIndicator {
     super("market_structure", "Market Structure", "Market Structure");
     this.setOverlayPrimitive("lines");
     this.setGraphicObjects([{ styleKey: "graphicLines", label: "Structure lines", overlay: "lines" }]);
+    const structureColor = (id, title, color) =>
+      createColor(id, title, { color, opacity: 100 }, { store: "style" });
     this.setInputs([
       createInt("leftLen", "Pivot left", 3, { section: "Pivots", inline: true }),
       createInt("rightLen", "Pivot right", 3, { section: "Pivots", inline: true }),
@@ -29,12 +31,24 @@ class MarketStructureIndicator extends BarScriptIndicator {
       // occur repeatedly during ordinary candle rotation and quickly clutters
       // a market-structure chart.
       createBool("showCisd", "Show CISD (early signal)", false, { section: "Detection" }),
-      createColor("bullBosColor", "Bullish BOS", COLORS.bullBos, { section: "Colors", store: "style" }),
-      createColor("bearBosColor", "Bearish BOS", COLORS.bearBos, { section: "Colors", store: "style" }),
-      createColor("bullMssColor", "Bullish MSS", COLORS.bullMss, { section: "Colors", store: "style" }),
-      createColor("bearMssColor", "Bearish MSS", COLORS.bearMss, { section: "Colors", store: "style" }),
-      createColor("bullCisdColor", "Bullish CISD", COLORS.bullCisd, { section: "Colors", store: "style" }),
-      createColor("bearCisdColor", "Bearish CISD", COLORS.bearCisd, { section: "Colors", store: "style" }),
+      inlinePair(
+        "Colors",
+        structureColor("bullBosColor", "Bullish", COLORS.bullBos),
+        structureColor("bearBosColor", "Bearish", COLORS.bearBos),
+        { header: "BOS" },
+      ),
+      inlinePair(
+        "Colors",
+        structureColor("bullMssColor", "Bullish", COLORS.bullMss),
+        structureColor("bearMssColor", "Bearish", COLORS.bearMss),
+        { header: "MSS" },
+      ),
+      inlinePair(
+        "Colors",
+        structureColor("bullCisdColor", "Bullish", COLORS.bullCisd),
+        structureColor("bearCisdColor", "Bearish", COLORS.bearCisd),
+        { header: "CISD" },
+      ),
       createInt("lineWidth", "Line width", 1, { section: "Colors", store: "style" }),
     ]);
   }
@@ -44,7 +58,10 @@ class MarketStructureIndicator extends BarScriptIndicator {
       ...style,
       graphicLines: style.graphicLines ?? true,
       lineWidth: style.lineWidth ?? 1,
-      ...Object.fromEntries(Object.entries(COLORS).map(([key, color]) => [`${key}Color`, style[`${key}Color`] ?? color])),
+      ...Object.fromEntries(Object.entries(COLORS).flatMap(([key, color]) => [
+        [`${key}Color`, style[`${key}Color`] ?? color],
+        [`${key}ColorOpacity`, style[`${key}ColorOpacity`] ?? 100],
+      ])),
     };
   }
 
@@ -65,7 +82,7 @@ class MarketStructureIndicator extends BarScriptIndicator {
     this.state.waitClose = this.getBool("waitClose", true);
     this.state.showBos = this.getBool("showBos", true);
     this.state.showMss = this.getBool("showMss", true);
-    this.state.showCisd = this.getBool("showCisd", true);
+    this.state.showCisd = this.getBool("showCisd", false);
     this.state.width = Math.max(1, Number(style.lineWidth) || 1);
     for (const [key, fallback] of Object.entries(COLORS)) {
       this.state[`${key}Color`] = styleColor(style, `${key}Color`, fallback);
@@ -77,6 +94,11 @@ class MarketStructureIndicator extends BarScriptIndicator {
     this.state.lastBear = null;
     this.state.lastBull = null;
     this.state.prevClose = null;
+    // A CISD is an early reversal warning, not a signal for every candle
+    // rotation. Allow one per confirmed directional leg, then re-arm it only
+    // after structure confirms that direction again.
+    this.state.bullCisdFired = false;
+    this.state.bearCisdFired = false;
     // `onBar` is invoked with the Pine-style runtime context, rather than the
     // indicator instance. Keep this helper on runtime state so it remains
     // available while still using the context's drawLine implementation.
@@ -131,11 +153,13 @@ class MarketStructureIndicator extends BarScriptIndicator {
     // Requiring a cross prevents a label on every subsequent candle above/below it.
     const prevClose = this.state.prevClose;
     if (this.state.showCisd && prevClose != null) {
-      if (this.state.lastBear && prevClose <= this.state.lastBear.price && bar.close > this.state.lastBear.price) {
+      if (this.state.bias === "bear" && !this.state.bullCisdFired && this.state.lastBear && prevClose <= this.state.lastBear.price && bar.close > this.state.lastBear.price) {
         this.state.emit("bull", "CISD", this.state.lastBear);
+        this.state.bullCisdFired = true;
       }
-      if (this.state.lastBull && prevClose >= this.state.lastBull.price && bar.close < this.state.lastBull.price) {
+      if (this.state.bias === "bull" && !this.state.bearCisdFired && this.state.lastBull && prevClose >= this.state.lastBull.price && bar.close < this.state.lastBull.price) {
         this.state.emit("bear", "CISD", this.state.lastBull);
+        this.state.bearCisdFired = true;
       }
     }
 
@@ -148,6 +172,8 @@ class MarketStructureIndicator extends BarScriptIndicator {
       }
       level.broken = true;
       this.state.bias = direction;
+      if (direction === "bull") this.state.bearCisdFired = false;
+      if (direction === "bear") this.state.bullCisdFired = false;
     };
     if (bar.close > (this.state.lastHigh?.price ?? Infinity)) breakLevel("bull", this.state.lastHigh);
     if (bar.close < (this.state.lastLow?.price ?? -Infinity)) breakLevel("bear", this.state.lastLow);

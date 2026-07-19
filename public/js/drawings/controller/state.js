@@ -38,7 +38,7 @@ export function createControllerState(opts) {
     drawings: /** @type {import("../types.js").UserDrawing[]} */ ([]),
     history: createDrawingHistory(),
     activeTool: "cursor",
-    valuesTooltipOnLongPress: !COARSE_POINTER_MQ.matches,
+    valuesTooltipOnLongPress: true,
     magnetMode: /** @type {"off" | "weak" | "strong"} */ ("off"),
     measureMode: false,
     drawingsHidden: false,

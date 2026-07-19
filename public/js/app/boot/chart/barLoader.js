@@ -191,17 +191,24 @@ export function attachBarLoader(ctx) {
   ctx.viewportDeps.resumeHistoryAfterPan = barLoader.resumeHistoryAfterPan;
   ctx.viewportDeps.flushDeferredHistory = barLoader.flushDeferredHistory;
 
+  let historyResumeTimer = null;
   const prevOnChartPanEnd = ctx.viewportDeps.onChartPanEnd;
   ctx.viewportDeps.onChartPanEnd = () => {
     prevOnChartPanEnd?.();
     for (const pane of ctx.getAllChartPanes()) {
       pane._flushStatusLineLayout?.();
     }
-    requestAnimationFrame(() => {
+    if (historyResumeTimer != null) clearTimeout(historyResumeTimer);
+    // Keep history merge + indicator invalidation out of the first frames after
+    // pointer release. The active chart has its own edge-prefetch timer, while
+    // this delayed pass also catches deferred history on secondary panes.
+    historyResumeTimer = setTimeout(() => {
+      historyResumeTimer = null;
+      if (ctx.ui?.chartPanning) return;
       for (const pane of ctx.getAllChartPanes()) {
         void barLoader.resumeHistoryAfterPan(pane);
       }
-    });
+    }, 180);
   };
 
   Object.assign(ctx, {

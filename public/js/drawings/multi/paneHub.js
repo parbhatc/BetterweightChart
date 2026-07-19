@@ -247,6 +247,7 @@ export function createMultiPaneDrawingHub(opts) {
       globalCrosshairRaf = 0;
     }
     crosshairEchoCharts.clear();
+    for (const chart of charts.values()) chart.clearCrosshairPosition?.();
   }
 
   function scheduleDragSync(sourceIndex) {

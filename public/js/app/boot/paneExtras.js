@@ -28,6 +28,113 @@ import {
 } from "../../chart/pane/data.js";
 
 /** Electronic session shading — off by default while perf-testing. `localStorage.setItem('bwc-session-bg','1')` or `?sessionBg=1` to enable. */
+/** Keep each chart's vertical position synchronized while preserving its own price range. */
+function wireSynchronizedVerticalPan(pane, getAllChartPanes, getDrawingHub) {
+  let drag = null;
+  let suppressedCrosshairs = null;
+
+  const suppressCrosshairs = () => {
+    if (suppressedCrosshairs) return;
+    suppressedCrosshairs = getAllChartPanes().map((target) => {
+      const crosshair = target.chart?.options?.().crosshair;
+      const visibility = {
+        target,
+        horz: crosshair?.horzLine?.visible !== false,
+        vert: crosshair?.vertLine?.visible !== false,
+      };
+      target.chart?.applyOptions?.({
+        crosshair: { horzLine: { visible: false }, vertLine: { visible: false } },
+      });
+      target.chart?.clearCrosshairPosition?.();
+      return visibility;
+    });
+  };
+
+  const restoreCrosshairs = () => {
+    if (!suppressedCrosshairs) return;
+    for (const { target, horz, vert } of suppressedCrosshairs) {
+      target.chart?.applyOptions?.({
+        crosshair: { horzLine: { visible: horz }, vertLine: { visible: vert } },
+      });
+    }
+    suppressedCrosshairs = null;
+  };
+
+  const onDown = (ev) => {
+    restoreCrosshairs();
+    if (ev.pointerType !== "mouse" || ev.button !== 0 || getAllChartPanes().length < 2) return;
+    const rect = pane.el.getBoundingClientRect();
+    const x = ev.clientX - rect.left;
+    const rightWidth = pane.chart.priceScale("right").width();
+    const leftWidth = pane.chart.priceScale("left").width();
+    // Preserve native price-axis dragging when only one chart should move.
+    if ((rightWidth > 0 && x >= rect.width - rightWidth) || (leftWidth > 0 && x <= leftWidth)) return;
+    drag = { pointerId: ev.pointerId, startX: ev.clientX, startY: ev.clientY, lastY: ev.clientY, vertical: false };
+  };
+
+  const onMove = (ev) => {
+    if (!drag || ev.pointerId !== drag.pointerId) {
+      if (!drag && ev.buttons === 0) restoreCrosshairs();
+      return;
+    }
+    const dx = ev.clientX - drag.startX;
+    const dy = ev.clientY - drag.startY;
+    if (!drag.vertical) {
+      if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        drag = null;
+        return;
+      }
+      drag.vertical = true;
+      pane.el.setPointerCapture?.(ev.pointerId);
+      const drawingHub = getDrawingHub?.();
+      const drawingController = drawingHub?.getController?.(pane.index);
+      drawingController?.clearLongPress?.();
+      drawingController?.unpinValuesTooltip?.();
+      drawingHub?.resetGlobalCrosshair?.();
+      suppressCrosshairs();
+    }
+
+    const height = pane.el.getBoundingClientRect().height;
+    if (!height) return;
+    const sourceMargins = pane.series.priceScale().options().scaleMargins ?? { top: 0.08, bottom: 0.12 };
+    const requestedShift = (ev.clientY - drag.lastY) / height;
+    const shift = Math.max(0.02 - sourceMargins.top, Math.min(sourceMargins.bottom - 0.02, requestedShift));
+    drag.lastY = ev.clientY;
+
+    for (const target of getAllChartPanes()) {
+      const scale = target.series?.priceScale?.();
+      if (!scale) continue;
+      const margins = scale.options().scaleMargins ?? { top: 0.08, bottom: 0.12 };
+      const targetShift = Math.max(0.02 - margins.top, Math.min(margins.bottom - 0.02, shift));
+      if (targetShift === 0) continue;
+      scale.applyOptions({
+        autoScale: false,
+        scaleMargins: { top: margins.top + targetShift, bottom: margins.bottom - targetShift },
+      });
+      target.chart?.clearCrosshairPosition?.();
+    }
+
+    ev.preventDefault();
+    ev.stopPropagation();
+  };
+
+  const onEnd = (ev) => {
+    if (!drag || ev.pointerId !== drag.pointerId) return;
+    if (drag.vertical && pane.el.hasPointerCapture?.(ev.pointerId)) pane.el.releasePointerCapture(ev.pointerId);
+    if (drag.vertical) {
+      for (const target of getAllChartPanes()) target.chart?.clearCrosshairPosition?.();
+      getDrawingHub?.()?.resetGlobalCrosshair?.();
+    }
+    drag = null;
+  };
+
+  pane.el.addEventListener("pointerdown", onDown, { capture: true });
+  pane.el.addEventListener("pointermove", onMove, { capture: true });
+  pane.el.addEventListener("pointerup", onEnd, { capture: true });
+  pane.el.addEventListener("pointercancel", onEnd, { capture: true });
+}
+
 function sessionBackgroundEnabled() {
   if (typeof window === "undefined") return false;
   try {
@@ -455,6 +562,8 @@ export function createPaneExtras(deps) {
         void viewportDeps.resumeHistoryAfterPan(pane);
       }, HISTORY_PREFETCH_IDLE_MS);
     };
+
+    wireSynchronizedVerticalPan(pane, getAllChartPanes, getDrawingHub);
 
     trackChartPanning(pane.el, {
       onStart: () => {

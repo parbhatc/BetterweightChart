@@ -250,6 +250,8 @@ export function buildControllerApi(ctx) {
     getToolLabel: () => ctx.getToolLabel(),
     setValuesTooltipOnLongPress: (...args) => ctx.setValuesTooltipOnLongPress(...args),
     getValuesTooltipOnLongPress: () => ctx.valuesTooltipOnLongPress,
+    clearLongPress: () => ctx.clearLongPress(),
+    unpinValuesTooltip: () => ctx.unpinValuesTooltip(),
     getDrawings: () => ctx.drawings,
     getCount: () => ctx.drawings.length,
     getLockedCount: () => ctx.getLockedCount(),
