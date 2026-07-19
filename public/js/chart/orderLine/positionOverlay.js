@@ -45,17 +45,53 @@ const DEFAULT_QTY = 1;
  * @param {number} pnl
  * @param {"both" | "+" | "-"} [signMode]
  */
-function formatPnl(pnl, signMode = "both") {
+function formatPnl(pnl, signMode = "both", tickSize = 0, tickValue = 0) {
   const showPlus = signMode === "+" || signMode === "both";
   const showMinus = signMode === "-" || signMode === "both";
+  const sign = pnl >= 0 ? (showPlus ? "+" : "") : showMinus ? "-" : "";
+  const mode = pnlDisplayMode();
+  if (mode !== "dollars" && tickSize > 0 && tickValue > 0) {
+    const ticks = Math.abs(pnl) / tickValue;
+    if (mode === "ticks") {
+      const n = Math.round(ticks);
+      return `${sign}${n} tick${n === 1 ? "" : "s"}`;
+    }
+    const points = Math.round(ticks * tickSize * 100) / 100;
+    return `${sign}${points % 1 === 0 ? points : points.toFixed(2)} pts`;
+  }
   const abs = Math.abs(pnl).toLocaleString(undefined, {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
-  if (pnl >= 0) {
-    return `${showPlus ? "+" : ""}$${abs}`;
+  return `${sign}$${abs}`;
+}
+
+/**
+ * Position-line P&L display mode — read from the host app's trade panel
+ * settings ("dollars" | "ticks" | "points"); cached until the host fires
+ * its settings-changed event.
+ * @returns {"dollars" | "ticks" | "points"}
+ */
+let pnlDisplayModeCache = null;
+function pnlDisplayMode() {
+  if (pnlDisplayModeCache) return pnlDisplayModeCache;
+  let mode = "dollars";
+  try {
+    const raw = localStorage.getItem("practiceTradePanelSettings");
+    const parsed = raw ? JSON.parse(raw).positionPnlDisplay : null;
+    if (parsed === "ticks" || parsed === "points") mode = parsed;
+  } catch {
+    //
   }
-  return `${showMinus ? "-" : ""}$${abs}`;
+  pnlDisplayModeCache = mode;
+  return mode;
+}
+if (typeof window !== "undefined") {
+  const clearPnlDisplayModeCache = () => {
+    pnlDisplayModeCache = null;
+  };
+  window.addEventListener("tradePanelSettingsChanged", clearPnlDisplayModeCache);
+  window.addEventListener("practiceTradePanelSettingsChanged", clearPnlDisplayModeCache);
 }
 
 /** @param {boolean} profit */
@@ -325,13 +361,16 @@ export function createPositionOverlay(widget) {
     position.line.setPrice(entry);
     refreshBracketSizes();
 
+    // stylePositionLine wiped the body text — invalidate the text memo and the
+    // paint throttle so refreshPositionPnl repaints unconditionally. Otherwise
+    // a recomputed text equal to the stale cached one (or a recent paint) skips
+    // the repaint and the PnL label stays blank until the next bar tick, which
+    // in a paused replay never comes.
+    position.lastText = null;
+    position.lastProfit = null;
+    lastPnlPaintAt = 0;
     const mark = markPrice();
-    if (mark != null) refreshPositionPnl(mark);
-    else {
-      position.lastText = "";
-      position.lastProfit = true;
-      refreshPositionPnl(entry);
-    }
+    refreshPositionPnl(mark != null ? mark : entry);
 
     return position.line;
   }
@@ -379,7 +418,7 @@ export function createPositionOverlay(widget) {
     if (!position) return;
     const { tickSize, tickValue } = tickMeta();
     const pnl = calcPnl(position.entry, targetPrice, position.qty, tickSize, tickValue);
-    const pnlText = formatPnl(pnl, "-");
+    const pnlText = formatPnl(pnl, "-", tickSize, tickValue);
     const drag = resolveBracketDrag(
       position.qty,
       targetPrice,
@@ -420,7 +459,7 @@ export function createPositionOverlay(widget) {
     const { tickSize, tickValue } = tickMeta();
     const pnl = calcPnl(position.entry, price, position.qty, tickSize, tickValue);
     const profit = pnl >= 0;
-    const text = formatPnl(pnl);
+    const text = formatPnl(pnl, "both", tickSize, tickValue);
     if (text === bracket.lastText && profit === bracket.lastProfit) return;
 
     const colors = lineColors(profit);
@@ -624,7 +663,7 @@ export function createPositionOverlay(widget) {
     const { tickSize, tickValue } = tickMeta();
     const pnl = calcPnl(position.entry, mark, position.qty, tickSize, tickValue);
     const profit = pnl >= 0;
-    const text = formatPnl(pnl);
+    const text = formatPnl(pnl, "both", tickSize, tickValue);
     const colors = lineColors(profit);
     const sideColor = positionSideColor(position.qty);
     const textChanged = text !== position.lastText;
@@ -698,6 +737,29 @@ export function createPositionOverlay(widget) {
     });
   }
 
+  // Repaint the position chip + bracket labels immediately when the host's
+  // P&L display mode changes ($ / ticks / points) — a paused replay has no
+  // next bar tick to trigger the refresh.
+  if (typeof window !== "undefined") {
+    const onPnlDisplayModeChanged = () => {
+      if (!position?.line) return;
+      position.lastText = null;
+      position.lastProfit = null;
+      lastPnlPaintAt = 0;
+      const mark = markPrice();
+      refreshPositionPnl(mark != null ? mark : position.entry);
+      if (position.stopLoss) {
+        position.stopLoss.lastText = "";
+        applyBracketLineVisual(position.stopLoss, position.stopLoss.price);
+      }
+      if (position.takeProfit) {
+        position.takeProfit.lastText = "";
+        applyBracketLineVisual(position.takeProfit, position.takeProfit.price);
+      }
+    };
+    window.addEventListener("tradePanelSettingsChanged", onPnlDisplayModeChanged);
+  }
+
   /**
    * @param {object} bar
    */
@@ -744,7 +806,7 @@ export function createPositionOverlay(widget) {
     const { tickSize, tickValue } = tickMeta();
     const pnl = calcPnl(entry, entry, qty, tickSize, tickValue);
     const profit = pnl >= 0;
-    const text = formatPnl(pnl);
+    const text = formatPnl(pnl, "both", tickSize, tickValue);
     const colors = lineColors(profit);
 
     const mark = markPrice();
