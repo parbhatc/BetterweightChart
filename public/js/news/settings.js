@@ -2,7 +2,7 @@ import { DEFAULT_NEWS_LEVELS, NEWS_SOURCE_OPTIONS, normalizeNewsLevels } from ".
 
 const STORAGE_KEY = "bwc-news-settings";
 
-/** @typedef {{ enabled: boolean, source: string, eventTypes: import("./events.js").NewsLevelRow[], displayCurrencies: string[], displayImpacts: string[] }} NewsSettings */
+/** @typedef {{ enabled: boolean, source: string, eventTypes: import("./events.js").NewsLevelRow[], displayCurrencies: string[], displayImpacts: string[], sortBy: "time" | "impact" | "currency" }} NewsSettings */
 
 const IMPACT_OPTIONS = ["high", "medium", "low"];
 
@@ -13,6 +13,7 @@ const DEFAULT_NEWS_SETTINGS = {
   eventTypes: DEFAULT_NEWS_LEVELS.map((r) => ({ ...r })),
   displayCurrencies: [],
   displayImpacts: [],
+  sortBy: "time",
 };
 
 /** @param {unknown} raw @returns {string[]} */
@@ -43,6 +44,7 @@ function loadNewsSettings() {
       eventTypes: normalizeNewsLevels(parsed.eventTypes ?? parsed.newsLevels),
       displayCurrencies: normalizeCurrencyFilter(parsed.displayCurrencies),
       displayImpacts: normalizeImpactFilter(parsed.displayImpacts),
+      sortBy: ["time", "impact", "currency"].includes(parsed.sortBy) ? parsed.sortBy : "time",
     };
   } catch {
     return structuredClone(DEFAULT_NEWS_SETTINGS);
@@ -91,6 +93,9 @@ export function createNewsSettings() {
       }
       if (patch.displayImpacts != null) {
         state.displayImpacts = normalizeImpactFilter(patch.displayImpacts);
+      }
+      if (patch.sortBy != null && ["time", "impact", "currency"].includes(patch.sortBy)) {
+        state.sortBy = patch.sortBy;
       }
       saveNewsSettings(state);
       emit();

@@ -1,0 +1,187 @@
+.tv-timescale-markers {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: min(7rem, 100%);
+  z-index: 18;
+  overflow: hidden;
+  pointer-events: none;
+  contain: layout paint style;
+}
+
+.tv-timescale-marker {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  transform: translate3d(calc(var(--marker-x, 0px) - 50%), var(--marker-y, 0px), 0);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--marker-color, #a855f7);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--tv-bg) 88%, var(--marker-color, #a855f7));
+  color: var(--marker-color, #a855f7);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--tv-bg) 65%, transparent);
+  font: 700 12px/1 sans-serif;
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  will-change: transform;
+}
+
+.tv-timescale-marker:hover,
+.tv-timescale-marker:focus-visible,
+.tv-timescale-marker[aria-expanded="true"] {
+  background: var(--marker-color, #a855f7);
+  color: #fff;
+  outline: none;
+  transform: translate3d(calc(var(--marker-x, 0px) - 50%), var(--marker-y, 0px), 0) scale(1.08);
+}
+
+.tv-timescale-marker__glyph {
+  transform: translateY(-0.5px);
+}
+
+.tv-timescale-marker__count {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border: 1px solid var(--tv-bg);
+  border-radius: 999px;
+  background: var(--marker-color, #a855f7);
+  color: #fff;
+  font: 700 9px/12px sans-serif;
+  box-sizing: border-box;
+}
+
+.tv-timescale-marker-popup {
+  position: fixed;
+  z-index: 470;
+  width: min(21rem, calc(100vw - 1rem));
+  max-height: min(25rem, calc(100vh - 1rem));
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--tv-border);
+  border-radius: var(--radius-lg);
+  background: var(--tv-bg-elevated);
+  color: var(--tv-text);
+  box-shadow: var(--shadow-lg);
+}
+
+.tv-timescale-marker-popup[hidden] {
+  display: none !important;
+}
+
+.tv-timescale-marker-popup__head,
+.tv-timescale-marker-popup__event-head,
+.tv-timescale-marker-popup__facts {
+  display: flex;
+  align-items: center;
+}
+
+.tv-timescale-marker-popup__head {
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-1) var(--space-2);
+  border-bottom: 1px solid var(--tv-border-subtle);
+}
+
+.tv-timescale-marker-popup__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.tv-timescale-marker-popup__time,
+.tv-timescale-marker-popup__fact-label {
+  color: var(--tv-muted);
+  font-size: var(--text-xs);
+}
+
+.tv-timescale-marker-popup__close {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--tv-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.tv-timescale-marker-popup__close:hover,
+.tv-timescale-marker-popup__close:focus-visible {
+  background: var(--tv-surface-hover);
+  color: var(--tv-text);
+}
+
+.tv-timescale-marker-popup__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+}
+
+.tv-timescale-marker-popup__event {
+  padding: var(--space-2);
+  border: 1px solid var(--tv-border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--tv-surface);
+}
+
+.tv-timescale-marker-popup__event-head {
+  gap: var(--space-2);
+}
+
+.tv-timescale-marker-popup__impact {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--tv-muted);
+}
+
+.tv-timescale-marker-popup__event--high .tv-timescale-marker-popup__impact {
+  background: #f23645;
+}
+
+.tv-timescale-marker-popup__event--medium .tv-timescale-marker-popup__impact {
+  background: #ff9800;
+}
+
+.tv-timescale-marker-popup__event-title {
+  min-width: 0;
+  flex: 1;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.tv-timescale-marker-popup__currency {
+  color: var(--tv-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.tv-timescale-marker-popup__facts {
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.tv-timescale-marker-popup__fact-value {
+  margin-top: 1px;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 640px) {
+  .tv-timescale-marker-popup {
+    width: calc(100vw - 1rem);
+  }
+}

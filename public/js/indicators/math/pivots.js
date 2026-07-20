@@ -43,6 +43,30 @@ export function pivotLowAt(bars, i, left, right) {
   return bars[candidateIdx].low;
 }
 
+/** Strict pivot: the candidate must be higher than every surrounding bar. */
+export function pivotHighStrictAt(bars, i, left, right) {
+  const pivotRange = left + right;
+  if (i < pivotRange || i >= bars.length) return null;
+  const candidateIdx = i - right;
+  const candidate = bars[candidateIdx].high;
+  for (let j = i - pivotRange; j <= i; j++) {
+    if (j !== candidateIdx && bars[j].high >= candidate) return null;
+  }
+  return candidate;
+}
+
+/** Strict pivot: the candidate must be lower than every surrounding bar. */
+export function pivotLowStrictAt(bars, i, left, right) {
+  const pivotRange = left + right;
+  if (i < pivotRange || i >= bars.length) return null;
+  const candidateIdx = i - right;
+  const candidate = bars[candidateIdx].low;
+  for (let j = i - pivotRange; j <= i; j++) {
+    if (j !== candidateIdx && bars[j].low <= candidate) return null;
+  }
+  return candidate;
+}
+
 /** @param {number} confirmBarIndex @param {number} right */
 export function pivotBarIndex(confirmBarIndex, right) {
   return confirmBarIndex - right;
@@ -54,6 +78,42 @@ export function pivotLens(inputs, leftKey, rightKey, def = 10) {
     Math.max(1, Number(inputs[leftKey]) || def),
     Math.max(1, Number(inputs[rightKey]) || def),
   ];
+}
+
+/**
+ * Return true when two intraday pivots are separated by a closed-market gap.
+ *
+ * The normal cadence is inferred from the loaded bars so this works for every
+ * intraday resolution without relying on a resolution string. Daily/weekly
+ * series intentionally remain continuous: skipped weekend dates are normal
+ * bars on those timeframes and can still form valid higher-timeframe SMT.
+ *
+ * @param {{ time: number }[]} bars
+ * @param {number} startIdx
+ * @param {number} endIdx
+ */
+export function hasIntradaySessionBreak(bars, startIdx, endIdx) {
+  if (!Array.isArray(bars) || bars.length < 2) return false;
+
+  const deltas = [];
+  for (let i = 1; i < bars.length; i++) {
+    const delta = Number(bars[i]?.time) - Number(bars[i - 1]?.time);
+    if (Number.isFinite(delta) && delta > 0) deltas.push(delta);
+  }
+  if (!deltas.length) return false;
+
+  deltas.sort((a, b) => a - b);
+  const cadence = deltas[Math.floor(deltas.length / 2)];
+  if (cadence >= 24 * 60 * 60) return false;
+
+  // Ignore routine pauses while still catching the Friday -> Sunday reopen.
+  const breakThreshold = Math.max(6 * 60 * 60, cadence * 3);
+  const from = Math.max(1, Math.min(startIdx, endIdx) + 1);
+  const to = Math.min(bars.length - 1, Math.max(startIdx, endIdx));
+  for (let i = from; i <= to; i++) {
+    if (Number(bars[i]?.time) - Number(bars[i - 1]?.time) > breakThreshold) return true;
+  }
+  return false;
 }
 
 /**
@@ -109,4 +169,28 @@ export function pivotLowAtSparse(bars, i, left, right) {
     if (!bars[j]) return null;
   }
   return pivotLowAt(/** @type {{ low: number }[]} */ (bars), i, left, right);
+}
+
+/** @param {({ high: number } | null)[]} bars @param {number} i @param {number} left @param {number} right */
+export function pivotHighStrictAtSparse(bars, i, left, right) {
+  const pivotRange = left + right;
+  if (i < pivotRange || i >= bars.length) return null;
+  for (let j = i - pivotRange; j <= i; j++) if (!bars[j]) return null;
+  return pivotHighStrictAt(/** @type {{ high: number }[]} */ (bars), i, left, right);
+}
+
+/** @param {({ low: number } | null)[]} bars @param {number} i @param {number} left @param {number} right */
+export function pivotLowStrictAtSparse(bars, i, left, right) {
+  const pivotRange = left + right;
+  if (i < pivotRange || i >= bars.length) return null;
+  for (let j = i - pivotRange; j <= i; j++) if (!bars[j]) return null;
+  return pivotLowStrictAt(/** @type {{ low: number }[]} */ (bars), i, left, right);
+}
+
+/** Compare two prices using an instrument tick-size tolerance. */
+export function pricesEqualWithinTicks(a, b, tickSize, toleranceTicks) {
+  const tick = Number(tickSize);
+  const tolerance = Math.max(0, Number(toleranceTicks) || 0);
+  if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(tick) || tick <= 0) return false;
+  return Math.abs(a - b) <= tick * tolerance + tick * 1e-9;
 }

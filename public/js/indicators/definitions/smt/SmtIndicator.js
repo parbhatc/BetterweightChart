@@ -1,8 +1,10 @@
 import { chartDebug } from "../../../debug/chart/index.js";
 import {
   pivotBarIndex,
+  pivotHighAt,
   pivotHighAtSparse,
   pivotLens,
+  pivotLowAt,
   pivotLowAtSparse,
 } from "../../math/pivots.js";
 import { symbolTicker } from "../../../app/symbol/ticker.js";
@@ -18,6 +20,7 @@ import { compareSymbol } from "../../security/compareSymbol.js";
 import { compareSymbolInputs, compareBarsRecomputeKey, ensureCompareAligned } from "../../security/compareBars.js";
 import { pendingInit, readyInit } from "../../security/initWait.js";
 import { styleColor, styleColorWithOpacity } from "../../styleColor.js";
+import { isStrictSmtDivergence } from "./divergence.js";
 
 class SmtIndicator extends BarScriptIndicator {
 
@@ -33,7 +36,7 @@ class SmtIndicator extends BarScriptIndicator {
       createInt("leftLen", "Pivot left", 1, { section: "Pivots", inline: true }),
       createInt("rightLen", "Pivot right", 1, { section: "Pivots", inline: true }),
       createBool("waitClose", "Wait for candle close", true, { section: "Detection" }),
-      createInt("pivotSync", "Pivot sync tolerance (bars)", 1, { section: "Detection" }),
+      createInt("pivotSync", "Pivot sync tolerance (bars)", 0, { section: "Detection" }),
       createBool("showHigh", "Pivot high SMT", true, { section: "Detection" }),
       createBool("showLow", "Pivot low SMT", true, { section: "Detection" }),
       inlinePair(
@@ -157,7 +160,7 @@ class SmtIndicator extends BarScriptIndicator {
     this.state.left = left;
     this.state.right = right;
     this.state.waitClose = this.getBool("waitClose", true);
-    this.state.pivotSync = Math.max(0, Number(this.inputs.pivotSync ?? 1) || 0);
+    this.state.pivotSync = Math.max(0, Number(this.inputs.pivotSync ?? 0) || 0);
     this.state.showHigh = this.getBool("showHigh", true);
     this.state.showLow = this.getBool("showLow", true);
     this.state.highColor = styleColor(style, "highColor", "#ff1100");
@@ -220,31 +223,24 @@ class SmtIndicator extends BarScriptIndicator {
           : pivotLowAtSparse(compareUtc, confirmIdx, left, right);
         if (value == null) continue;
         const distance = Math.abs(j - pivotIdx);
-        if (!best || distance < best.distance) best = { value, distance };
+        if (!best || distance < best.distance) best = { value, distance, index: j };
       }
-      return best?.value ?? null;
+      return best;
     };
 
-    const ph = this.math.pivotHigh(left, right);
-    const symPh = ph != null ? comparePivotAt(pivotBarIndex(this.index, right), "high") : null;
-
-    if (ph != null && symPh == null) {
-      // No compare data at this swing — drop the pair so the next divergence
-      // can't bridge across it through candles.
-      this.state.lastPh = null;
-      this.state.lastSymPh = null;
-      this.state.lastPhBarIdx = null;
-    }
+    let ph = pivotHighAt(this.bars, this.index, left, right);
+    let pl = pivotLowAt(this.bars, this.index, left, right);
+    const phBarIdx = pivotBarIndex(this.index, right);
+    const symPhPair = ph != null ? comparePivotAt(phBarIdx, "high") : null;
+    const symPh = symPhPair?.value ?? null;
     if (ph != null && symPh != null) {
       if (
         showHigh &&
         this.state.lastPh != null &&
         this.state.lastSymPh != null &&
-        this.state.lastPhBarIdx != null &&
-        (ph - this.state.lastPh) * (symPh - this.state.lastSymPh) < 0
+        isStrictSmtDivergence(ph, this.state.lastPh, symPh, this.state.lastSymPh)
       ) {
-        const pivotIdx = pivotBarIndex(this.index, right);
-        const timeEnd = this.chartBars[pivotIdx]?.time;
+        const timeEnd = this.chartBars[phBarIdx]?.time;
         const timeStart = this.chartBars[this.state.lastPhBarIdx]?.time;
         if (timeStart != null && timeEnd != null) {
           const midPrice = (ph + this.state.lastPh) / 2;
@@ -272,27 +268,24 @@ class SmtIndicator extends BarScriptIndicator {
       }
       this.state.lastPh = ph;
       this.state.lastSymPh = symPh;
-      this.state.lastPhBarIdx = pivotBarIndex(this.index, right);
+      this.state.lastPhBarIdx = phBarIdx;
+    } else if (ph != null && ph > (this.state.lastPh ?? 0)) {
+      this.state.lastPh = ph;
+      this.state.lastSymPh = null;
+      this.state.lastPhBarIdx = phBarIdx;
     }
 
-    const pl = this.math.pivotLow(left, right);
-    const symPl = pl != null ? comparePivotAt(pivotBarIndex(this.index, right), "low") : null;
-
-    if (pl != null && symPl == null) {
-      this.state.lastPl = null;
-      this.state.lastSymPl = null;
-      this.state.lastPlBarIdx = null;
-    }
+    const plBarIdx = pivotBarIndex(this.index, right);
+    const symPlPair = pl != null ? comparePivotAt(plBarIdx, "low") : null;
+    const symPl = symPlPair?.value ?? null;
     if (pl != null && symPl != null) {
       if (
         showLow &&
         this.state.lastPl != null &&
         this.state.lastSymPl != null &&
-        this.state.lastPlBarIdx != null &&
-        (pl - this.state.lastPl) * (symPl - this.state.lastSymPl) < 0
+        isStrictSmtDivergence(pl, this.state.lastPl, symPl, this.state.lastSymPl)
       ) {
-        const pivotIdx = pivotBarIndex(this.index, right);
-        const timeEnd = this.chartBars[pivotIdx]?.time;
+        const timeEnd = this.chartBars[plBarIdx]?.time;
         const timeStart = this.chartBars[this.state.lastPlBarIdx]?.time;
         if (timeStart != null && timeEnd != null) {
           const midPrice = (pl + this.state.lastPl) / 2;
@@ -320,7 +313,11 @@ class SmtIndicator extends BarScriptIndicator {
       }
       this.state.lastPl = pl;
       this.state.lastSymPl = symPl;
-      this.state.lastPlBarIdx = pivotBarIndex(this.index, right);
+      this.state.lastPlBarIdx = plBarIdx;
+    } else if (pl != null && pl < (this.state.lastPl ?? 9999999)) {
+      this.state.lastPl = pl;
+      this.state.lastSymPl = null;
+      this.state.lastPlBarIdx = plBarIdx;
     }
   }
 }

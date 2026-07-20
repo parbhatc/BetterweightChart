@@ -1,4 +1,4 @@
-import { etParts } from "../../core/etTime.js";
+import { etParts, hmToMinutes } from "../../core/etTime.js";
 import {
   enabledNewsTypeIds,
   eventMatchesId,
@@ -116,8 +116,128 @@ export function createNewsPanel(opts) {
     return [...set].sort();
   }
 
+  function eventMinute(ev) {
+    return hmToMinutes(ev.hmEt ?? "") ?? 9999;
+  }
+
+  function sortEvents(events, sortBy) {
+    const impactRank = { high: 0, medium: 1, low: 2 };
+    return [...events].sort((a, b) => {
+      if (sortBy === "impact") {
+        const diff = impactRank[impactClass(a.impact)] - impactRank[impactClass(b.impact)];
+        if (diff) return diff;
+      }
+      if (sortBy === "currency") {
+        const aCurrency = String(a.currency ?? a.country ?? "");
+        const bCurrency = String(b.currency ?? b.country ?? "");
+        const diff = aCurrency.localeCompare(bCurrency);
+        if (diff) return diff;
+      }
+      return eventMinute(a) - eventMinute(b) || eventTitle(a).localeCompare(eventTitle(b));
+    });
+  }
+
+  function releaseType(ev, enabledTypes) {
+    const title = eventTitle(ev);
+    for (const id of ["ppi", "cpi", "fomc", "nfp"]) {
+      if (enabledTypes.has(id) && eventMatchesId(id, title)) return id.toUpperCase();
+    }
+    return "";
+  }
+
+  function renderFilters(events, settings) {
+    const filtersEl = panel.querySelector("[data-news-filters]");
+    if (!(filtersEl instanceof HTMLElement)) return;
+    const currencies = collectCurrencies(events);
+    const selectedCurrencies = settings.displayCurrencies ?? [];
+    const selectedImpacts = settings.displayImpacts ?? [];
+    const hasFilters = selectedCurrencies.length > 0 || selectedImpacts.length > 0;
+    const impactHtml = ["high", "medium", "low"]
+      .map((impact) => {
+        const active = selectedImpacts.includes(impact);
+        const label = impact === "medium" ? "Med" : impact[0].toUpperCase() + impact.slice(1);
+        return `<button type="button" class="tv-news-filter-chip tv-news-filter-chip--impact tv-news-filter-chip--${impact}${active ? " is-active" : ""}" data-impact="${impact}" aria-pressed="${active}">${label}</button>`;
+      })
+      .join("");
+    const currencyHtml = currencies
+      .map((currency) => {
+        const active = selectedCurrencies.includes(currency);
+        return `<button type="button" class="tv-news-filter-chip tv-news-filter-chip--currency${active ? " is-active" : ""}" data-currency="${escapeHtml(currency)}" aria-pressed="${active}">${escapeHtml(currency)}</button>`;
+      })
+      .join("");
+
+    filtersEl.innerHTML = `
+      <div class="tv-news-panel__controls">
+        <span class="tv-news-panel__controls-title">Filter events</span>
+        <label class="tv-news-panel__sort-wrap">Sort
+          <select class="tv-news-panel__sort" data-news-sort aria-label="Sort news events">
+            <option value="time"${settings.sortBy === "time" ? " selected" : ""}>Time</option>
+            <option value="impact"${settings.sortBy === "impact" ? " selected" : ""}>Impact</option>
+            <option value="currency"${settings.sortBy === "currency" ? " selected" : ""}>Currency</option>
+          </select>
+        </label>
+      </div>
+      <div class="tv-news-panel__filter-row tv-news-panel__filter-row--inline">
+        <span class="tv-news-panel__filter-label">Impact</span>
+        <div class="tv-news-panel__filter-chips" role="group" aria-label="Impact filters">${impactHtml}</div>
+        ${hasFilters ? `<button type="button" class="tv-news-filter-clear" data-clear-filters>Reset</button>` : ""}
+      </div>
+      ${currencies.length ? `<div class="tv-news-panel__filter-row tv-news-panel__filter-row--inline">
+        <span class="tv-news-panel__filter-label">Currency</span>
+        <div class="tv-news-panel__filter-chips tv-news-panel__filter-chips--scroll" role="group" aria-label="Currency filters">${currencyHtml}</div>
+      </div>` : ""}`;
+  }
+
+  function eventRowHtml(ev, enabledTypes) {
+    const title = ev.title ?? ev.event ?? ev.name ?? "Event";
+    const time = ev.timeLabel ?? ev.hmEt ?? "—";
+    const impact = impactClass(ev.impact ?? ev.importance);
+    const currency = ev.currency ?? ev.country ?? "";
+    const release = releaseType(ev, enabledTypes);
+    const facts = [
+      ["A", ev.actual],
+      ["F", ev.forecast],
+      ["P", ev.previous],
+    ].filter(([, value]) => value != null && String(value).trim());
+    return `<li class="tv-news-event tv-news-event--${impact}">
+      <div class="tv-news-event__time">${escapeHtml(time)}</div>
+      <span class="tv-news-event__impact" aria-label="${impact} impact" title="${impact} impact"></span>
+      <div class="tv-news-event__content">
+        <div class="tv-news-event__title-row">
+          <span class="tv-news-event__title">${escapeHtml(title)}</span>
+          ${release ? `<span class="tv-news-event__release">${release}</span>` : ""}
+        </div>
+        ${facts.length ? `<div class="tv-news-event__facts">${facts.map(([label, value]) => `<span><b>${label}</b> ${escapeHtml(value)}</span>`).join("")}</div>` : ""}
+      </div>
+      ${currency ? `<span class="tv-news-event__currency">${escapeHtml(currency)}</span>` : ""}
+    </li>`;
+  }
+
+  function renderEventsList(ymd, settings) {
+    const body = panel.querySelector("[data-news-events-body]");
+    if (!(body instanceof HTMLElement)) return;
+    const allEvents = getNewsByDay()[ymd]?.events ?? [];
+    renderFilters(allEvents, settings);
+    if (!settings.enabled) {
+      body.innerHTML = `<div class="tv-news-empty"><strong>News is disabled</strong><span>Enable news to show calendar events and chart markers.</span></div>`;
+      return;
+    }
+    if (!allEvents.length) {
+      body.innerHTML = `<div class="tv-news-empty"><span class="tv-news-empty__icon" aria-hidden="true">⚡</span><strong>No scheduled events</strong><span>There are no calendar releases available for ${formatDayLabel(ymd)}.</span></div>`;
+      return;
+    }
+    const filtered = allEvents.filter((ev) => passesDisplayFilters(ev, settings));
+    const events = sortEvents(filtered, settings.sortBy ?? "time");
+    if (!events.length) {
+      body.innerHTML = `<div class="tv-news-empty"><strong>No matching events</strong><span>Try removing an impact or currency filter.</span><button type="button" class="tv-news-empty__reset" data-clear-filters>Reset filters</button></div>`;
+      return;
+    }
+    const enabledTypes = new Set(enabledNewsTypeIds(settings.eventTypes ?? []));
+    body.innerHTML = `<div class="tv-news-results-count">${events.length} of ${allEvents.length} events</div><ul class="tv-news-events">${events.map((ev) => eventRowHtml(ev, enabledTypes)).join("")}</ul>`;
+  }
+
   /** @param {string} ymd @param {object[]} events @param {import("../../news/settings.js").NewsSettings} settings */
-  function renderFilters(ymd, events, settings) {
+  function renderLegacyFilters(ymd, events, settings) {
     const filtersEl = panel.querySelector("[data-news-filters]");
     if (!(filtersEl instanceof HTMLElement)) return;
 
@@ -169,7 +289,7 @@ export function createNewsPanel(opts) {
       <p class="tv-news-panel__filter-hint">Tap multiple chips to combine filters. None selected = show all.</p>`;
   }
 
-  function renderEventsList(ymd, settings) {
+  function renderLegacyEventsList(ymd, settings) {
     const body = panel.querySelector("[data-news-events-body]");
     if (!(body instanceof HTMLElement)) return;
 
@@ -183,7 +303,7 @@ export function createNewsPanel(opts) {
     const allEvents = payload?.events ?? [];
     const events = allEvents.filter((ev) => passesDisplayFilters(ev, settings));
 
-    renderFilters(ymd, allEvents, settings);
+    renderLegacyFilters(ymd, allEvents, settings);
 
     if (!allEvents.length) {
       body.innerHTML = `<div class="tv-news-list__empty">No news events for ${formatDayLabel(ymd)}.</div>`;
@@ -367,7 +487,20 @@ export function createNewsPanel(opts) {
     if (clearCurrencies) {
       ev.preventDefault();
       newsStore.update({ displayCurrencies: [] });
+      return;
     }
+
+    const clearFilters = ev.target instanceof Element ? ev.target.closest("[data-clear-filters]") : null;
+    if (clearFilters) {
+      ev.preventDefault();
+      newsStore.update({ displayImpacts: [], displayCurrencies: [] });
+    }
+  });
+
+  panel.addEventListener("change", (ev) => {
+    const sort = ev.target instanceof HTMLSelectElement ? ev.target.closest("[data-news-sort]") : null;
+    if (!(sort instanceof HTMLSelectElement)) return;
+    newsStore.update({ sortBy: sort.value });
   });
 
   newsStore.onChange(() => {

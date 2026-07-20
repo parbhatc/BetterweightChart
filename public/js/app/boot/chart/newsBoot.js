@@ -8,12 +8,19 @@ import {
   newsDaysReady,
 } from "../../news/newsCache.js";
 import { mountNewsToolbar } from "../../../ui/news/toolbar.js";
+import { buildNewsTimeScaleMarkers } from "../../../news/markers.js";
+import { buildDemoNewsMarker } from "../../../news/demoMarkers.js";
+import { mountTimeScaleMarkers } from "../../../primitives/timeScaleMarkers.js";
 
 /**
  * @param {import("./state.js").BootContext} ctx
  */
 export function attachNewsBoot(ctx) {
   const newsStore = getNewsSettingsStore();
+  const markerHosts = new Map();
+  const demoMarkersEnabled =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("_codex_markers") === "demo";
 
   /** @returns {{ source: string, types: string[] }} */
   function newsFetchOpts() {
@@ -62,11 +69,56 @@ export function attachNewsBoot(ctx) {
       const hit = getCachedNewsDay(day, opts);
       if (hit) out[day] = hit;
     }
+    if (demoMarkersEnabled) {
+      const demo = buildDemoNewsMarker(p.bars ?? []);
+      if (demo) {
+        const existing = out[demo.day];
+        out[demo.day] = {
+          ...(existing ?? { day: demo.day }),
+          events: [...(existing?.events ?? []), demo.event],
+        };
+      }
+    }
     return out;
   }
 
+  function ensureMarkerHosts() {
+    const panes = ctx.getAllChartPanes();
+    const live = new Set(panes.map((pane) => pane.index));
+    for (const [index, host] of markerHosts) {
+      if (live.has(index)) continue;
+      host.destroy();
+      markerHosts.delete(index);
+    }
+    for (const pane of panes) {
+      if (markerHosts.has(pane.index) || !(pane.el instanceof HTMLElement)) continue;
+      const host = mountTimeScaleMarkers({ mountEl: pane.el, chart: pane.chart });
+      markerHosts.set(pane.index, host);
+      pane.newsMarkers = host;
+    }
+  }
+
+  function syncNewsMarkers() {
+    ensureMarkerHosts();
+    const settings = newsStore.get();
+    for (const pane of ctx.getAllChartPanes()) {
+      const host = markerHosts.get(pane.index);
+      if (!host) continue;
+      const markers = buildNewsTimeScaleMarkers({
+        bars: pane.bars,
+        timeAdapter: pane.timeAdapter,
+        newsByDay: getNewsByDayForPane(pane),
+        settings,
+      });
+      host.setMarkers(markers);
+    }
+  }
+
   function scheduleNewsLoad() {
-    if (!newsStore.isEnabled()) return;
+    if (!newsStore.isEnabled()) {
+      syncNewsMarkers();
+      return;
+    }
     const days = new Set();
     for (const pane of ctx.getAllChartPanes()) {
       for (const day of visibleEtDays(pane)) days.add(day);
@@ -74,6 +126,7 @@ export function attachNewsBoot(ctx) {
     void ensureNewsDays([...days]).then(() => {
       ctx.refreshIndicators?.();
       newsUi?.refresh();
+      syncNewsMarkers();
     });
   }
 
@@ -94,6 +147,7 @@ export function attachNewsBoot(ctx) {
   newsStore.onChange(() => {
     scheduleNewsLoad();
     ctx.refreshIndicators?.();
+    syncNewsMarkers();
   });
 
   const origLoadBars = ctx.loadBars;
@@ -119,7 +173,10 @@ export function attachNewsBoot(ctx) {
     const days = visibleEtDays(pane);
     return days.length > 0 && !newsDaysReady(days, opts);
   };
+  ctx.refreshNewsMarkers = syncNewsMarkers;
+  ctx.newsMarkerHosts = markerHosts;
 
+  ensureMarkerHosts();
   scheduleNewsLoad();
 }
 

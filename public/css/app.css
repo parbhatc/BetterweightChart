@@ -20,6 +20,7 @@
 @import "./color/picker.css";
 @import "./timezone/clock.css";
 @import "./news/panel.css";
+@import "./news/markers.css";
 @import "./responsive.css";
 @import "./debug/hud.css";
 @import "./indicators/dialog.css";

@@ -120,11 +120,15 @@ function resolveStatic(relPath) {
 
 function serveFile(res, filePath, opts = {}) {
   const ext = path.extname(filePath);
-  const cacheable = !opts.noCache && (ext === ".mjs" || ext === ".js" || ext === ".css");
+  // Revalidate source assets on every request. This server is used for local
+  // development, where a one-day cache otherwise leaves stale JS/CSS active
+  // after an indicator or panel has been changed.
+  const sourceAsset = ext === ".mjs" || ext === ".js" || ext === ".css";
+  const cacheControl = opts.noCache ? "no-store" : sourceAsset ? "no-cache" : "no-store";
   res.writeHead(200, {
     ...HDR,
     "Content-Type": MIME[ext] || "application/octet-stream",
-    "Cache-Control": cacheable ? "public, max-age=86400" : "no-store",
+    "Cache-Control": cacheControl,
   });
   fs.createReadStream(filePath).pipe(res);
 }

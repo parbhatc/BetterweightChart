@@ -47,6 +47,7 @@ export function createBarScriptContext(opts) {
     bars: utcBars,
     chartBars,
     overlayCtx,
+    symbolInfo,
     instance,
     labels,
     boxes,
@@ -164,6 +165,7 @@ export function createBarScriptContext(opts) {
  * @property {object[]} bars — full series for lookback
  * @property {object[]} chartBars — chart-time bars (aligned with bars)
  * @property {object | null} overlayCtx — HTF/datafeed helpers (`request.security`, `getHtfBars`, …)
+ * @property {object | null} symbolInfo
  * @property {{ security: (symbol?: string, resolution?: string, countBack?: number) => object | null }} request
  * @property {object[]} labels — labels collected this run (overlay mode)
  * @property {object[]} boxes — boxes collected this run (overlay mode)
