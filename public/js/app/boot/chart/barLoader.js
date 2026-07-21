@@ -9,6 +9,35 @@ import { syncPaneEmptyState } from "../../../ui/chart/emptyState.js";
 import { chartDebug } from "../../../debug/chart/index.js";
 import { collectPaneRequiredChartBars, instanceUsesCompareSymbols } from "../../../indicators/security/indicatorDataNeeds.js";
 import { getIndicatorClass } from "../../../indicators/catalog.js";
+
+/**
+ * Keep studies in sync with both forming-bar ticks and newly opened bars.
+ * Forming ticks use the RAF-throttled refresh path so multiple quotes in one
+ * frame only trigger one full plot-series recompute.
+ * @param {object} ctx
+ * @param {object} pane
+ * @param {{ isNewBar?: boolean }} [meta]
+ */
+export function refreshLivePaneIndicators(ctx, pane, meta = {}) {
+  const hasPlotSeries = ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index);
+  if (meta.isNewBar) {
+    if (ctx.opts?.replayHostControlled && ctx.ensureIndicatorDataThenOverlay) {
+      ctx.ensureIndicatorDataThenOverlay(pane);
+      return;
+    }
+    ctx.ensureIndicatorData?.();
+    if (hasPlotSeries) ctx.refreshIndicatorsImmediate?.(pane.index);
+    else ctx.refreshOverlaysImmediate?.(pane.index);
+    return;
+  }
+
+  if (hasPlotSeries) {
+    ctx.refreshIndicators?.(pane.index);
+  } else if (ctx.indicatorController?.paneNeedsLiveOverlayRefresh?.(pane.index)) {
+    ctx.indicatorController.refreshOverlaysForPane?.(pane.index);
+  }
+}
+
 /**
  * @param {import("./state.js").BootContext} ctx
  */
@@ -122,20 +151,7 @@ export function attachBarLoader(ctx) {
         if (bar) ctx.notifyLiveBar?.(bar, meta);
       }
       refreshCompareDependentOverlays(pane);
-      if (meta.isNewBar) {
-        if (ctx.opts?.replayHostControlled && ctx.ensureIndicatorDataThenOverlay) {
-          ctx.ensureIndicatorDataThenOverlay(pane);
-          return;
-        }
-        ctx.ensureIndicatorData?.();
-        if (ctx.indicatorController?.paneHasPlotSeriesIndicators?.(pane.index)) {
-          ctx.refreshIndicatorsImmediate?.(pane.index);
-        } else {
-          ctx.refreshOverlaysImmediate?.(pane.index);
-        }
-      } else if (ctx.indicatorController?.paneNeedsLiveOverlayRefresh?.(pane.index)) {
-        ctx.indicatorController.refreshOverlaysForPane?.(pane.index);
-      }
+      refreshLivePaneIndicators(ctx, pane, meta);
     },
     onHistoryPrepended: (pane) => {
       if (pane._indicatorHistoryBulkLoad) return;

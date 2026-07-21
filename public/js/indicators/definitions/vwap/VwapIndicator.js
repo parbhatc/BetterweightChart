@@ -101,6 +101,21 @@ function anchorKey(time, anchor, symbolInfo) {
 }
 
 class VwapIndicator extends ComputeIndicator {
+  static requiredChartBars(inputs, chartResolution) {
+    const seconds = Math.max(1, resolutionSec(chartResolution));
+    if (inputs?.hideOnDailyOrAbove !== false && seconds >= 86400) return 0;
+
+    // A session-anchored VWAP must begin at the exchange session open. The
+    // default 500 bars starts too late in CME's overnight session on 1m charts.
+    if (String(inputs?.anchor ?? "session") === "session") {
+      return Math.ceil(86400 / seconds);
+    }
+
+    // Longer anchors can exceed the loader's cap on intraday charts. Ask for
+    // the maximum available history so they are as complete as possible.
+    return 4000;
+  }
+
   constructor() {
     super("vwap", "VWAP", "Volume Weighted Average Price");
     this.setPrimaryPlot("vwap");

@@ -50,7 +50,7 @@ function delayMinutesFromTvMeta(src) {
 }
 
 /** @param {object} meta */
-function symbolInfoFromResolved(tvSymbol, meta) {
+export function symbolInfoFromResolved(tvSymbol, meta) {
   const src = meta && typeof meta === "object" ? meta : {};
   const pricescale = src.pricescale ?? 100;
   const minmov = src.minmov ?? 1;

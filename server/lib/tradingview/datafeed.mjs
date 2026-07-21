@@ -1,4 +1,4 @@
-import { fetchTradingViewBars } from "./client.mjs";
+import { fetchTradingViewBars, symbolInfoFromResolved } from "./client.mjs";
 import { logoUrlFor, searchTradingViewSymbols } from "./search.mjs";
 import { normalizeTradingViewSymbol } from "./symbols.mjs";
 import { chartConfig } from "../fakeBars.mjs";
@@ -6,6 +6,17 @@ import { CHART_RESOLUTIONS, isSymbolResolutionSupported, resolutionSec } from ".
 import { csvHistoryBars } from "../csv/history.mjs";
 
 const TRADINGVIEW_DATA_DELAY_MINUTES = 10;
+
+const FALLBACK_SYMBOLS = [
+  { symbol: "CME_MINI:NQ1!", ticker: "NQ1!", name: "E-mini Nasdaq-100 Futures", exchange: "CME_MINI", type: "futures" },
+  { symbol: "CME_MINI:MNQ1!", ticker: "MNQ1!", name: "Micro E-mini Nasdaq-100 Futures", exchange: "CME_MINI", type: "futures" },
+  { symbol: "CME_MINI:ES1!", ticker: "ES1!", name: "E-mini S&P 500 Futures", exchange: "CME_MINI", type: "futures" },
+  { symbol: "CME_MINI:MES1!", ticker: "MES1!", name: "Micro E-mini S&P 500 Futures", exchange: "CME_MINI", type: "futures" },
+  { symbol: "CBOT_MINI:YM1!", ticker: "YM1!", name: "E-mini Dow Futures", exchange: "CBOT_MINI", type: "futures" },
+  { symbol: "CME_MINI:RTY1!", ticker: "RTY1!", name: "E-mini Russell 2000 Futures", exchange: "CME_MINI", type: "futures" },
+  { symbol: "NYMEX:CL1!", ticker: "CL1!", name: "Crude Oil Futures", exchange: "NYMEX", type: "futures" },
+  { symbol: "COMEX:GC1!", ticker: "GC1!", name: "Gold Futures", exchange: "COMEX", type: "futures" },
+];
 
 /** @type {Map<string, object>} */
 const symbolCache = new Map();
@@ -27,8 +38,34 @@ export function tradingViewDatafeedConfig() {
   };
 }
 
+export function fallbackTradingViewSearch(query, limit = 50) {
+  const needle = String(query ?? "").trim().toLowerCase();
+  return FALLBACK_SYMBOLS.filter((row) => {
+    if (!needle) return true;
+    return [row.symbol, row.ticker, row.name, row.exchange]
+      .some((value) => value.toLowerCase().includes(needle));
+  }).slice(0, Math.max(0, Number(limit) || 0));
+}
+
 export async function tradingViewSearch(query, limit = 50) {
-  return searchTradingViewSymbols(query, limit);
+  try {
+    return await searchTradingViewSymbols(query, limit);
+  } catch {
+    return fallbackTradingViewSearch(query, limit);
+  }
+}
+
+export function fallbackTradingViewSymbolInfo(symbol) {
+  const sym = normalizeTradingViewSymbol(symbol);
+  const known = FALLBACK_SYMBOLS.find((row) => row.symbol === sym);
+  return symbolInfoFromResolved(sym, known ? {
+    name: known.ticker,
+    ticker: known.symbol,
+    description: known.name,
+    type: known.type,
+    exchange: known.exchange,
+    listed_exchange: known.exchange,
+  } : {});
 }
 
 /** @param {string} symbol */
@@ -36,7 +73,12 @@ export async function tradingViewResolve(symbol) {
   const sym = normalizeTradingViewSymbol(symbol);
   if (symbolCache.has(sym)) return symbolCache.get(sym);
 
-  const { symbolInfo } = await fetchTradingViewBars(sym, "D", 5);
+  let symbolInfo;
+  try {
+    ({ symbolInfo } = await fetchTradingViewBars(sym, "D", 5));
+  } catch {
+    symbolInfo = fallbackTradingViewSymbolInfo(sym);
+  }
   symbolCache.set(sym, symbolInfo);
   if (symbolInfo.logoid) symbolInfo.logoUrl = logoUrlFor(symbolInfo.logoid);
   return symbolInfo;

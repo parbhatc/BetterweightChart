@@ -9,6 +9,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 
 process.env.BWC_LWC_LIVE = "1";
+process.env.NODE_OPTIONS = [process.env.NODE_OPTIONS, "--use-system-ca"]
+  .filter(Boolean)
+  .join(" ");
 
 const child = spawn(
   "npx",

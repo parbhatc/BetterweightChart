@@ -27,11 +27,11 @@
     "lwc:build:dev": "npm run build --prefix ./node_modules/lightweight-charts",
     "lwc:watch": "npm run rollup-watch --prefix ./node_modules/lightweight-charts",
     "lwc:sync": "npm run lwc:build:dev && npm run vendor:dev",
-    "start": "node server/index.mjs",
+    "start": "node --use-system-ca server/index.mjs",
     "predev": "node scripts/sync-vendor.mjs --dev",
     "dev": "node scripts/dev-server.mjs",
     "dev:live": "node scripts/dev-live.mjs",
-    "start:testing": "node server/index.mjs",
+    "start:testing": "node --use-system-ca server/index.mjs",
     "dev:testing": "npm run dev",
     "new:indicator": "node scripts/new-indicator.mjs",
     "test": "node --test test/**/*.test.mjs"

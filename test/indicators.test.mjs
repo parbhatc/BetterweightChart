@@ -13,8 +13,108 @@ import VolumeIndicator from "../public/js/indicators/definitions/volume/VolumeIn
 import VolumeProfileIndicator from "../public/js/indicators/definitions/volumeProfile/VolumeProfileIndicator.js";
 import FixedRangeVolumeProfileIndicator from "../public/js/indicators/definitions/volumeProfile/FixedRangeVolumeProfileIndicator.js";
 import EmaIndicator from "../public/js/indicators/definitions/ema/EMAIndicator.js";
+import PivotPointsHlIndicator from "../public/js/indicators/definitions/pivot/PivotPointsHlIndicator.js";
 
 const bar = (time, open, high, low, close, volume = 1) => ({ time, open, high, low, close, volume });
+
+function indicatorDefaults(Indicator) {
+  const fields = (Indicator.inputs ?? []).flatMap((input) => {
+    if (Array.isArray(input.fields)) return input.fields;
+    if (input.left || input.right) return [input.left, input.right].filter(Boolean);
+    return [input];
+  });
+  return Object.fromEntries(
+    fields.filter((field) => field?.id).map((field) => [field.id, field.defval]),
+  );
+}
+
+test("TradingView-compatible indicators retain their audited default inputs", () => {
+  assert.deepEqual(indicatorDefaults(EmaIndicator), {
+    length: 9,
+    source: "close",
+    offset: 0,
+    smoothingType: "none",
+    smoothingLength: 14,
+    bbStdDev: 2,
+    timeframe: "chart",
+    waitForClose: true,
+  });
+  assert.deepEqual(indicatorDefaults(VolumeIndicator), {
+    maLength: 20,
+    colorBasedOnPrevClose: false,
+  });
+  assert.deepEqual(indicatorDefaults(RsiIndicator), {
+    length: 14,
+    source: "close",
+    smoothingType: "sma",
+    smoothingLength: 14,
+    bbStdDev: 2,
+    timeframe: "chart",
+    waitForClose: true,
+  });
+  assert.deepEqual(indicatorDefaults(MacdIndicator), {
+    source: "close",
+    fastLength: 12,
+    slowLength: 26,
+    signalLength: 9,
+    oscillatorMaType: "ema",
+    signalMaType: "ema",
+    timeframe: "chart",
+    waitForClose: true,
+  });
+  assert.deepEqual(indicatorDefaults(BollingerBandsIndicator), {
+    length: 20,
+    basisMaType: "sma",
+    source: "close",
+    stdDev: 2,
+    offset: 0,
+    timeframe: "chart",
+    waitForClose: true,
+  });
+  assert.deepEqual(indicatorDefaults(PivotPointsHlIndicator), {
+    leftLenH: 10,
+    rightLenH: 10,
+    leftLenL: 10,
+    rightLenL: 10,
+  });
+  assert.deepEqual(indicatorDefaults(VwapIndicator), {
+    hideOnDailyOrAbove: true,
+    anchor: "session",
+    source: "hlc3",
+    offset: 0,
+    bandsMode: "standard_deviation",
+    band1Enabled: true,
+    band1Multiplier: 1,
+    band2Enabled: false,
+    band2Multiplier: 2,
+    band3Enabled: false,
+    band3Multiplier: 3,
+    timeframe: "chart",
+    waitForClose: true,
+  });
+  assert.deepEqual(indicatorDefaults(VolumeProfileIndicator), {
+    numberOfBars: 150,
+    rowSize: 24,
+    valueAreaPercent: 70,
+    width: 2,
+    showPoc: true,
+    upColor: { color: "#26a69a", opacity: 75 },
+    downColor: { color: "#ec407a", opacity: 75 },
+    valueAreaUpColor: { color: "#00bcd4", opacity: 90 },
+    valueAreaDownColor: { color: "#f06292", opacity: 90 },
+    pocColor: { color: "#f23645", opacity: 100 },
+  });
+});
+
+test("VWAP requests enough chart history to include the exchange session open", () => {
+  assert.equal(VwapIndicator.requiredChartBars({ anchor: "session" }, "1"), 1440);
+  assert.equal(VwapIndicator.requiredChartBars({ anchor: "session" }, "5"), 288);
+  assert.equal(
+    VwapIndicator.requiredChartBars({ anchor: "session", hideOnDailyOrAbove: true }, "1D"),
+    0,
+  );
+  assert.equal(VwapIndicator.requiredChartBars({ anchor: "week" }, "1"), 4000);
+});
 
 test("rolling moments match population statistics without allocating windows", () => {
   const result = rollingMeanStdDev([1, 2, 3, 4], 3);
