@@ -16,21 +16,19 @@ export function smoothSeries(values, length, type, bars) {
 
 /** @param {Array<number | null>} values @param {number} length */
 function sma(values, length) {
-  const out = /** @type {Array<number | null>} */ ([]);
+  const out = /** @type {Array<number | null>} */ (new Array(values.length).fill(null));
+  let sum = 0;
+  let invalid = 0;
   for (let i = 0; i < values.length; i++) {
-    if (i + 1 < length) {
-      out.push(null);
-      continue;
+    const added = values[i];
+    if (added == null || !Number.isFinite(added)) invalid += 1;
+    else sum += added;
+    if (i >= length) {
+      const removed = values[i - length];
+      if (removed == null || !Number.isFinite(removed)) invalid -= 1;
+      else sum -= removed;
     }
-    let sum = 0;
-    let count = 0;
-    for (let j = i - length + 1; j <= i; j++) {
-      const v = values[j];
-      if (v == null || !Number.isFinite(v)) continue;
-      sum += v;
-      count++;
-    }
-    out.push(count === length ? sum / length : null);
+    if (i + 1 >= length && invalid === 0) out[i] = sum / length;
   }
   return out;
 }
@@ -40,6 +38,8 @@ function emaFromValues(values, length) {
   const out = /** @type {Array<number | null>} */ ([]);
   const k = 2 / (length + 1);
   let ema = null;
+  let warmCount = 0;
+  let warmSum = 0;
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
     if (v == null || !Number.isFinite(v)) {
@@ -47,13 +47,13 @@ function emaFromValues(values, length) {
       continue;
     }
     if (ema == null) {
-      if (i + 1 < length) {
+      warmCount += 1;
+      warmSum += v;
+      if (warmCount < length) {
         out.push(null);
         continue;
       }
-      let sum = 0;
-      for (let j = i - length + 1; j <= i; j++) sum += values[j] ?? 0;
-      ema = sum / length;
+      ema = warmSum / length;
     } else {
       ema = v * k + ema * (1 - k);
     }
@@ -66,6 +66,8 @@ function emaFromValues(values, length) {
 function smma(values, length) {
   const out = /** @type {Array<number | null>} */ ([]);
   let prev = null;
+  let warmCount = 0;
+  let warmSum = 0;
   for (let i = 0; i < values.length; i++) {
     const v = values[i];
     if (v == null || !Number.isFinite(v)) {
@@ -73,13 +75,13 @@ function smma(values, length) {
       continue;
     }
     if (prev == null) {
-      if (i + 1 < length) {
+      warmCount += 1;
+      warmSum += v;
+      if (warmCount < length) {
         out.push(null);
         continue;
       }
-      let sum = 0;
-      for (let j = i - length + 1; j <= i; j++) sum += values[j] ?? 0;
-      prev = sum / length;
+      prev = warmSum / length;
     } else {
       prev = (prev * (length - 1) + v) / length;
     }
@@ -113,25 +115,28 @@ function wma(values, length) {
 
 /** @param {Array<number | null>} values @param {number} length @param {object[]} bars */
 function vwma(values, length, bars) {
-  const out = /** @type {Array<number | null>} */ ([]);
+  const out = /** @type {Array<number | null>} */ (new Array(values.length).fill(null));
+  let priceVolume = 0;
+  let volumeSum = 0;
+  let invalid = 0;
   for (let i = 0; i < values.length; i++) {
-    if (i + 1 < length) {
-      out.push(null);
-      continue;
+    const addedValue = values[i];
+    const addedVolume = Number(bars?.[i]?.volume) || 0;
+    if (addedValue == null || !Number.isFinite(addedValue) || addedVolume <= 0) invalid += 1;
+    else {
+      priceVolume += addedValue * addedVolume;
+      volumeSum += addedVolume;
     }
-    let pv = 0;
-    let vol = 0;
-    for (let j = i - length + 1; j <= i; j++) {
-      const v = values[j];
-      const volume = Number(bars?.[j]?.volume) || 0;
-      if (v == null || !Number.isFinite(v) || volume <= 0) {
-        pv = NaN;
-        break;
+    if (i >= length) {
+      const removedValue = values[i - length];
+      const removedVolume = Number(bars?.[i - length]?.volume) || 0;
+      if (removedValue == null || !Number.isFinite(removedValue) || removedVolume <= 0) invalid -= 1;
+      else {
+        priceVolume -= removedValue * removedVolume;
+        volumeSum -= removedVolume;
       }
-      pv += v * volume;
-      vol += volume;
     }
-    out.push(Number.isFinite(pv) && vol > 0 ? pv / vol : null);
+    if (i + 1 >= length && invalid === 0 && volumeSum > 0) out[i] = priceVolume / volumeSum;
   }
   return out;
 }

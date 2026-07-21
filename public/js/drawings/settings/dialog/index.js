@@ -122,6 +122,12 @@ import {
   supportsAnnotationStyleSettings,
 } from "../../tools/annotation/style.js";
 import { supportsShapeStyleSettings } from "../../tools/shape/index.js";
+import { isVolumeProfileTool, volumeProfileDraftFromDrawing } from "../../tools/volumeProfile/index.js";
+import {
+  readVolumeProfileDraftFromUi,
+  syncVolumeProfileDialogUi,
+  wireVolumeProfileSettings,
+} from "../sections/volumeProfile.js";
 
 /**
  * @param {object} opts
@@ -276,6 +282,9 @@ export function createDrawingSettingsDialog(opts) {
 
   function syncAllUi() {
     syncDrawingSettingsTabs(root, String(draft.drawingType ?? ""));
+    // Restore generic sections left hidden by a previously opened profile
+    // before specialized drawing sections apply their own visibility rules.
+    syncVolumeProfileDialogUi(root, draft);
     buildCoordsPanel(coordsPanel, draft.drawingType, draft.points, draft.angle, draft.priceOffset, getContext);
     syncAlignLabels();
     syncExtendUi(root, draft);
@@ -344,6 +353,7 @@ export function createDrawingSettingsDialog(opts) {
       ...readMeasureDraftFromUi(root, draft),
       ...readAnnotationDraftFromUi(root, draft),
       ...readShapeDraftFromUi(root, draft),
+      ...readVolumeProfileDraftFromUi(root, draft),
       label: textInput instanceof HTMLTextAreaElement ? textInput.value : draft.label,
       fontSize:
         channelLine && channelPricesFontSize instanceof HTMLSelectElement
@@ -440,10 +450,11 @@ export function createDrawingSettingsDialog(opts) {
       ...(isMeasureTool(drawing.type) ? measureDraftFromDrawing(drawing) : {}),
       ...(supportsAnnotationStyleSettings(drawing.type) ? annotationDraftFromDrawing(drawing) : {}),
       ...(supportsShapeStyleSettings(drawing.type) ? shapeDraftFromDrawing(drawing) : {}),
+      ...(isVolumeProfileTool(drawing.type) ? volumeProfileDraftFromDrawing(drawing) : {}),
     };
     titleEl.textContent = TOOL_LABELS[drawing.type] ?? drawing.type;
     activeTab =
-      isRegressionTrendTool(drawing.type) || isPositionTool(drawing.type) ? "inputs" : "style";
+      isRegressionTrendTool(drawing.type) || isPositionTool(drawing.type) || isVolumeProfileTool(drawing.type) ? "inputs" : "style";
     if (textInput instanceof HTMLTextAreaElement) textInput.value = String(draft.label ?? "");
     if (fontSizeEl instanceof HTMLSelectElement) fontSizeEl.value = String(draft.fontSize ?? 14);
     visibilityList.querySelectorAll("[data-vis-btn]").forEach((btn) => {
@@ -655,6 +666,7 @@ export function createDrawingSettingsDialog(opts) {
   wireMeasureSettings(root, wireCtx);
   wireAnnotationSettings(root, wireCtx);
   wireShapeSettings(root, wireCtx);
+  wireVolumeProfileSettings(root, wireCtx);
 
   controller.on("change", () => {
     if (root.hidden || !drawingId) return;

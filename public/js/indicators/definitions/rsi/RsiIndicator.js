@@ -1,10 +1,9 @@
 import { ComputeIndicator } from "../../ComputeIndicator.js";
-import { calcInputs, createInt, createSelect, createSource, fill, lengthSourceLegend, plot } from "../../builders.js";
+import { calcInputs, createFloat, createInt, createSelect, createSource, fill, lengthSourceLegend, plot } from "../../builders.js";
 import { SMOOTHING_TYPE, SMOOTHING_TYPES } from "../../math/ema.js";
 import { barSourceValue } from "../../math/source.js";
 import { smoothSeries } from "../../math/smooth.js";
-import { fillStyleKeys, buildBandFillSegments } from "../../schema.js";
-import { applyColorOpacity } from "../../../ui/color/picker.js";
+import { rollingMeanStdDev } from "../../math/rolling.js";
 
 /** @param {number} avgGain @param {number} avgLoss */
 function rsiFromAvg(avgGain, avgLoss) {
@@ -56,10 +55,6 @@ const COLORS = {
   band: "#787b86",
 };
 
-const RSI_SMOOTHING_TYPES = SMOOTHING_TYPES.filter(
-  (t) => t.id !== SMOOTHING_TYPE.SMA_BOLLINGER_BAND,
-);
-
 class RsiIndicator extends ComputeIndicator {
 
   constructor() {
@@ -73,23 +68,37 @@ class RsiIndicator extends ComputeIndicator {
       plot("smoothed", "RSI-based MA", COLORS.smoothed, {
         when: (inputs) => inputs.smoothingType !== SMOOTHING_TYPE.NONE,
       }),
+      plot("smoothingUpper", "Upper Bollinger Band", "#4caf50", {
+        when: (inputs) => inputs.smoothingType === SMOOTHING_TYPE.SMA_BOLLINGER_BAND,
+      }),
+      plot("smoothingLower", "Lower Bollinger Band", "#4caf50", {
+        when: (inputs) => inputs.smoothingType === SMOOTHING_TYPE.SMA_BOLLINGER_BAND,
+      }),
       plot("upper", "RSI Upper Band", COLORS.band, { band: true, lineStyle: 2, level: 70 }),
       plot("middle", "RSI Middle Band", COLORS.band, { band: true, lineStyle: 2, level: 50 }),
       plot("lower", "RSI Lower Band", COLORS.band, { band: true, lineStyle: 2, level: 30 }),
     ]);
     this.setFills([
       fill("rsiBgFill", "upper", "lower", "RSI Background Fill", COLORS.rsi, { opacity: 15 }),
+      fill("smoothingBbFill", "smoothingUpper", "smoothingLower", "Bollinger Bands Background Fill", "#4caf50", {
+        opacity: 10,
+        when: (inputs) => inputs.smoothingType === SMOOTHING_TYPE.SMA_BOLLINGER_BAND,
+      }),
     ]);
     this.setInputs([
       createInt("length", "RSI Length", 14, { section: "RSI Settings" }),
       createSource("source", "Source", "close", { section: "RSI Settings" }),
-      createSelect("smoothingType", "Type", SMOOTHING_TYPE.SMA, RSI_SMOOTHING_TYPES, {
+      createSelect("smoothingType", "Type", SMOOTHING_TYPE.SMA, SMOOTHING_TYPES, {
         section: "Smoothing",
         affectsStyle: true,
       }),
       createInt("smoothingLength", "Length", 14, {
         section: "Smoothing",
         disabled: (inputs) => inputs.smoothingType === SMOOTHING_TYPE.NONE,
+      }),
+      createFloat("bbStdDev", "BB StdDev", 2, {
+        section: "Smoothing",
+        disabled: (inputs) => inputs.smoothingType !== SMOOTHING_TYPE.SMA_BOLLINGER_BAND,
       }),
       ...calcInputs(),
     ]);
@@ -108,6 +117,16 @@ class RsiIndicator extends ComputeIndicator {
     if (smoothingType !== "none") {
       const smoothType = smoothingType === "sma_bb" ? "sma" : smoothingType;
       plots.smoothed = smoothSeries(rsi, smoothingLength, smoothType, bars);
+      if (smoothingType === SMOOTHING_TYPE.SMA_BOLLINGER_BAND) {
+        const deviations = rollingMeanStdDev(rsi, smoothingLength).stdDev;
+        const multiplier = Number(inputs.bbStdDev) || 2;
+        plots.smoothingUpper = plots.smoothed.map((value, i) =>
+          value == null || deviations[i] == null ? null : value + multiplier * deviations[i],
+        );
+        plots.smoothingLower = plots.smoothed.map((value, i) =>
+          value == null || deviations[i] == null ? null : value - multiplier * deviations[i],
+        );
+      }
     }
 
     const upperLevel = Number(style.upperLevel ?? 70);
@@ -141,33 +160,14 @@ class RsiIndicator extends ComputeIndicator {
     return labels;
   }
 
-  getBandFills(instance, chartBars) {
-    if (instance.hidden || !instance.lastPlots) return [];
-    const keys = fillStyleKeys("rsiBgFill");
-    if (instance.style[keys.visibleKey] === false) return [];
-
-    const min = this.studyPaneScale?.min ?? 0;
-    const max = this.studyPaneScale?.max ?? 100;
-    const upper = chartBars.map(() => max);
-    const lower = chartBars.map(() => min);
-    const segments = buildBandFillSegments(upper, lower, chartBars);
-    if (!segments.length) return [];
-
-    return [
-      {
-        color: applyColorOpacity(
-          String(instance.style[keys.colorKey] ?? COLORS.rsi),
-          Number(instance.style[keys.opacityKey]) || 15,
-        ),
-        segments,
-        extendRight: true,
-      },
-    ];
-  }
-
   handleInputChange(inputValues, style, changedKey) {
     if (changedKey === "smoothingType" && inputValues.smoothingType !== SMOOTHING_TYPE.NONE) {
       style.smoothedVisible = true;
+      if (inputValues.smoothingType === SMOOTHING_TYPE.SMA_BOLLINGER_BAND) {
+        style.smoothingUpperVisible = true;
+        style.smoothingLowerVisible = true;
+        style.smoothingBbFillVisible = true;
+      }
     }
   }
 }

@@ -152,6 +152,10 @@ function boxesEqual(a, b) {
       Boolean(x.extendRight) !== Boolean(y.extendRight) ||
       x.priceTop !== y.priceTop ||
       x.priceBottom !== y.priceBottom ||
+      x.fillColor !== y.fillColor ||
+      x.borderColor !== y.borderColor ||
+      x.borderWidth !== y.borderWidth ||
+      String(x.borderDash ?? "") !== String(y.borderDash ?? "") ||
       Boolean(x.showLabel) !== Boolean(y.showLabel) ||
       x.label !== y.label ||
       x.textColor !== y.textColor

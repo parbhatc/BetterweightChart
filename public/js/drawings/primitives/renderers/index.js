@@ -77,7 +77,10 @@ function pt(points, i, timeToX, priceToY) {
  */
 export function renderDrawing(ctx, drawing, timeToX, priceToY, right, bottom, state = {}) {
   const isPreview = Boolean(state.isPreview);
-  const showAnchors = isPreview || Boolean(state.isSelected);
+  // Fixed Range Volume Profile is launched from the indicator library. Its
+  // range handles stay visible so the indicator can always be resized without
+  // exposing it as a drawing-toolbar item.
+  const showAnchors = isPreview || Boolean(state.isSelected) || drawing.type === "fixed-range-volume-profile";
   const baseColor = drawing.color ?? DEFAULT_DRAWING_COLOR;
   const color = applyColorOpacity(baseColor, drawing.colorOpacity ?? 100);
   const lw = drawing.lineWidth ?? 2;
@@ -159,7 +162,10 @@ export function renderDrawing(ctx, drawing, timeToX, priceToY, right, bottom, st
       if (isPatternDrawingType(drawing.type)) {
         renderPatternDrawing(ctx, drawing, pts, right, bottom, state);
       } else if (isForecastDrawingType(drawing.type)) {
-        renderForecastDrawing(ctx, drawing, pts, right, bottom, state);
+        renderForecastDrawing(ctx, drawing, pts, right, bottom, {
+          ...state,
+          priceToY,
+        });
       } else if (isMeasureDrawingType(drawing.type)) {
         renderMeasureDrawing(ctx, drawing, pts, right, bottom, state);
       } else if (isAnnotationDrawingType(drawing.type)) {

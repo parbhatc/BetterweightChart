@@ -2,6 +2,7 @@ import { applyColorOpacity } from "../../../ui/color/picker.js";
 import { LINE_END_ARROW_ICON, LINE_END_NORMAL_ICON } from "../../tools/line/trendStyle.js";
 import { isRegressionTrendTool } from "../../tools/regression/trend.js";
 import { isPositionTool } from "../../tools/position/barrel.js";
+import { isVolumeProfileTool } from "../../tools/volumeProfile/index.js";
 import { isForecastTool } from "../../tools/forecast/index.js";
 import { isMeasureTool } from "../../tools/measure/index.js";
 import { supportsAnnotationStyleSettings } from "../../tools/annotation/style.js";
@@ -147,6 +148,7 @@ export function syncDrawingSettingsTabs(root, drawingType) {
   const isPosition = isPositionTool(drawingType);
   const isForecast = isForecastTool(drawingType);
   const isMeasure = isMeasureTool(drawingType);
+  const isVolumeProfile = isVolumeProfileTool(drawingType);
   const isAnnotation = supportsAnnotationStyleSettings(drawingType);
   const hideShapeText = shapeHidesTextTab(drawingType);
   const hideShapeCoords = shapeHidesCoordsTab(drawingType);
@@ -157,10 +159,10 @@ export function syncDrawingSettingsTabs(root, drawingType) {
     coordinates: root.querySelector('[data-tab="coordinates"]'),
     visibility: root.querySelector('[data-tab="visibility"]'),
   };
-  if (tabs.inputs instanceof HTMLElement) tabs.inputs.hidden = !isRegression && !isPosition;
+  if (tabs.inputs instanceof HTMLElement) tabs.inputs.hidden = !isRegression && !isPosition && !isVolumeProfile;
   if (tabs.text instanceof HTMLElement) {
     tabs.text.hidden =
-      isRegression || isPosition || isForecast || isMeasure || isAnnotation || hideShapeText;
+      isRegression || isPosition || isForecast || isMeasure || isAnnotation || isVolumeProfile || hideShapeText;
   }
   if (tabs.coordinates instanceof HTMLElement) {
     tabs.coordinates.hidden = isPosition || isAnnotation || hideShapeCoords;
@@ -177,7 +179,7 @@ export function syncDrawingSettingsTabs(root, drawingType) {
 export function resolveSettingsTab(root, tab, drawingType) {
   const btn = root.querySelector(`[data-tab="${tab}"]`);
   if (btn instanceof HTMLElement && !btn.hidden) return tab;
-  if (isRegressionTrendTool(drawingType) || isPositionTool(drawingType)) return "inputs";
+  if (isRegressionTrendTool(drawingType) || isPositionTool(drawingType) || isVolumeProfileTool(drawingType)) return "inputs";
   return "style";
 }
 

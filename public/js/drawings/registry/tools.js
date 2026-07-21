@@ -27,6 +27,7 @@ export const ONE_POINT_TOOLS = new Set([
   "flag-mark",
   "post",
   "idea",
+  "anchored-volume-profile",
 ]);
 
 export const TREND_ANGLE_TOOLS = new Set(["trend-angle"]);
@@ -52,7 +53,7 @@ export const TWO_POINT_TOOLS = new Set([
   "sine-line",
   "position-forecast",
   "sector",
-  "anchored-volume-profile",
+  "fixed-range-volume-profile",
   "price-range",
   "date-range",
   "date-price-range",

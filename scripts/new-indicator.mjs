@@ -26,41 +26,32 @@ if (manifest.includes(`"${id}"`) || manifest.includes(`/${id}/`)) {
   process.exit(1);
 }
 
-const template = `import { ComputeIndicator } from "../../ComputeIndicator.js";
+const template = `import { defineIndicator } from "../../defineIndicator.js";
 import { calcInputs, createInt, plot } from "../../builders.js";
 
 const COLORS = {
   main: "#2962ff",
 };
 
-class ${className} extends ComputeIndicator {
-
-  constructor() {
-    super("${id}", "${raw.toUpperCase()}", "${className.replace(/Indicator$/, "")}");
-    this.setPrimaryPlot("main");
-    this.setPlots([
-      plot("main", "${className.replace(/Indicator$/, "")}", COLORS.main),
-    ]);
-    this.setInputs([
-      createInt("length", "Length", 14),
-      ...calcInputs(),
-    ]);
-  }
-
+const ${className} = defineIndicator({
+  id: "${id}",
+  title: "${className.replace(/Indicator$/, "")}",
+  shortTitle: "${raw.toUpperCase()}",
+  primaryPlot: "main",
+  plots: [plot("main", "${className.replace(/Indicator$/, "")}", COLORS.main)],
+  inputs: [createInt("length", "Length", 14), ...calcInputs()],
   /**
    * Return one value array per plot id, aligned with \`bars\`.
    * @param {object[]} bars @param {object} inputs @param {object} style
    */
-  computeSeries(bars, inputs, style) {
+  compute(bars, inputs, style) {
     const length = Math.max(1, Math.floor(Number(inputs.length) || 14));
     void length;
     void style;
     // TODO: replace with real calculation.
     return { main: bars.map(() => null) };
-  }
-}
-
-ComputeIndicator.define(${className});
+  },
+});
 
 export default ${className};
 `;
@@ -78,4 +69,4 @@ writeFileSync(manifestPath, manifest);
 
 console.log(`Created ${filePath}`);
 console.log(`Registered ${className} in definitions/index.js`);
-console.log("Next: implement computeSeries() — everything else (UI, settings, defaults, rendering) is automatic.");
+console.log("Next: implement compute() — UI, settings, defaults, rendering, and serialization are automatic.");

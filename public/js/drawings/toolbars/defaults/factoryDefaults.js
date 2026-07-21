@@ -4,6 +4,7 @@ import { isFlatTopBottomTool, FLAT_TOP_BOTTOM_COLOR } from "../../tools/channel/
 import { annotationDefaultsForType } from "../../tools/annotation/style.js";
 import { shapeDefaultsForType } from "../../tools/shape/index.js";
 import { getSavableToolKeys } from "./store.js";
+import { isVolumeProfileTool, VOLUME_PROFILE_DEFAULTS } from "../../tools/volumeProfile/index.js";
 
 /**
  * Out-of-box style defaults for a tool (no saved templates, layout scope, or global tool defaults).
@@ -26,7 +27,7 @@ export function factoryDrawingDefaults(toolType) {
     lineWidth: annotationDefaults.lineWidth ?? shapeDefaults.lineWidth ?? 2,
     lineStyle: 0,
   };
-  const merged = { ...extend, ...base };
+  const merged = { ...extend, ...base, ...(isVolumeProfileTool(toolType) ? VOLUME_PROFILE_DEFAULTS : {}) };
   /** @type {Record<string, unknown>} */
   const out = {};
   for (const key of getSavableToolKeys(toolType)) {

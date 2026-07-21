@@ -1,5 +1,5 @@
 import { alignUtcBarsByChartTime } from "../math/pivots.js";
-import { normalizeResolutionId } from "/js/chart/resolutionFormat.js";
+import { normalizeResolutionId } from "../../chart/resolutionFormat.js";
 import { getHtfSeriesVersion } from "../../app/bar/htfBarCache.js";
 import { createBool, createSymbol } from "../builders.js";
 import { compareSymbol } from "./compareSymbol.js";

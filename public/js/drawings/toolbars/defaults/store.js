@@ -11,6 +11,7 @@ import { isPatternTool } from "../../tools/pattern/index.js";
 import { isCycleTool } from "../../tools/cycle/index.js";
 import { isPositionTool } from "../../tools/position/barrel.js";
 import { supportsChannelLineStyleSettings } from "../../tools/channel/family.js";
+import { isVolumeProfileTool } from "../../tools/volumeProfile/index.js";
 import { annotationDefaultsForType, isBrushTool } from "../../tools/annotation/style.js";
 import {
   isRectangleTool,
@@ -221,6 +222,15 @@ const CURVE_OPTION_KEYS = [
   "shapeBackgroundOpacity",
 ];
 
+const VOLUME_PROFILE_OPTION_KEYS = [
+  "vpRowsLayout", "vpRowSize", "vpVolumeMode", "vpValueAreaPercent",
+  "vpExtendRight", "vpWidthPercent", "vpPlacement", "vpShowValues",
+  "vpShowVah", "vpShowVal", "vpShowPoc", "vpUpColor", "vpUpOpacity",
+  "vpDownColor", "vpDownOpacity", "vpValueAreaUpColor", "vpValueAreaUpOpacity",
+  "vpValueAreaDownColor", "vpValueAreaDownOpacity", "vpPocColor",
+  "vpHistogramColor", "vpHistogramOpacity",
+];
+
 /** @param {string} toolType */
 export function getSavableToolKeys(toolType) {
   const keys = [...STYLE_KEYS];
@@ -232,6 +242,7 @@ export function getSavableToolKeys(toolType) {
   else if (isPatternTool(toolType)) keys.push(...PATTERN_OPTION_KEYS);
   else if (isCycleTool(toolType)) keys.push(...CYCLE_OPTION_KEYS);
   else if (isPositionTool(toolType)) keys.push(...POSITION_OPTION_KEYS);
+  else if (isVolumeProfileTool(toolType)) keys.push(...VOLUME_PROFILE_OPTION_KEYS);
   else if (supportsChannelLineStyleSettings(toolType)) keys.push(...CHANNEL_LINE_OPTION_KEYS);
   else if (isRegressionTrendTool(toolType)) keys.push(...REGRESSION_TREND_OPTION_KEYS);
   else if (isBrushTool(toolType)) keys.push(...BRUSH_OPTION_KEYS);

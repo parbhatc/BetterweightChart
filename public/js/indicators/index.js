@@ -1,7 +1,7 @@
 export { BaseIndicator } from "./BaseIndicator.js";
 export { BarScriptIndicator } from "./BarScriptIndicator.js";
 export { ComputeIndicator } from "./ComputeIndicator.js";
-export { defineIndicator } from "./defineIndicator.js";
+export { defineIndicator, indicator } from "./defineIndicator.js";
 export {
   plot,
   fill,

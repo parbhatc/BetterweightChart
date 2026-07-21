@@ -139,9 +139,7 @@ export function attachIndicatorsBoot(ctx) {
 
   const library = createIndicatorsLibraryDialog({
     onSelect: (defId) => {
-      const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
-      controller.addIndicator(defId, pane?.index ?? 0);
-      indicatorData.scheduleLoad(0);
+      addIndicatorFromLibrary(defId);
     },
     onFavoritesChange: () => renderIndicatorFavorites(),
   });
@@ -530,6 +528,13 @@ export function attachIndicatorsBoot(ctx) {
 
   /** @param {string} defId */
   function addIndicatorFromLibrary(defId) {
+    const Indicator = getIndicatorClass(defId);
+    if (Indicator?.placementTool) {
+      // Placement studies share the drawing controller so their anchors move,
+      // serialize, snap, and undo exactly like native two-point drawings.
+      ctx.drawing?.setActiveTool?.(Indicator.placementTool);
+      return;
+    }
     const pane = ctx.getActivePane() ?? ctx.chartPanes.get(0);
     controller.addIndicator(defId, pane?.index ?? 0);
     indicatorData.scheduleLoad(0);

@@ -1,4 +1,5 @@
 import { fmtDrawingPrice } from "../line/info.js";
+import { renderFixedRangeVolumeProfile } from "../volumeProfile/index.js";
 
 export const FORECAST_TOOL_TYPE = "position-forecast";
 
@@ -263,20 +264,10 @@ export function renderForecastDrawing(ctx, drawing, pts, right, bottom, state = 
         ctx.restore();
       }
       break;
+    case "fixed-range-volume-profile":
     case "anchored-volume-profile":
-      if (b) {
-        const x1 = Math.min(a.x, b.x);
-        const y1 = Math.min(a.y, b.y);
-        const w = Math.abs(b.x - a.x);
-        const h = Math.abs(b.y - a.y);
-        ctx.strokeRect(x1, y1, w, h);
-        const rows = 6;
-        for (let i = 0; i < rows; i += 1) {
-          const barW = (w * (0.3 + (i % 3) * 0.2)) / 2;
-          const y = y1 + (h * i) / rows + h / rows / 4;
-          ctx.fillRect(x1, y, barW, h / rows / 2);
-          ctx.fillRect(x1 + w - barW, y, barW, h / rows / 2);
-        }
+      if (b || drawing.type === "anchored-volume-profile") {
+        renderFixedRangeVolumeProfile(ctx, drawing, pts, { ...state, right, bottom });
       }
       break;
     default:
@@ -359,7 +350,12 @@ function renderPositionForecast(ctx, drawing, a, b, state) {
 
 /** @param {string} type */
 export function isForecastDrawingType(type) {
-  return type === FORECAST_TOOL_TYPE || type === "sector" || type === "anchored-volume-profile";
+  return (
+    type === FORECAST_TOOL_TYPE ||
+    type === "sector" ||
+    type === "fixed-range-volume-profile" ||
+    type === "anchored-volume-profile"
+  );
 }
 
 /**
@@ -374,7 +370,7 @@ export function hitForecastDrawing(type, pts, px, py, threshold) {
   const b = pts[1];
   if (!a) return false;
 
-  if (type === "sector" || type === "anchored-volume-profile") {
+  if (type === "sector" || type === "fixed-range-volume-profile" || type === "anchored-volume-profile") {
     if (!b) return Math.hypot(px - a.x, py - a.y) <= threshold;
     const x1 = Math.min(a.x, b.x) - threshold;
     const x2 = Math.max(a.x, b.x) + threshold;

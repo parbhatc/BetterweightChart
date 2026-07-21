@@ -14,10 +14,10 @@ import { inputStatusLineParams } from "./schema.js";
  * Pine-style indicator config — plain object or class with static metadata + methods.
  *
  * @typedef {object} IndicatorConfig
- * @property {string} id
- * @property {string} type
+ * @property {string} [id] Inferred from title when omitted
+ * @property {string} [type] Defaults to id
  * @property {string} title
- * @property {string} shortTitle
+ * @property {string} [shortTitle] Defaults to title
  * @property {boolean} [enabled]
  * @property {string} [primaryPlot]
  * @property {PlotDef[]} [plots]
@@ -146,7 +146,26 @@ export function defineIndicator(configOrClass) {
   }
 
   const userClass = typeof configOrClass === "function" ? configOrClass : null;
-  const config = userClass ? configFromClass(userClass) : configOrClass;
+  const rawConfig = userClass ? configFromClass(userClass) : configOrClass;
+  if (!rawConfig || typeof rawConfig !== "object") {
+    throw new TypeError("defineIndicator() expects a config object or indicator class");
+  }
+  const inferredTitle = String(rawConfig.title ?? rawConfig.shortTitle ?? rawConfig.id ?? "Indicator");
+  const inferredId = String(rawConfig.id ?? inferredTitle)
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!inferredId) throw new Error("Indicator id or title is required");
+  // Minimal configs only need a title and compute/onBar/overlay hook. Metadata
+  // that used to be repetitive is derived consistently here.
+  const config = {
+    ...rawConfig,
+    id: inferredId,
+    type: rawConfig.type ?? inferredId,
+    title: inferredTitle,
+    shortTitle: String(rawConfig.shortTitle ?? inferredTitle),
+  };
 
   const isGraphicOverlay = Boolean(
     config.overlayPrimitive && (config.onBar || config.overlay) && !config.compute,
@@ -301,3 +320,6 @@ export function defineIndicator(configOrClass) {
 
   return DefinedIndicator;
 }
+
+/** Short, discoverable alias for the object-based authoring API. */
+export const indicator = defineIndicator;

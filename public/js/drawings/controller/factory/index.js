@@ -17,6 +17,11 @@ import {
   POSITION_INPUT_DEFAULTS,
 } from "../../tools/position/barrel.js";
 import { finalizeForecastDrawing, isForecastTool, FORECAST_STYLE_DEFAULTS } from "../../tools/forecast/index.js";
+import {
+  finalizeVolumeProfileDrawing,
+  isVolumeProfileTool,
+  VOLUME_PROFILE_DEFAULTS,
+} from "../../tools/volumeProfile/index.js";
 import { finalizeMeasureDrawing, isMeasureTool, MEASURE_STYLE_DEFAULTS } from "../../tools/measure/index.js";
 import {
   finalizeAnnotationDrawing,
@@ -86,6 +91,8 @@ export const TREND_LINE_FAMILY_DEFAULTS = {
     ...POSITION_INPUT_DEFAULTS,
   },
   "position-forecast": { ...FORECAST_STYLE_DEFAULTS },
+  "fixed-range-volume-profile": { ...VOLUME_PROFILE_DEFAULTS },
+  "anchored-volume-profile": { ...VOLUME_PROFILE_DEFAULTS },
   "price-range": { ...MEASURE_STYLE_DEFAULTS },
   "date-range": { ...MEASURE_STYLE_DEFAULTS },
   "date-price-range": { ...MEASURE_STYLE_DEFAULTS },
@@ -137,6 +144,7 @@ export function newDrawing(type, points) {
   if (type === "regression-trend") return normalizeRegressionDrawing(drawing);
   if (isPositionTool(type)) return finalizePositionDrawing(drawing);
   if (isForecastTool(type)) return finalizeForecastDrawing(drawing);
+  if (isVolumeProfileTool(type)) return finalizeVolumeProfileDrawing(drawing);
   if (isMeasureTool(type)) return finalizeMeasureDrawing(drawing);
   if (supportsAnnotationStyleSettings(type)) return finalizeAnnotationDrawing(drawing);
   if (supportsShapeStyleSettings(type)) return finalizeShapeDrawing(drawing);

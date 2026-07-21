@@ -9,6 +9,7 @@ import {
 import { dateTime12h, toDate } from "../format.js";
 import { lwcPaneIndexAtY } from "../pane/studyScale.js";
 import { patchChartPrimitiveLogging } from "../primitiveLogging.js";
+import { responsiveAxisMinimums } from "./responsiveAxes.js";
 
 const DEFAULT_VISIBLE_BARS = 96;
 /** Right offset (bars) so the chart can scroll into empty future time. */
@@ -20,6 +21,10 @@ export const FUTURE_RIGHT_OFFSET = 48;
  */
 export function createTvChart(el, themeColors) {
   const c = themeColors;
+  const axisMinimums = responsiveAxisMinimums(
+    globalThis.innerWidth ?? 1024,
+    globalThis.matchMedia?.("(pointer: coarse)")?.matches ?? false,
+  );
 
   const chart = createChart(el, {
     autoSize: true,
@@ -57,6 +62,7 @@ export function createTvChart(el, themeColors) {
       visible: true,
       borderColor: c.border,
       scaleMargins: { top: 0.08, bottom: 0.12 },
+      minimumWidth: axisMinimums.priceScaleWidth,
     },
     timeScale: {
       visible: true,
@@ -66,6 +72,7 @@ export function createTvChart(el, themeColors) {
       rightOffset: FUTURE_RIGHT_OFFSET,
       barSpacing: 8,
       minBarSpacing: 3,
+      minimumHeight: axisMinimums.timeScaleHeight,
       tickMarkFormatter: (time, tickMarkType) => {
         const d = toDate(time);
         switch (tickMarkType) {

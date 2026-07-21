@@ -21,6 +21,10 @@ export {
 } from "./datafeed/index.js";
 export { createDatafeed as createBrowserDatafeed } from "./datafeed/client.js";
 export { registerIndicator, listIndicators, getIndicatorClass } from "./indicators/catalog.js";
+export { defineIndicator, indicator } from "./indicators/defineIndicator.js";
+export {
+  plot, fill, createInt, createFloat, createBool, createSelect, createSource, createColor,
+} from "./indicators/builders.js";
 export { createIndicatorsApi } from "./indicators/widgetApi.js";
 export { createTradingViewChartApi, createOrderLineManager, createPositionOverlay } from "./chart/orderLine/index.js";
 export { createExecutionShapeManager } from "./chart/executionShape/index.js";

@@ -1,6 +1,6 @@
 import { resolveHtfSeries } from "./htfAccess.js";
 import { getHtfBars, getHtfSeriesVersion, htfCacheStaleForAnchor } from "../../app/bar/htfBarCache.js";
-import { resolutionSec } from "/js/chart/resolutions.js";
+import { resolutionSec } from "../../chart/resolutions.js";
 
 /** Re-export for indicators; canonical copy lives in htfAccess. */
 export { htfBarCompleteAt } from "./htfAccess.js";

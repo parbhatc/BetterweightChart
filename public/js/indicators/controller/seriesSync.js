@@ -196,6 +196,12 @@ export function createSeriesSync(deps) {
     if (!instance.series) instance.series = new Map();
     if (!instance.seriesRender) instance.seriesRender = new Map();
 
+    // Runtime-only context used by indicators whose display rules depend on
+    // the chart interval (for example TradingView's "Hide VWAP on 1D+").
+    instance._chartResolution = pane.resolution ?? null;
+    // Session-anchored studies need the provider's exchange timezone/session
+    // metadata (for example CME 1700-1600), not the browser's local calendar.
+    instance._symbolInfo = symbolInfo;
     const plots = Indicator.compute(utcBars, instance);
     instance.lastPlots = plots;
     const plotKeys = numericPlotKeys(plots);

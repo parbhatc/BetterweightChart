@@ -15,9 +15,15 @@ bwc.indicators.remove("ema")       // all EMA instances, or pass an instance id
 bwc.indicators.clear()             // remove every indicator
 bwc.indicators.list()              // active instances
 bwc.indicators.available()         // [{ id, title, shortTitle }, ...]
+bwc.indicators.register({          // runtime custom study; returns its id
+  title: "My Average",
+  plots: [plot("main", "Average", "#2962ff")],
+  inputs: [createInt("length", "Length", 20)],
+  compute(bars, inputs) { return { main: calculate(bars, inputs.length) } },
+})
 ```
 
-Built-in ids include `ema`, `rsi`, `macd`, `volume`, `pivot_points_hl`, `smt` (plus any host-registered studies).
+Built-in ids include `ema`, `rsi`, `macd`, `volume`, `vwap`, `bollinger_bands`, `fixed_range_volume_profile`, `volume_profile`, `pivot_points_hl`, and `smt` (plus any host-registered studies).
 
 ## Adding an indicator (one command)
 
@@ -25,7 +31,7 @@ Built-in ids include `ema`, `rsi`, `macd`, `volume`, `pivot_points_hl`, `smt` (p
 npm run new:indicator myStudy
 ```
 
-This creates `public/js/indicators/definitions/mystudy/MyStudyIndicator.js` from a working `ComputeIndicator` template and registers it in `definitions/index.js` — the **single** manifest (the top-level `indicators/index.js` re-exports from it). Implement `computeSeries()`; the library listing, settings dialog, defaults, serialization, and rendering are derived automatically from the plot/input schema. Band plots can declare `{ band: true, level: 70, lineStyle: 2 }` and get dashed level rows in settings for free.
+This creates `public/js/indicators/definitions/mystudy/MyStudyIndicator.js` from a small working `defineIndicator()` template and registers it in the single manifest. Implement `compute()`; the library listing, settings dialog, defaults, serialization, and rendering are derived automatically from the schema. Runtime configs only require a title plus a compute/onBar/overlay hook; `id`, `type`, and `shortTitle` are inferred when omitted.
 
 ---
 

@@ -1,9 +1,17 @@
 // HTF access layer: indicators READ HTF series here (lookup + merge with the
 // shared store + sufficiency check) and REQUEST more bars when short.
 // Fetching/storing/replay-anchor handling lives in app/bar/htfBarCache.js.
-import { normalizeResolutionId } from "/js/chart/resolutionFormat.js";
-import { resolutionSec } from "/js/chart/resolutions.js";
-import { getHtfBars } from "../../app/bar/htfBarCache.js";
+import { normalizeResolutionId } from "../../chart/resolutionFormat.js";
+import { resolutionSec } from "../../chart/resolutions.js";
+
+// The app cache registers its reader when boot code loads. Keeping this module
+// independent from app/debug/catalog modules prevents an ESM cycle when hosts
+// import a standalone indicator through the public authoring API.
+let readStoredHtfBars = () => null;
+
+export function setHtfBarsReader(reader) {
+  readStoredHtfBars = typeof reader === "function" ? reader : () => null;
+}
 
 /** Unix second when an HTF bucket is fully closed (start of next bucket). */
 export function htfBarCompleteAt(bucketOpen, tfSec) {
@@ -126,7 +134,7 @@ export function mergeWithHtfStore(symbol, resolution, hit) {
   const resId = normalizeResolutionId(resolution);
   if (!symbol || !resId) return hit ?? null;
 
-  const stored = getHtfBars(symbol, resId);
+  const stored = readStoredHtfBars(symbol, resId);
   const hitLen = hit?.utcBars?.length ?? 0;
   const storedLen = stored?.utcBars?.length ?? 0;
 
@@ -195,7 +203,7 @@ export function resolveHtfSeries(ctx, symbol, tfId, want, opts = {}) {
   const need = Math.max(10, Number(want) || 300);
   const sym = symbol ?? ctx.primarySymbol ?? ctx.symbol;
   const resId = normalizeResolutionId(tfId) ?? tfId;
-  const stored = sym ? getHtfBars(sym, resId) : null;
+  const stored = sym ? readStoredHtfBars(sym, resId) : null;
   const exhausted = Boolean(stored?.historyExhausted && stored.utcBars?.length > 0);
   const raw = ctx.lookupSecurity?.(sym, tfId, need) ?? getSecuritySeries(ctx, sym, tfId);
   // Pane lookups vs shared store: arbitrated by coverage, not length.

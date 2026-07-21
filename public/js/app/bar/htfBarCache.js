@@ -5,6 +5,7 @@ import { chartDebug } from "../../debug/chart/index.js";
 import { resolutionSec } from "../../chart/resolutions.js";
 import { buildInitialPeriodParams, buildPrependPeriodParams, buildTvPeriodParams, alignBarTime } from "./periodParams.js";
 import { lookupSymbolBars } from "./symbolBarCache.js";
+import { setHtfBarsReader } from "../../indicators/security/htfAccess.js";
 
 /** @typedef {{ utcBars: object[], chartBars: object[], historyExhausted: boolean, updatedAt: number, source?: string, epoch: number, version: number }} HtfBarEntry */
 
@@ -75,6 +76,8 @@ export function getHtfBars(symbol, resolution) {
   }
   return entry;
 }
+
+setHtfBarsReader(getHtfBars);
 
 /** Store mutation counter for symbol+resolution — 0 when absent. Recompute keys use this. */
 export function getHtfSeriesVersion(symbol, resolution) {

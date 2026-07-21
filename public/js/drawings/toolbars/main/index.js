@@ -29,6 +29,14 @@ export function mountMainToolbar(opts) {
     TOOL_GROUPS.filter((g) => g.defaultTool && !g.isCursor).map((g) => [g.id, g.defaultTool]),
   );
   Object.assign(groupSelection, loadToolbarGroupTools());
+  // Ignore selections saved by removed toolbar entries. Internal placement
+  // tools (such as indicator-owned ranges) must never become a group button.
+  for (const group of TOOL_GROUPS) {
+    if (group.isCursor) continue;
+    if (!group.tools.includes(groupSelection[group.id])) {
+      groupSelection[group.id] = group.defaultTool;
+    }
+  }
   let cursorSelection = "cursor";
   /** @type {string[]} */
   let favoriteTools = loadFavoriteTools();

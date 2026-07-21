@@ -7,11 +7,11 @@ import { sourceLabel } from "../../math/source.js";
 import { applyColorOpacity } from "../../../ui/color/picker.js";
 import { plotStyleKeys } from "../../schema.js";
 
-/** @typedef {"ema"|"sma"|"smma"|"wma"} MacdMaType */
+/** @typedef {"ema"|"sma"} MacdMaType */
 
 /** @param {MacdMaType} type */
 function normalizeMaType(type) {
-  if (type === "sma" || type === "smma" || type === "wma") return type;
+  if (type === "sma") return type;
   return "ema";
 }
 
@@ -28,8 +28,6 @@ const COLORS = {
 const MA_TYPES = [
   { id: "ema", label: "EMA" },
   { id: "sma", label: "SMA" },
-  { id: "smma", label: "SMMA (RMA)" },
-  { id: "wma", label: "WMA" },
 ];
 
 class MacdIndicator extends ComputeIndicator {

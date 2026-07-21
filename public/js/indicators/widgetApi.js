@@ -1,4 +1,5 @@
-import { listIndicators, getIndicatorClass } from "./catalog.js";
+import { listIndicators, getIndicatorClass, registerIndicator } from "./catalog.js";
+import { defineIndicator } from "./defineIndicator.js";
 
 /**
  * Host-facing indicator helpers: `widget.indicators.add("ema")`, `.remove("ema")`, …
@@ -90,7 +91,18 @@ export function createIndicatorsApi(opts) {
       id: Indicator.id,
       title: Indicator.title,
       shortTitle: Indicator.shortTitle,
+      kind: Indicator.placementTool ? "placement" : "indicator",
     }));
+  }
+
+  /** Register a class or small config object at runtime. Returns its id. */
+  function register(configOrClass) {
+    const Indicator =
+      typeof configOrClass === "function" && typeof configOrClass.createInstance === "function"
+        ? configOrClass
+        : defineIndicator(configOrClass);
+    registerIndicator(Indicator);
+    return Indicator.id;
   }
 
   /**
@@ -105,5 +117,5 @@ export function createIndicatorsApi(opts) {
     ensureData?.();
   }
 
-  return { add, remove, clear, list, available, patch, get: (id) => controller()?.getInstance?.(id) ?? null };
+  return { add, remove, clear, list, available, register, patch, get: (id) => controller()?.getInstance?.(id) ?? null };
 }
